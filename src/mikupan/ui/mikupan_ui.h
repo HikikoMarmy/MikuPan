@@ -47,6 +47,7 @@ extern "C"
     int MikuPan_IsMesh0x12Rendering();
     int MikuPan_IsMesh0x2Rendering();
     float* MikuPan_GetLightColor();
+    float MikuPan_GetNormalLength();
     int MikuPan_GetRenderResolutionWidth();
     int MikuPan_GetRenderResolutionHeight();
     int MikuPan_GetMSAA();

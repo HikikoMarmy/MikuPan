@@ -1,3 +1,4 @@
+#include "typedefs.h"
 #include "mikupan_file.h"
 #include "gs/mikupan_texture_manager.h"
 #include "mikupan_logging.h"

@@ -1418,6 +1418,10 @@ inline static void Vu0ClampColors(sceVu0FVECTOR pcol)
     pcol[1] = __work_vf18[1] = MIN(__work_vf18[1], __work_vf19[3]);
     pcol[2] = __work_vf18[2] = MIN(__work_vf18[2], __work_vf19[3]);
     pcol[3] = __work_vf18[3] = MIN(__work_vf18[3], __work_vf19[3]);
+
+    pcol[0] /= 255.0f;
+    pcol[1] /= 255.0f;
+    pcol[2] /= 255.0f;
 }
 
 void SetPreRenderTYPE0(int gloops, u_int *prim)

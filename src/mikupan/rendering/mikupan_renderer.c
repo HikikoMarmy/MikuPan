@@ -484,6 +484,7 @@ void MikuPan_RenderSetDebugValues()
     MikuPan_SetUniform1iToAllShaders(MikuPan_IsNormalsRendering(), "renderNormals");
     float* cc = MikuPan_GetLightColor();
     MikuPan_SetUniform1fToAllShaders(cc[0], "uColorScale");
+    MikuPan_SetUniform1fToAllShaders(MikuPan_GetNormalLength(), "uNormalLength");
 }
 
 MikuPan_TextureInfo *MikuPan_CreateGLTexture(sceGsTex0 *tex0)
@@ -1041,8 +1042,17 @@ void MikuPan_RenderMeshType0x32(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPU
         glad_glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)byte_size, vertices);
     }
 
+    int index_count_0x32 = pVUVN->VUVNDesc.sNumVertex + GET_NUM_MESH(pPUHead);
+    glad_glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, index_count_0x32 * (int)sizeof(u_int), vertex_index);
+
     draw_calls++;
-    glad_glDrawElements(MikuPan_GetRenderMode(), pVUVN->VUVNDesc.sNumVertex + GET_NUM_MESH(pPUHead), GL_UNSIGNED_INT, vertex_index);
+    glad_glDrawElements(MikuPan_GetRenderMode(), index_count_0x32, GL_UNSIGNED_INT, (void*)0);
+
+    if (MikuPan_IsNormalsRendering())
+    {
+        MikuPan_SetCurrentShaderProgram(NORMALS_0x12_SHADER);
+        glad_glDrawElements(GL_TRIANGLE_STRIP, index_count_0x32, GL_UNSIGNED_INT, (void*)0);
+    }
 }
 
 void MikuPan_RenderMeshType0x82(unsigned int *pVUVN, unsigned int *pPUHead)
@@ -1106,8 +1116,17 @@ void MikuPan_RenderMeshType0x82(unsigned int *pVUVN, unsigned int *pPUHead)
         vertex_offset += vertex_count;
     }
 
+    int index_count_0x82 = v->nnum + GET_NUM_MESH(pPUHead);
+    glad_glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, index_count_0x82 * (int)sizeof(u_int), vertex_index);
+
     draw_calls++;
-    glad_glDrawElements(MikuPan_GetRenderMode(), v->nnum + GET_NUM_MESH(pPUHead), GL_UNSIGNED_INT, vertex_index);
+    glad_glDrawElements(MikuPan_GetRenderMode(), index_count_0x82, GL_UNSIGNED_INT, (void*)0);
+
+    if (MikuPan_IsNormalsRendering())
+    {
+        MikuPan_SetCurrentShaderProgram(NORMALS_0x12_SHADER);
+        glad_glDrawElements(GL_TRIANGLE_STRIP, index_count_0x82, GL_UNSIGNED_INT, (void*)0);
+    }
 }
 
 void MikuPan_RenderMeshType0x2(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPUHead, float* vertices)
@@ -1184,6 +1203,15 @@ void MikuPan_RenderMeshType0x2(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPUH
         vertex_offset += vertex_count;
     }
 
+    int index_count_0x2 = v->nnum + GET_NUM_MESH(pPUHead);
+    glad_glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, index_count_0x2 * (int)sizeof(u_int), vertex_index);
+
     draw_calls++;
-    glad_glDrawElements(MikuPan_GetRenderMode(), v->nnum + GET_NUM_MESH(pPUHead), GL_UNSIGNED_INT, vertex_index);
+    glad_glDrawElements(MikuPan_GetRenderMode(), index_count_0x2, GL_UNSIGNED_INT, (void*)0);
+
+    if (MikuPan_IsNormalsRendering())
+    {
+        MikuPan_SetCurrentShaderProgram(NORMALS_0x2_SHADER);
+        glad_glDrawElements(GL_TRIANGLE_STRIP, index_count_0x2, GL_UNSIGNED_INT, (void*)0);
+    }
 }

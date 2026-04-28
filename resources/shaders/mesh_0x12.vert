@@ -24,10 +24,10 @@ void main()
 
     vec4 a = view * model * vec4(aPos, 1.0f);
     oViewPosition = a;
-    oVertexColor = vec3(aColor.r / 255.0f, aColor.g / 255.0f, aColor.b / 255.0f);
+    oVertexColor = aColor;
 
     if (oVertexColor.r == 0.0f && oVertexColor.g == 0.0f && oVertexColor.b == 0.0f)
     {
-        oVertexColor = vec3(0.0f, 0.0f, 0.0f);
+        oVertexColor = vec3(1.0f, 1.0f, 1.0f);
     }
 }

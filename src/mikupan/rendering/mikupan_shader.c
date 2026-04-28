@@ -8,13 +8,16 @@ GLuint current_program = 0;
 GLuint backup_current_program = 0;
 u_int shader_list[MAX_SHADER_PROGRAMS] = {0};
 
-const char* shader_file_name[MAX_SHADER_PROGRAMS][2] = {
-    {"./resources/shaders/mesh_0x2.vert",           "./resources/shaders/textured_mesh_lighted.frag"},
-    {"./resources/shaders/mesh_0xA.vert",           "./resources/shaders/textured_mesh_lighted.frag"},
-    {"./resources/shaders/mesh_0x12.vert",          "./resources/shaders/textured_mesh_lighted.frag"},
-    {"./resources/shaders/untextured_coloured_sprite.vert",  "./resources/shaders/untextured_coloured_sprite.frag"},
-    {"./resources/shaders/bounding_box.vert",       "./resources/shaders/untextured_coloured_sprite.frag"},
-    {"./resources/shaders/sprite.vert",          "./resources/shaders/sprite.frag"}
+// [vert, geom (NULL = none), frag]
+const char* shader_file_name[MAX_SHADER_PROGRAMS][3] = {
+    {"./resources/shaders/mesh_0x2.vert",                    NULL,                                        "./resources/shaders/textured_mesh_lighted.frag"},
+    {"./resources/shaders/mesh_0xA.vert",                    NULL,                                        "./resources/shaders/textured_mesh_lighted.frag"},
+    {"./resources/shaders/mesh_0x12.vert",                   NULL,                                        "./resources/shaders/textured_mesh_lighted.frag"},
+    {"./resources/shaders/untextured_coloured_sprite.vert",  NULL,                                        "./resources/shaders/untextured_coloured_sprite.frag"},
+    {"./resources/shaders/bounding_box.vert",                NULL,                                        "./resources/shaders/untextured_coloured_sprite.frag"},
+    {"./resources/shaders/sprite.vert",                      NULL,                                        "./resources/shaders/sprite.frag"},
+    {"./resources/shaders/mesh_0x12.vert",                   "./resources/shaders/normals_debug.geom",    "./resources/shaders/normals_debug.frag"},
+    {"./resources/shaders/mesh_0x2.vert",                    "./resources/shaders/normals_debug.geom",    "./resources/shaders/normals_debug.frag"},
 };
 
 int MikuPan_InitShaders()
@@ -24,55 +27,58 @@ int MikuPan_InitShaders()
         const char* vertex_shader_filename = shader_file_name[i][0];
         u_int shader_file_size = MikuPan_GetFileSize(vertex_shader_filename) + 1;
 
-        /// Need to append a \0 at the end of the string or it won't compile
-        /// the shader
         char* vertex_shader_buffer = malloc(shader_file_size);
         vertex_shader_buffer[shader_file_size - 1] = 0;
-
         MikuPan_ReadFullFile(vertex_shader_filename, vertex_shader_buffer);
 
         GLuint vertexShader = glad_glCreateShader(GL_VERTEX_SHADER);
         glad_glShaderSource(vertexShader, 1, (const GLchar *const *)&vertex_shader_buffer, NULL);
-
-        // Compile the Vertex Shader into machine code
         glad_glCompileShader(vertexShader);
 
-        // Create Fragment Shader Object and get its reference
-        GLuint fragmentShader = glad_glCreateShader(GL_FRAGMENT_SHADER);
-
-        const char* frag_shader_filename = shader_file_name[i][1];
+        const char* frag_shader_filename = shader_file_name[i][2];
         shader_file_size = MikuPan_GetFileSize(frag_shader_filename) + 1;
 
         char* frag_buffer = malloc(shader_file_size);
         frag_buffer[shader_file_size - 1] = 0;
         MikuPan_ReadFullFile(frag_shader_filename, frag_buffer);
 
-        // Attach Fragment Shader source to the Fragment Shader Object
+        GLuint fragmentShader = glad_glCreateShader(GL_FRAGMENT_SHADER);
         glad_glShaderSource(fragmentShader, 1, (const GLchar *const *)&frag_buffer, NULL);
-
-        // Compile the Vertex Shader into machine code
         glad_glCompileShader(fragmentShader);
 
-        // Create Shader Program Object and get its reference
         current_program = glad_glCreateProgram();
         shader_list[i] = current_program;
 
-        // Attach the Vertex and Fragment Shaders to the Shader Program
         glad_glAttachShader(current_program, vertexShader);
         glad_glAttachShader(current_program, fragmentShader);
 
-        // Wrap-up/Link all the shaders together into the Shader Program
+        GLuint geomShader = 0;
+        const char* geom_shader_filename = shader_file_name[i][1];
+        if (geom_shader_filename != NULL)
+        {
+            shader_file_size = MikuPan_GetFileSize(geom_shader_filename) + 1;
+            char* geom_buffer = malloc(shader_file_size);
+            geom_buffer[shader_file_size - 1] = 0;
+            MikuPan_ReadFullFile(geom_shader_filename, geom_buffer);
+
+            geomShader = glad_glCreateShader(GL_GEOMETRY_SHADER);
+            glad_glShaderSource(geomShader, 1, (const GLchar *const *)&geom_buffer, NULL);
+            glad_glCompileShader(geomShader);
+            glad_glAttachShader(current_program, geomShader);
+
+            free(geom_buffer);
+        }
+
         glad_glLinkProgram(current_program);
 
-        // Delete the now useless Vertex and Fragment Shader objects
         glad_glDeleteShader(vertexShader);
         glad_glDeleteShader(fragmentShader);
+        if (geomShader) glad_glDeleteShader(geomShader);
 
         free(vertex_shader_buffer);
         free(frag_buffer);
     }
 
-    // Tell OpenGL which Shader Program we want to use
     glad_glUseProgram(current_program);
 
     return 0;

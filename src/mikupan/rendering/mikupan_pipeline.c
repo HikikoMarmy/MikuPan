@@ -17,7 +17,7 @@ void MikuPan_InitPipeline()
 
     /// BUFFER 1: VERTEX + NORMALS
     /// POSITION ATTRIBUTE
-    MikuPan_SetBufferObjectInfo(&curr_pipeline->buffers[0], 1024 * 32, 2);
+    MikuPan_SetBufferObjectInfo(&curr_pipeline->buffers[0], 4 * 1024 * 1024, 2);
     MikuPan_SetVertexBufferAttributeInfo(
         &curr_pipeline->buffers[0].attributes[0],
         3, 0,
@@ -33,7 +33,7 @@ void MikuPan_InitPipeline()
     /// TEXCOORD ATTRIBUTE
     MikuPan_SetBufferObjectInfo(
         &curr_pipeline->buffers[1],
-        1024 * 32, 1);
+        4 * 1024 * 1024, 1);
     MikuPan_SetVertexBufferAttributeInfo(
         &curr_pipeline->buffers[1].attributes[0],
         2, 2,
@@ -42,11 +42,16 @@ void MikuPan_InitPipeline()
     /// BUFFER 3: Vertex Color
     MikuPan_SetBufferObjectInfo(
         &curr_pipeline->buffers[2],
-        1024 * 32, 1);
+        4 * 1024 * 1024, 1);
     MikuPan_SetVertexBufferAttributeInfo(
         &curr_pipeline->buffers[2].attributes[0],
         3, 3,
         sizeof(float[3]), 0);
+
+    /// IBO: index buffer bound to this VAO for Core Profile glDrawElements
+    glad_glGenBuffers(1, &curr_pipeline->ibo);
+    glad_glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, curr_pipeline->ibo);
+    glad_glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(u_int) * 1024 * 1024, NULL, GL_DYNAMIC_DRAW);
 
     glad_glBindVertexArray(0);
 
@@ -58,7 +63,7 @@ void MikuPan_InitPipeline()
 
     /// BUFFER 1: VERTEX + NORMALS
     /// POSITION ATTRIBUTE
-    MikuPan_SetBufferObjectInfo(&curr_pipeline->buffers[0], 1024 * 32, 2);
+    MikuPan_SetBufferObjectInfo(&curr_pipeline->buffers[0], 4 * 1024 * 1024, 2);
     MikuPan_SetVertexBufferAttributeInfo(
         &curr_pipeline->buffers[0].attributes[0],
         4, 0,
@@ -74,11 +79,16 @@ void MikuPan_InitPipeline()
     /// TEXCOORD ATTRIBUTE
     MikuPan_SetBufferObjectInfo(
         &curr_pipeline->buffers[1],
-        1024 * 32, 1);
+        4 * 1024 * 1024, 1);
     MikuPan_SetVertexBufferAttributeInfo(
         &curr_pipeline->buffers[1].attributes[0],
         2, 2,
         sizeof(float[2]), 0);
+
+    /// IBO: index buffer bound to this VAO for Core Profile glDrawElements
+    glad_glGenBuffers(1, &curr_pipeline->ibo);
+    glad_glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, curr_pipeline->ibo);
+    glad_glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(u_int) * 1024 * 1024, NULL, GL_DYNAMIC_DRAW);
 
     glad_glBindVertexArray(0);
 

@@ -24,3 +24,4 @@ cmake-build-release-mingw/
 /.vs
 /out
 /cmake-build-mingw
+.DS_Store

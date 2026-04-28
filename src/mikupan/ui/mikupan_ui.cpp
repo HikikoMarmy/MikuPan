@@ -38,6 +38,7 @@ bool show_mesh_0x12 = true;
 bool show_mesh_0x2 = true;
 
 float light_color[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+float normal_length = 10.0f;
 
 FrameTimeGraph::FrameTimeGraph(int max_samples, float ms_scale) : max_samples_(std::max(8, max_samples)), ms_scale_(ms_scale)
 {
@@ -287,6 +288,10 @@ void MikuPan_UiMenuBar()
                 //ImGui::Toggle("Camera", (bool*)&camera_debug, ImGuiToggleFlags_Animated);
                 ImGui::Toggle("Wireframe", (bool*)&render_wireframe, ImGuiToggleFlags_Animated);
                 ImGui::Toggle("Normals", (bool*)&render_normals, ImGuiToggleFlags_Animated);
+                if (render_normals)
+                {
+                    ImGui::SliderFloat("Normal Length", &normal_length, 0.1f, 100.0f, "%.1f");
+                }
                 ImGui::Toggle("Textures", (bool*)&show_texture_list, ImGuiToggleFlags_Animated);
                 ImGui::Toggle("BoundingBox", (bool*)&show_bounding_boxes, ImGuiToggleFlags_Animated);
 
@@ -360,6 +365,11 @@ int MikuPan_IsMesh0x2Rendering()
 float* MikuPan_GetLightColor()
 {
     return light_color;
+}
+
+float MikuPan_GetNormalLength()
+{
+    return normal_length;
 }
 
 int MikuPan_GetRenderResolutionWidth()

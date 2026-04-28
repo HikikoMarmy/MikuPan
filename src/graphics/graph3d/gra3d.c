@@ -52,7 +52,7 @@
 #define UNCACHED(ptr)          ((void*)((int64_t)(ptr) | CachedBuffer))
 #define UNCACHED_ACCEL(ptr)    ((void*)((int64_t)(ptr) | 0x30000000))
 
-extern unsigned int dma /* __attribute__((section(".vutext"))) */;
+extern unsigned int dma;
 
 static u_int ene_display[4] = {0, 0, 0, 0};
 u_int fly_display[3] = {0, 0, 0};

@@ -12,6 +12,8 @@ if(WIN32)
 endif()
 
 set(BUILD_SHARED_LIBS OFF)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 list(PREPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/MikuPan)
@@ -32,6 +34,8 @@ set(MIKUPAN_SOURCES
         resources/shaders/sprite.vert
         resources/shaders/untextured_coloured_sprite.frag
         resources/shaders/untextured_coloured_sprite.vert
+        resources/shaders/normals_debug.geom
+        resources/shaders/normals_debug.frag
         "src/mikupan/mikupan_file.cpp"
         "src/common/ul_math.c"
         "src/common/utility.c"

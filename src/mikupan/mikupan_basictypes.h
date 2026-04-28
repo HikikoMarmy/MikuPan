@@ -60,6 +60,7 @@ typedef struct
 typedef struct
 {
     u_int vao;
+    u_int ibo;
     u_int num_buffers;
     MikuPan_BufferObjectInfo* buffers;
 } MikuPan_PipelineInfo;
