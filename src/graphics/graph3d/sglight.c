@@ -482,6 +482,15 @@ void SetMaterialData(u_int *prim)
     pmatC = (SgMaterialC *) MikuPan_GetHostAddress(prim[2]);
     pmatC->cache_on = 1;
 
+    // Mirror the four material colour vectors into our MaterialBlock UBO so
+    // the fragment shader can apply them — this is the OpenGL equivalent of
+    // the per-material baking that follows below into Parallel_Ambient /
+    // Parallel_DColor / Parallel_SColor.
+    MikuPan_SetMaterial(&pmatC->Ambient,
+                        &pmatC->Diffuse,
+                        &pmatC->Specular,
+                        &pmatC->Emission);
+
     if (pmatC->primtype != 0)
     {
         TAmbient[3] = 128.0f;

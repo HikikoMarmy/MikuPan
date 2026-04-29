@@ -73,6 +73,12 @@ enum MikuPan_PipelineType
     /// MESH 0x12 SHADER
     POSITION3_NORMAL3_UV2,
 
+    /// MESH 0x12 SHADER (SoA layout — used by mesh_type 0x32 only).
+    /// Same shader & attribute locations as POSITION3_NORMAL3_UV2 but
+    /// positions / normals / UVs / colors live in 4 separate VBOs so that
+    /// 0x32 uploads can avoid the per-vertex CPU interleaving step.
+    POSITION3_NORMAL3_UV2_SOA,
+
     /// MESH 0x2 SHADER
     POSITION4_NORMAL4_UV2,
 
@@ -84,6 +90,10 @@ enum MikuPan_PipelineType
 
     /// Lighting Data
     LIGHTING_DATA,
+
+    /// Per-material colour block (Ambient/Diffuse/Specular/Emission). Pushed
+    /// by MikuPan_SetMaterial when SetMaterialData fires for a new material.
+    MATERIAL_DATA,
 
     /// THE MAXIMUM NUM OF PIPELINES, USEFUL FOR LOOPS
     MAX_NUMBER_OF_PIPELINES

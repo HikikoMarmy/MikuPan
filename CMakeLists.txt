@@ -19,7 +19,7 @@ list(PREPEND CMAKE_MODULE_PATH ${CMAKE_CURRENT_SOURCE_DIR}/cmake)
 set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/MikuPan)
 
 include(sdl3)
-include(imgui)
+include(cimgui)
 include(spdlog)
 include(cglm)
 include(xxhash)
@@ -235,15 +235,12 @@ set(MIKUPAN_SOURCES
         "src/graphics/graph3d/vu_program.c"
         "src/mikupan/mikupan_memory.c"
         src/mikupan/ui/mikupan_ui.cpp
+        src/mikupan/ui/mikupan_ui.c
         src/mikupan/rendering/mikupan_renderer.c
         src/mikupan/rendering/mikupan_shader.c
         src/mikupan/gs/mikupan_gs.cpp
         src/mikupan/gs/mikupan_texture_manager.cpp
         src/mikupan/mikupan_logging.cpp
-        extern/imgui_toggle/imgui_toggle.cpp
-        extern/imgui_toggle/imgui_toggle_palette.cpp
-        extern/imgui_toggle/imgui_toggle_presets.cpp
-        extern/imgui_toggle/imgui_toggle_renderer.cpp
         src/graphics/graph3d/libsg.c
         extern/glad/src/gl.c
         src/ingame/map/find_dat.c
@@ -258,7 +255,7 @@ add_executable(MikuPan ${MIKUPAN_SOURCES} ${APP_ICON_RESOURCE_WINDOWS})
 
 target_include_directories(MikuPan PRIVATE "sdk/" "src" "extern/" "extern/glad/include/" ${SDL3_INCLUDE_DIR})
 
-target_link_libraries(MikuPan PRIVATE m imgui SDL3::SDL3 spdlog::spdlog cglm xxHash::xxhash)
+target_link_libraries(MikuPan PRIVATE m cimgui SDL3::SDL3 spdlog::spdlog cglm xxHash::xxhash)
 
 add_custom_command(TARGET MikuPan POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/resources $<TARGET_FILE_DIR:MikuPan>/resources

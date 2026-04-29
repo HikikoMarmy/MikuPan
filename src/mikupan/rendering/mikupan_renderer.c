@@ -10,7 +10,9 @@
 #include "mikupan/mikupan_logging_c.h"
 #include "mikupan/ui/mikupan_ui_c.h"
 #include "mikupan_shader.h"
+#include "SDL3/SDL_timer.h"
 #include <stdlib.h>
+#include <string.h>
 
 #define GLAD_GL_IMPLEMENTATION
 #include "graphics/graph3d/sglib.h"
@@ -19,11 +21,316 @@
 #include "mikupan_pipeline.h"
 #include <glad/gl.h>
 
-int vertex_index[1024 * 1024] = {0};
-float temp_render_buffer[1024 * 1024] = {0};
-float temp_empty_buffer[1024 * 1024] = {0};
+/// Per-mesh-type CPU staging buffers used by the immediate-mode render path.
+/// Each MikuPan_RenderMeshType* fills its family's struct from offset 0,
+/// streams it to the pipeline VBOs, and draws — all in one call. There is no
+/// batching across calls and no per-mesh GL-object cache, so the buffers
+/// hold one mesh's worth of data at a time and a per-family split keeps
+/// concurrent draws (e.g. 0x82 calling FlushTexturedSpriteBatch which itself
+/// does not touch these) from interfering.
+///
+/// Three families, matching the three public render functions:
+///   * 0x32 family: mesh types 0x32 (SoA) / 0x12 / 0x10
+///   * 0x82 family: mesh type 0x82
+///   * 0x2  family: mesh types 0x2 / 0xA
+#define MIKUPAN_MESH_BUFFER_CAPACITY (1024 * 1024)
+
+typedef struct
+{
+    int   indices  [MIKUPAN_MESH_BUFFER_CAPACITY];
+    float positions[MIKUPAN_MESH_BUFFER_CAPACITY]; ///< SoA positions (0x32 only)
+    float normals  [MIKUPAN_MESH_BUFFER_CAPACITY]; ///< SoA normals (0x32 only)
+    float uvs      [MIKUPAN_MESH_BUFFER_CAPACITY];
+    float colors   [MIKUPAN_MESH_BUFFER_CAPACITY];
+} MikuPan_MeshBuffers0x32;
+
+typedef struct
+{
+    int   indices[MIKUPAN_MESH_BUFFER_CAPACITY];
+    float uvs    [MIKUPAN_MESH_BUFFER_CAPACITY];
+    float colors [MIKUPAN_MESH_BUFFER_CAPACITY];
+} MikuPan_MeshBuffers0x82;
+
+typedef struct
+{
+    int   indices[MIKUPAN_MESH_BUFFER_CAPACITY];
+    float uvs    [MIKUPAN_MESH_BUFFER_CAPACITY];
+} MikuPan_MeshBuffers0x2;
+
+static MikuPan_MeshBuffers0x32 g_mesh_buffers_0x32 = {0};
+static MikuPan_MeshBuffers0x82 g_mesh_buffers_0x82 = {0};
+static MikuPan_MeshBuffers0x2  g_mesh_buffers_0x2  = {0};
+
+/// Read-only zero source for 0x82 color fill (PS2 0x82 has no per-vertex
+/// colors — the shader receives a constant black). Shared because it is never
+/// written, only memcpy'd from.
+static float g_zero_floats[MIKUPAN_MESH_BUFFER_CAPACITY] = {0};
 int state_changes = 0;
 int draw_calls = 0;
+
+/// Per-frame CPU/GPU timing for the perf-debug graph.
+///
+/// We measure two distinct, non-overlapping quantities:
+///
+///   CPU time = wall-clock from MikuPan_Clear up to the moment the CPU has
+///              finished submitting *all* GL commands for this frame
+///              (right after our final glFlush).
+///
+///   GPU time = wall-clock from that submission point until the GPU signals
+///              (via a fence-sync) that it has actually finished processing
+///              the frame's commands.
+///
+/// This gives a meaningful split:
+///   * If CPU > GPU: CPU-bound — the GPU drained the queue as fast as the
+///     CPU could hand it work; the wait at the end is small.
+///   * If GPU > CPU: GPU-bound — the CPU finished its work first and had to
+///     wait `GPU` ms for the GPU to catch up.
+///   * CPU + GPU ≈ frame time (assuming no v-sync wait).
+///
+/// Why not GL_TIME_ELAPSED? That query reports the GPU-side wall clock
+/// between BeginQuery and EndQuery, which on most drivers includes any time
+/// the GPU was *idle* in the middle of the queried region. When the CPU is
+/// the bottleneck, the GPU sits idle waiting for commands and the query
+/// reports nearly the full frame duration — making CPU and GPU look
+/// identical even though the GPU was barely working. The fence-sync
+/// approach measures honest "post-CPU GPU work" time instead.
+///
+/// Cost: the fence sync at end-of-frame serializes CPU and GPU, so the
+/// engine loses a small amount of pipelining while the graph is collecting
+/// data. That overhead is the price for honest numbers.
+static Uint64 g_frame_cpu_start_ticks  = 0;
+static float  g_last_frame_cpu_ms      = 0.0f;
+static float  g_last_frame_gpu_ms      = 0.0f;
+
+/// CPU section timers — accumulate time spent in each high-level area of
+/// rendering so the perf graph can break down where the CPU budget goes.
+/// Reset at frame start; sampled by the perf graph from the *last* frame.
+typedef enum
+{
+    PERF_SECT_MESH_RENDER = 0,    ///< total time in MikuPan_RenderMeshType* calls
+    PERF_SECT_SPRITE_RENDER,      ///< total time in 2D sprite/UI draws (MikuPan_RenderSprite et al.)
+    PERF_SECT_BATCH_FLUSH,        ///< time spent in MikuPan_FlushMeshBatch / FlushTexturedSpriteBatch
+    PERF_SECT_DRAWUI,             ///< time spent in MikuPan_DrawUi (game UI text + ImGui submission)
+    PERF_SECT_RENDERUI,           ///< time spent in MikuPan_RenderUi (ImGui actual render)
+    PERF_SECT_DRAW_SUBMIT,        ///< wall-clock spent inside glDrawElements/glDrawArrays — pure driver overhead
+    PERF_SECT_BUFFER_UPLOAD,      ///< wall-clock in our stream-upload helper (map+memcpy+unmap)
+    PERF_SECT_STATE_CHANGE,       ///< wall-clock in shader/texture/render-state setters (incl. dedup misses) — outer aggregate
+    PERF_SECT_SC_SHADER,          ///< sub-section: glUseProgram / MikuPan_SetCurrentShaderProgram
+    PERF_SECT_SC_TEXTURE,         ///< sub-section: MikuPan_SetTexture (incl. hash lookup + glBindTexture)
+    PERF_SECT_SC_RS3D,            ///< sub-section: MikuPan_SetRenderState3D (depth/cull/blend)
+    PERF_SECT_SC_VAO,             ///< sub-section: MikuPan_BindVAO (glBindVertexArray)
+    PERF_SECT_COUNT
+} MikuPan_PerfSection;
+
+static double g_perf_section_ms_curr[PERF_SECT_COUNT] = {0};
+static double g_perf_section_ms_last[PERF_SECT_COUNT] = {0};
+
+/// Static-mesh-cache hit/miss instrumentation. Defined here (above their first
+/// reference in MikuPan_PerfResetFrame) but documented + used near the cache
+/// itself further down. `_curr` accumulates as renders happen; `_last` is the
+/// snapshot from the previous frame, exposed via the public getters.
+static int g_mesh_cache_hits_curr        = 0;
+static int g_mesh_cache_misses_new_curr  = 0;
+static int g_mesh_cache_misses_full_curr = 0;
+static int g_mesh_cache_hits_last        = 0;
+static int g_mesh_cache_misses_new_last  = 0;
+static int g_mesh_cache_misses_full_last = 0;
+
+/// Texture L1 hit/miss instrumentation — same pattern. An L1 miss falls through
+/// to MikuPan_GetTextureHash, which XXH3-hashes potentially many KB of GS
+/// memory; that's the suspected hot spot in PERF_SECT_SC_TEXTURE.
+static int g_tex_l1_hits_curr   = 0;
+static int g_tex_l1_misses_curr = 0;
+static int g_tex_l1_hits_last   = 0;
+static int g_tex_l1_misses_last = 0;
+
+static inline Uint64 MikuPan_PerfBegin(void)
+{
+    return SDL_GetPerformanceCounter();
+}
+
+static inline void MikuPan_PerfEnd(MikuPan_PerfSection sect, Uint64 t0)
+{
+    Uint64 t1 = SDL_GetPerformanceCounter();
+    g_perf_section_ms_curr[sect] +=
+        (double)(t1 - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency();
+}
+
+float MikuPan_PerfGetSectionMs(int section)
+{
+    if (section < 0 || section >= PERF_SECT_COUNT) return 0.0f;
+    return (float)g_perf_section_ms_last[section];
+}
+
+static void MikuPan_PerfResetFrame(void)
+{
+    for (int i = 0; i < PERF_SECT_COUNT; i++)
+    {
+        g_perf_section_ms_last[i] = g_perf_section_ms_curr[i];
+        g_perf_section_ms_curr[i] = 0.0;
+    }
+
+    g_mesh_cache_hits_last        = g_mesh_cache_hits_curr;
+    g_mesh_cache_misses_new_last  = g_mesh_cache_misses_new_curr;
+    g_mesh_cache_misses_full_last = g_mesh_cache_misses_full_curr;
+    g_mesh_cache_hits_curr        = 0;
+    g_mesh_cache_misses_new_curr  = 0;
+    g_mesh_cache_misses_full_curr = 0;
+
+    g_tex_l1_hits_last   = g_tex_l1_hits_curr;
+    g_tex_l1_misses_last = g_tex_l1_misses_curr;
+    g_tex_l1_hits_curr   = 0;
+    g_tex_l1_misses_curr = 0;
+}
+
+/// RAII-style section scope: declare at function entry and any return path
+/// (including early returns) automatically accumulates the elapsed time into
+/// the right bucket. Uses GCC/Clang's __attribute__((cleanup)).
+typedef struct { Uint64 t0; int section; } MikuPan_PerfScope;
+
+static inline void MikuPan_PerfScopeEnd(MikuPan_PerfScope *s)
+{
+    Uint64 t1 = SDL_GetPerformanceCounter();
+    g_perf_section_ms_curr[s->section] +=
+        (double)(t1 - s->t0) * 1000.0 / (double)SDL_GetPerformanceFrequency();
+}
+
+#define MIKUPAN_PERF_SCOPE(sect) \
+    MikuPan_PerfScope _perf_scope __attribute__((cleanup(MikuPan_PerfScopeEnd))) = \
+        { SDL_GetPerformanceCounter(), (sect) }
+
+/// Timed glDrawElements/glDrawArrays — any draw issued through these helpers
+/// contributes its CPU-side wall-clock to PERF_SECT_DRAW_SUBMIT, so the perf
+/// graph can show whether the bottleneck is real driver-overhead-per-draw vs
+/// our own surrounding code.
+static inline void MikuPan_TimedDrawElements(GLenum mode, GLsizei count, GLenum type, const void *indices)
+{
+    Uint64 t0 = SDL_GetPerformanceCounter();
+    glad_glDrawElements(mode, count, type, indices);
+    Uint64 t1 = SDL_GetPerformanceCounter();
+    g_perf_section_ms_curr[PERF_SECT_DRAW_SUBMIT] +=
+        (double)(t1 - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency();
+}
+
+static inline void MikuPan_TimedDrawArrays(GLenum mode, GLint first, GLsizei count)
+{
+    Uint64 t0 = SDL_GetPerformanceCounter();
+    glad_glDrawArrays(mode, first, count);
+    Uint64 t1 = SDL_GetPerformanceCounter();
+    g_perf_section_ms_curr[PERF_SECT_DRAW_SUBMIT] +=
+        (double)(t1 - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency();
+}
+
+static void MikuPan_BeginFrameTiming(void)
+{
+    g_frame_cpu_start_ticks = SDL_GetPerformanceCounter();
+}
+
+static void MikuPan_EndFrameTiming(void)
+{
+    // Place a fence right after the frame's last GL command, then flush so
+    // the driver actually pushes the frame's work to the GPU.
+    GLsync fence = glad_glFenceSync(GL_SYNC_GPU_COMMANDS_COMPLETE, 0);
+    glad_glFlush();
+
+    // The CPU is now done with the frame. Snapshot the CPU duration BEFORE
+    // we start blocking on the GPU, so the CPU number reflects only CPU work
+    // + command submission.
+    Uint64 cpu_done_ticks = SDL_GetPerformanceCounter();
+    double freq = (double)SDL_GetPerformanceFrequency();
+    g_last_frame_cpu_ms = (float)((double)(cpu_done_ticks - g_frame_cpu_start_ticks) * 1000.0 / freq);
+
+    // Wait for the GPU to actually drain the queue. Whatever wall-clock this
+    // takes is the GPU-bound portion of the frame.
+    if (fence != NULL)
+    {
+        glad_glClientWaitSync(fence, GL_SYNC_FLUSH_COMMANDS_BIT, 0xFFFFFFFFFFFFFFFFULL);
+        glad_glDeleteSync(fence);
+
+        Uint64 gpu_done_ticks = SDL_GetPerformanceCounter();
+        // If the fence was already signaled the result is essentially 0 plus
+        // call overhead — clamp to 0 so the graph never shows a tiny negative.
+        double gpu_ms = (double)(gpu_done_ticks - cpu_done_ticks) * 1000.0 / freq;
+        g_last_frame_gpu_ms = gpu_ms > 0.0 ? (float)gpu_ms : 0.0f;
+    }
+    else
+    {
+        g_last_frame_gpu_ms = 0.0f;
+    }
+}
+
+float MikuPan_GetLastFrameCpuMs(void) { return g_last_frame_cpu_ms; }
+float MikuPan_GetLastFrameGpuMs(void) { return g_last_frame_gpu_ms; }
+
+/// Mesh-cache hit/miss counters reported by the perf graph. The cache itself
+/// has been removed (each MikuPan_RenderMeshType* uploads + draws immediately),
+/// but the public getters still exist so the UI binding compiles. They report
+/// zero — the counters are never incremented now.
+int MikuPan_PerfGetMeshCacheHits(void)        { return g_mesh_cache_hits_last; }
+int MikuPan_PerfGetMeshCacheMissesNew(void)   { return g_mesh_cache_misses_new_last; }
+int MikuPan_PerfGetMeshCacheMissesFull(void)  { return g_mesh_cache_misses_full_last; }
+
+int MikuPan_PerfGetTexL1Hits(void)            { return g_tex_l1_hits_last; }
+int MikuPan_PerfGetTexL1Misses(void)          { return g_tex_l1_misses_last; }
+
+/// Stream-upload helper for dynamic vertex/index buffers.
+///
+/// On NVIDIA, glBufferSubData is fine because the driver does internal buffer
+/// renaming to avoid GPU stalls. On AMD/Intel/Mesa, glBufferSubData on a
+/// buffer the GPU is still using will implicitly *sync* the CPU with the GPU
+/// — exactly the wrong thing to do at frame time.
+///
+/// glMapBufferRange + GL_MAP_INVALIDATE_BUFFER_BIT explicitly tells the driver
+/// "discard whatever was here, give me a fresh region", which lets the driver
+/// rename the storage internally. The GPU finishes with the old storage in
+/// the background while we write into new storage, so there's no stall.
+///
+/// Use this for any per-frame upload that fully replaces the buffer's
+/// contents starting at offset 0.
+static inline void MikuPan_StreamUploadFull(GLenum target, GLuint buffer,
+                                            GLsizeiptr size, const void *data)
+{
+    if (size <= 0) return;
+
+    Uint64 t0 = SDL_GetPerformanceCounter();
+
+    MikuPan_BindBufferCached(target, buffer);
+
+    void *ptr = glad_glMapBufferRange(target, 0, size,
+        GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
+
+    if (ptr != NULL)
+    {
+        memcpy(ptr, data, (size_t)size);
+        glad_glUnmapBuffer(target);
+    }
+    else
+    {
+        // Map can fail under driver pressure — fall back to the slow path so
+        // we still upload correctly.
+        glad_glBufferSubData(target, 0, size, data);
+    }
+
+    Uint64 t1 = SDL_GetPerformanceCounter();
+    g_perf_section_ms_curr[PERF_SECT_BUFFER_UPLOAD] +=
+        (double)(t1 - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency();
+}
+
+/// 2D textured sprite batching. Game UI/font rendering goes character-by-character
+/// through MikuPan_RenderSprite; without batching that's one draw call per glyph.
+/// We accumulate into a CPU buffer (6 verts per quad as a triangle list) and flush
+/// when the texture changes, when a non-batched 2D function is called, or at
+/// end-of-frame.
+#define TEXTURED_SPRITE_BATCH_MAX 4096
+typedef struct
+{
+    int active;
+    int sprite_count;
+    GLuint texture_id;
+} MikuPan_TexturedSpriteBatch;
+
+static MikuPan_TexturedSpriteBatch g_textured_sprite_batch = {0};
+static float g_textured_sprite_cpu_buf[TEXTURED_SPRITE_BATCH_MAX * 6 * 12];
 
 MikuPan_RenderWindow mikupan_render = {0};
 MikuPan_MsaaBufferObject render_back_msaa = {0};
@@ -44,7 +351,14 @@ mat4 ViewClip = {0};
 /// SgCMtx or camera->wc
 mat4 WorldClip = {0};
 
-MikuPan_LightData mikupan_light_data = {0};
+MikuPan_LightData    mikupan_light_data    = {0};
+MikuPan_MaterialData mikupan_material_data = {
+    {1.0f, 1.0f, 1.0f, 1.0f}, // Ambient — identity until first SetMaterial
+    {1.0f, 1.0f, 1.0f, 1.0f}, // Diffuse
+    {1.0f, 1.0f, 1.0f, 1.0f}, // Specular (.w used as shininess in the shader)
+    {0.0f, 0.0f, 0.0f, 0.0f}, // Emission
+};
+static int mikupan_material_dirty = 1;
 
 SDL_AppResult MikuPan_Init()
 {
@@ -114,10 +428,17 @@ SDL_AppResult MikuPan_Init()
     for (int i = 0; i < MAX_SHADER_PROGRAMS; i++)
     {
         u_int program = MikuPan_SetCurrentShaderProgram(i);
-        u_int blockIndex = glad_glGetUniformBlockIndex(program, "LightBlock");
-        if (blockIndex != GL_INVALID_INDEX)
+
+        u_int lightIdx = glad_glGetUniformBlockIndex(program, "LightBlock");
+        if (lightIdx != GL_INVALID_INDEX)
         {
-            glad_glUniformBlockBinding(program, blockIndex, 0);
+            glad_glUniformBlockBinding(program, lightIdx, LightBlock);
+        }
+
+        u_int materialIdx = glad_glGetUniformBlockIndex(program, "MaterialBlock");
+        if (materialIdx != GL_INVALID_INDEX)
+        {
+            glad_glUniformBlockBinding(program, materialIdx, MaterialBlock);
         }
     }
 
@@ -163,7 +484,12 @@ void MikuPan_SetupOpenGLContext()
 {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+#ifndef NDEBUG
+    // Debug GL contexts route every call through driver-side validation and
+    // can add 30–80% overhead per call. Only request one in debug builds —
+    // release builds get a regular context for full performance.
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_FLAGS, SDL_GL_CONTEXT_DEBUG_FLAG);
+#endif
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     SDL_GL_SetAttribute(SDL_GL_FRAMEBUFFER_SRGB_CAPABLE, 0);
@@ -179,7 +505,7 @@ void MikuPan_CreateInternalBuffer(int w, int h, int msaa)
     glad_glBindFramebuffer(GL_FRAMEBUFFER, render_back_msaa.framebuffer.id);
 
     glad_glGenTextures(1, &render_back_msaa.texture.id);
-    glad_glBindTexture(GL_TEXTURE_2D, render_back_msaa.texture.id);
+    MikuPan_BindTexture2DCached(render_back_msaa.texture.id);
 
     glad_glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8,
                       render_back_msaa.texture.width, render_back_msaa.texture.height, 0,
@@ -241,11 +567,30 @@ void MikuPan_CreateInternalBuffer(int w, int h, int msaa)
     }
 
     glad_glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glad_glViewport(0, 0, render_back_msaa.texture.width, render_back_msaa.texture.height);
+    MikuPan_SetViewportCached(0, 0, render_back_msaa.texture.width, render_back_msaa.texture.height);
 }
 
 void MikuPan_Clear()
 {
+    // Start the per-frame CPU/GPU timing window — we measure from here through
+    // the moment right before SDL_GL_SwapWindow, which captures all of our
+    // command-submission work.
+    MikuPan_BeginFrameTiming();
+
+    // Roll the per-frame GS instrumentation counters: the values currently in
+    // g_gs_frame_metrics become "last frame" for the perf graph to read, and
+    // the live counters reset to zero for the new frame.
+    MikuPan_GsResetFrameMetrics();
+    MikuPan_PerfResetFrame();
+
+    // ImGui (and other GL-touching code outside our wrappers) leaves the
+    // shader/texture/render-state caches potentially stale at the end of the
+    // previous frame. Force-invalidate them so the first call into our state
+    // setters this frame actually executes the underlying GL calls.
+    MikuPan_ResetShaderCache();
+    MikuPan_ResetRenderStateCache();
+    MikuPan_ResetGLBindCache();
+
     MikuPan_RenderSetDebugValues();
 
     int curr_render_width = MikuPan_GetRenderResolutionWidth();
@@ -260,13 +605,16 @@ void MikuPan_Clear()
 
     glad_glBindFramebuffer(GL_FRAMEBUFFER, render_back_msaa.framebuffer_readback.id);
 
-    glad_glViewport(0, 0, render_back_msaa.texture.width, render_back_msaa.texture.height);
+    MikuPan_SetViewportCached(0, 0, render_back_msaa.texture.width, render_back_msaa.texture.height);
 
     glad_glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 }
 
 void MikuPan_EndFrame()
 {
+    // Submit any pending batched mesh before we switch to 2D post-processing.
+    MikuPan_FlushMeshBatch();
+
     glad_glBindFramebuffer(GL_READ_FRAMEBUFFER, render_back_msaa.framebuffer_readback.id);
     glad_glBindFramebuffer(GL_DRAW_FRAMEBUFFER, render_back_msaa.framebuffer.id);
 
@@ -295,29 +643,51 @@ void MikuPan_EndFrame()
         (float)render_back_msaa.texture.width, (float)render_back_msaa.texture.height
         );
 
-    glad_glViewport(
+    MikuPan_SetViewportCached(
         offset_output[0], offset_output[1],
         offset_output[2], offset_output[3]
         );
     glad_glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
-    glad_glBindTexture(GL_TEXTURE_2D, render_back_msaa.texture.id);
+    MikuPan_BindTexture2DCached(render_back_msaa.texture.id);
 
     MikuPan_SetRenderState2D();
     MikuPan_SetCurrentShaderProgram(SPRITE_SHADER);
     MikuPan_PipelineInfo* pipeline = MikuPan_GetPipelineInfo(UV4_COLOUR4_POSITION4);
+    MikuPan_BindVAO(pipeline->vao);
 
-    glad_glBindBuffer(GL_ARRAY_BUFFER, pipeline->buffers[0].id);
-    glad_glBufferSubData(GL_ARRAY_BUFFER, 0, pipeline->buffers[0].buffer_length, quad);
+    MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[0].id,
+                             (GLsizeiptr)sizeof(quad), quad);
 
     glad_glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
 
-    //info_log("Total state changes and draw calls this frame: %d, %d", state_changes, draw_calls);
+    info_log("Frame: state_changes=%d, draw_calls=%d, mesh_cache hits=%d misses_new=%d misses_full=%d",
+        state_changes, draw_calls,
+        g_mesh_cache_hits_curr, g_mesh_cache_misses_new_curr, g_mesh_cache_misses_full_curr);
     draw_calls = 0;
     state_changes = 0;
 
-    MikuPan_DrawUi();
-    MikuPan_RenderUi();
+    {
+        Uint64 _t0 = MikuPan_PerfBegin();
+        MikuPan_DrawUi();
+        MikuPan_PerfEnd(PERF_SECT_DRAWUI, _t0);
+    }
+
+    // Drain any pending textured sprites (game UI text) before ImGui — ImGui
+    // mutates GL state arbitrarily for its own draws, which would orphan our batch.
+    MikuPan_FlushTexturedSpriteBatch();
+
+    {
+        Uint64 _t0 = MikuPan_PerfBegin();
+        MikuPan_RenderUi();
+        MikuPan_PerfEnd(PERF_SECT_RENDERUI, _t0);
+    }
+
+    // Close the timing window: stop the GL query, snapshot the CPU duration,
+    // and pull the previous frame's GPU result. SwapWindow may block on vsync
+    // — we deliberately don't include that wait in either metric.
+    MikuPan_EndFrameTiming();
+
     SDL_GL_SwapWindow(mikupan_render.window);
 }
 
@@ -342,45 +712,92 @@ int MikuPan_GetRenderMode()
     return MikuPan_IsWireframeRendering() ? GL_LINE_STRIP : GL_TRIANGLE_STRIP;
 }
 
+static int MikuPan_GetMeshRenderMode()
+{
+    return MikuPan_IsWireframeRendering() ? GL_LINES : GL_TRIANGLES;
+}
+
 void MikuPan_SetupAmbientLighting(const LIGHT_PACK* lp)
 {
 #define MAX_LIGHTS 3
-    int parCount = lp->parallel_num > MAX_LIGHTS ? MAX_LIGHTS : lp->parallel_num;
-    mikupan_light_data.uParCount[0] = parCount;
+    // Populate the entire LightBlock UBO straight from the LIGHT_PACK input.
+    // The previous design relied on MikuPan_SetupAmbientLighting2() reading
+    // colors from SgLightParallelp, but that pointer is updated per-material
+    // by SetMaterialData (sglight.c:473) and is stale/zero at the SetLightData
+    // call site — which is why the scene was so dark: the shader was getting
+    // empty diffuse colors. Source the canonical values directly here.
+
+    // Scene ambient.
+    mikupan_light_data.uAmbient[0] = lp->ambient[0];
+    mikupan_light_data.uAmbient[1] = lp->ambient[1];
+    mikupan_light_data.uAmbient[2] = lp->ambient[2];
+    mikupan_light_data.uAmbient[3] = lp->ambient[3];
 
     mat3 view3;
     glm_mat4_pick3(WorldView, view3);
 
+    // Parallel (directional) lights. Compute the same Blinn-Phong halfway
+    // vector that SgSetDefaultLight (sglight.c:118-120) bakes into SLightMtx:
+    //     halfway = normalize(ieye + dir)   where ieye = -normalize(eye)
+    // Both vectors live in view space here so we don't need an `eye` parameter
+    // — the camera sits at the origin in view space, so ieye is just (0,0,1).
+    const vec3 ieye_vs = {0.0f, 0.0f, 1.0f};
+
+    int parCount = lp->parallel_num > MAX_LIGHTS ? MAX_LIGHTS : lp->parallel_num;
+    mikupan_light_data.uParCount[0] = parCount;
+
     for (int i = 0; i < parCount; i++)
     {
+        // Direction is in world space; rotate (no translation) into view space
+        // so the shader can dot it against view-space normals directly.
         vec4 dirWS = {
             lp->parallel[i].direction[0],
             lp->parallel[i].direction[1],
             lp->parallel[i].direction[2],
             lp->parallel[i].direction[3]
         };
-
         vec4 dirVS;
         glm_mat3_mulv(view3, dirWS, dirVS);
+        vec3 dirVSn = { dirVS[0], dirVS[1], dirVS[2] };
+        glm_vec3_normalize(dirVSn);
 
-        mikupan_light_data.uParDir[i][0] = dirVS[0];
-        mikupan_light_data.uParDir[i][1] = dirVS[1];
-        mikupan_light_data.uParDir[i][2] = dirVS[2];
+        mikupan_light_data.uParDir[i][0] = dirVSn[0];
+        mikupan_light_data.uParDir[i][1] = dirVSn[1];
+        mikupan_light_data.uParDir[i][2] = dirVSn[2];
         mikupan_light_data.uParDir[i][3] = 1.0f;
+
+        mikupan_light_data.uParDiffuse[i][0] = lp->parallel[i].diffuse[0];
+        mikupan_light_data.uParDiffuse[i][1] = lp->parallel[i].diffuse[1];
+        mikupan_light_data.uParDiffuse[i][2] = lp->parallel[i].diffuse[2];
+        mikupan_light_data.uParDiffuse[i][3] = lp->parallel[i].diffuse[3];
+
+        // light_pack carries no separate specular field for parallel lights;
+        // gra3d.c:1083 mirrors specular = diffuse on the SgLIGHT side, so
+        // match that convention here.
+        mikupan_light_data.uParSpecular[i][0] = lp->parallel[i].diffuse[0];
+        mikupan_light_data.uParSpecular[i][1] = lp->parallel[i].diffuse[1];
+        mikupan_light_data.uParSpecular[i][2] = lp->parallel[i].diffuse[2];
+        mikupan_light_data.uParSpecular[i][3] = lp->parallel[i].diffuse[3];
+
+        // Halfway vector for Blinn-Phong — matches sglight.c:118-120 exactly.
+        vec3 halfway = { ieye_vs[0] + dirVSn[0], ieye_vs[1] + dirVSn[1], ieye_vs[2] + dirVSn[2] };
+        glm_vec3_normalize(halfway);
+        mikupan_light_data.uParHalfway[i][0] = halfway[0];
+        mikupan_light_data.uParHalfway[i][1] = halfway[1];
+        mikupan_light_data.uParHalfway[i][2] = halfway[2];
+        mikupan_light_data.uParHalfway[i][3] = 1.0f;
     }
 
+    // Point lights.
     int pointCount = lp->point_num > MAX_LIGHTS ? MAX_LIGHTS : lp->point_num;
     mikupan_light_data.uPointCount[0] = pointCount;
 
     for (int i = 0; i < pointCount; i++)
     {
         vec4 posWS = {
-            lp->point[i].pos[0],
-            lp->point[i].pos[1],
-            lp->point[i].pos[2],
-            lp->point[i].pos[3]
+            lp->point[i].pos[0], lp->point[i].pos[1],
+            lp->point[i].pos[2], lp->point[i].pos[3]
         };
-
         vec4 posVS;
         glm_mat4_mulv(WorldView, posWS, posVS);
 
@@ -388,20 +805,31 @@ void MikuPan_SetupAmbientLighting(const LIGHT_PACK* lp)
         mikupan_light_data.uPointPos[i][1] = posVS[1];
         mikupan_light_data.uPointPos[i][2] = posVS[2];
         mikupan_light_data.uPointPos[i][3] = 1.0f;
+
+        mikupan_light_data.uPointDiffuse[i][0] = lp->point[i].diffuse[0];
+        mikupan_light_data.uPointDiffuse[i][1] = lp->point[i].diffuse[1];
+        mikupan_light_data.uPointDiffuse[i][2] = lp->point[i].diffuse[2];
+        mikupan_light_data.uPointDiffuse[i][3] = lp->point[i].diffuse[3];
+
+        // Specular = diffuse, mirroring gra3d.c:1101.
+        mikupan_light_data.uPointSpecular[i][0] = lp->point[i].diffuse[0];
+        mikupan_light_data.uPointSpecular[i][1] = lp->point[i].diffuse[1];
+        mikupan_light_data.uPointSpecular[i][2] = lp->point[i].diffuse[2];
+        mikupan_light_data.uPointSpecular[i][3] = lp->point[i].diffuse[3];
+
+        mikupan_light_data.uPointPower[i][0] = lp->point[i].power;
     }
 
+    // Spot lights.
     int spotCount = lp->spot_num > MAX_LIGHTS ? MAX_LIGHTS : lp->spot_num;
     mikupan_light_data.uSpotCount[0] = spotCount;
 
     for (int i = 0; i < spotCount; i++)
     {
         vec4 posWS = {
-            lp->spot[i].pos[0],
-            lp->spot[i].pos[1],
-            lp->spot[i].pos[2],
-            lp->spot[i].pos[3]
+            lp->spot[i].pos[0], lp->spot[i].pos[1],
+            lp->spot[i].pos[2], lp->spot[i].pos[3]
         };
-
         vec4 posVS;
         glm_mat4_mulv(WorldView, posWS, posVS);
 
@@ -411,12 +839,9 @@ void MikuPan_SetupAmbientLighting(const LIGHT_PACK* lp)
         mikupan_light_data.uSpotPos[i][3] = 1.0f;
 
         vec4 dirWS = {
-            lp->spot[i].direction[0],
-            lp->spot[i].direction[1],
-            lp->spot[i].direction[2],
-            lp->spot[i].direction[3]
+            lp->spot[i].direction[0], lp->spot[i].direction[1],
+            lp->spot[i].direction[2], lp->spot[i].direction[3]
         };
-
         vec4 dirVS;
         glm_mat3_mulv(view3, dirWS, dirVS);
         glm_vec3_normalize(dirVS);
@@ -426,52 +851,91 @@ void MikuPan_SetupAmbientLighting(const LIGHT_PACK* lp)
         mikupan_light_data.uSpotDir[i][2] = dirVS[2];
         mikupan_light_data.uSpotDir[i][3] = 1.0f;
 
-        mikupan_light_data.uSpotIntens[i][0] = lp->spot[i].intens;
+        mikupan_light_data.uSpotDiffuse[i][0] = lp->spot[i].diffuse[0];
+        mikupan_light_data.uSpotDiffuse[i][1] = lp->spot[i].diffuse[1];
+        mikupan_light_data.uSpotDiffuse[i][2] = lp->spot[i].diffuse[2];
+        mikupan_light_data.uSpotDiffuse[i][3] = lp->spot[i].diffuse[3];
+
+        // Specular = diffuse, mirroring gra3d.c:1122.
+        mikupan_light_data.uSpotSpecular[i][0] = lp->spot[i].diffuse[0];
+        mikupan_light_data.uSpotSpecular[i][1] = lp->spot[i].diffuse[1];
+        mikupan_light_data.uSpotSpecular[i][2] = lp->spot[i].diffuse[2];
+        mikupan_light_data.uSpotSpecular[i][3] = lp->spot[i].diffuse[3];
+
+        mikupan_light_data.uSpotPower[i][0]  = lp->spot[i].power;
+
+        // Cone gate parameters. Match SgSetSpotLights (sglight.c:914):
+        //   intens   = cos²(half-angle), the inner-cone threshold
+        //   intens_b = 1/(1 - intens), the per-spot reciprocal used by
+        //              asm_CalcSpotLight (sglight.c:1125-1127) to normalize
+        //              cone² ∈ [intens..1] back to a 0..1 falloff ramp.
+        // intens == 1.0 is degenerate (zero-width cone) — clamp away from it
+        // so we don't divide by zero. The shader ignores the spot anyway when
+        // cone² <= intens, so the clamp is purely a numerical guard.
+        float intens   = lp->spot[i].intens;
+        float intens_b = 0.0f;
+        if (intens < 0.9999f)
+        {
+            intens_b = 1.0f / (1.0f - intens);
+        }
+        mikupan_light_data.uSpotIntens[i][0] = intens;
+        mikupan_light_data.uSpotIntens[i][1] = intens_b;
     }
+}
+
+/// Push the current SgMaterialC's colours into the MaterialBlock UBO. Called
+/// from sglight.c:SetMaterialData via the public hook below — gives the
+/// fragment shader access to the same Ambient / Diffuse / Specular / Emission
+/// values the original PS2 path bakes into Parallel_Ambient / Parallel_DColor /
+/// Parallel_SColor at SetMaterialData (sglight.c:505-531).
+void MikuPan_SetMaterial(const sceVu0FVECTOR *ambient,
+                         const sceVu0FVECTOR *diffuse,
+                         const sceVu0FVECTOR *specular,
+                         const sceVu0FVECTOR *emission)
+{
+    // Skip if nothing changed — most consecutive draws share the same material
+    // because the PS2 SGD pipeline groups primitives by material.
+    if (memcmp(mikupan_material_data.uMatAmbient,  *ambient,  sizeof(float[4])) == 0 &&
+        memcmp(mikupan_material_data.uMatDiffuse,  *diffuse,  sizeof(float[4])) == 0 &&
+        memcmp(mikupan_material_data.uMatSpecular, *specular, sizeof(float[4])) == 0 &&
+        memcmp(mikupan_material_data.uMatEmission, *emission, sizeof(float[4])) == 0)
+    {
+        return;
+    }
+
+    // Material is about to change — drain anything queued under the previous
+    // material so it renders with the right colours before the UBO update.
+    MikuPan_FlushMeshBatch();
+
+    memcpy(mikupan_material_data.uMatAmbient,  *ambient,  sizeof(float[4]));
+    memcpy(mikupan_material_data.uMatDiffuse,  *diffuse,  sizeof(float[4]));
+    memcpy(mikupan_material_data.uMatSpecular, *specular, sizeof(float[4]));
+    memcpy(mikupan_material_data.uMatEmission, *emission, sizeof(float[4]));
+    mikupan_material_dirty = 1;
+
+    MikuPan_PipelineInfo *p = MikuPan_GetPipelineInfo(MATERIAL_DATA);
+    glad_glBindBuffer(GL_UNIFORM_BUFFER, p->buffers[0].id);
+    glad_glBufferSubData(GL_UNIFORM_BUFFER, 0,
+                         sizeof(MikuPan_MaterialData),
+                         &mikupan_material_data);
 }
 
 void MikuPan_SetupAmbientLighting2()
 {
+    // Drain queued draws under the OLD lighting before we rewrite the UBO.
+    MikuPan_FlushMeshBatch();
 
-    #define MAX_LIGHTS 3
-    mikupan_light_data.uAmbient[0] = SgLightParallelp->Parallel_Ambient[0] / 255.0f;
-    mikupan_light_data.uAmbient[1] = SgLightParallelp->Parallel_Ambient[1] / 255.0f;
-    mikupan_light_data.uAmbient[2] = SgLightParallelp->Parallel_Ambient[2] / 255.0f;
-    mikupan_light_data.uAmbient[3] = SgLightParallelp->Parallel_Ambient[3] / 255.0f;
+    // The LightBlock UBO is bound to indexed binding point 0 via
+    // glBindBufferBase at init, but glBufferSubData(GL_UNIFORM_BUFFER, ...)
+    // reads from the *generic* GL_UNIFORM_BUFFER target — which was left at
+    // 0 (unbound) after pipeline init. Without this bind the upload was a
+    // silent no-op and the shader saw zeros for diffuse colors / counts,
+    // leaving the scene effectively unlit.
+    MikuPan_PipelineInfo *p = MikuPan_GetPipelineInfo(LIGHTING_DATA);
+    glad_glBindBuffer(GL_UNIFORM_BUFFER, p->buffers[0].id);
 
-    //mikupan_light_data.uParCount[0] = SgInfiniteNum;
-
-    for (int i = 0; i < SgInfiniteNum; i++)
-    {
-        mikupan_light_data.uParDiffuse[i][0] = SgLightParallelp->Parallel_DColor[i][0] / 255.0f;
-        mikupan_light_data.uParDiffuse[i][1] = SgLightParallelp->Parallel_DColor[i][1] / 255.0f;
-        mikupan_light_data.uParDiffuse[i][2] = SgLightParallelp->Parallel_DColor[i][2] / 255.0f;
-        mikupan_light_data.uParDiffuse[i][3] = SgLightParallelp->Parallel_DColor[i][3] / 255.0f;
-    }
-
-    //mikupan_light_data.uPointCount[0] = SgPointNum;
-
-    for (int i = 0; i < SgPointNum; i++)
-    {
-        mikupan_light_data.uPointDiffuse[i][0] = SgLightPointp->Point_DColor[i][0] / 255.0f;
-        mikupan_light_data.uPointDiffuse[i][1] = SgLightPointp->Point_DColor[i][1] / 255.0f;
-        mikupan_light_data.uPointDiffuse[i][2] = SgLightPointp->Point_DColor[i][2] / 255.0f;
-        mikupan_light_data.uPointDiffuse[i][3] = SgLightPointp->Point_DColor[i][3] / 255.0f;
-
-        mikupan_light_data.uPointPower[i][0] = SgLightPointp->Point_btimes[i];
-    }
-
-    //mikupan_light_data.uSpotCount[0] = SgSpotNum;
-
-    for (int i = 0; i < SgSpotNum; i++)
-    {
-        mikupan_light_data.uSpotDiffuse[i][0] = SgLightSpotp->Spot_DColor[i][0] / 255.0f;
-        mikupan_light_data.uSpotDiffuse[i][1] = SgLightSpotp->Spot_DColor[i][1] / 255.0f;
-        mikupan_light_data.uSpotDiffuse[i][2] = SgLightSpotp->Spot_DColor[i][2] / 255.0f;
-        mikupan_light_data.uSpotDiffuse[i][3] = SgLightSpotp->Spot_DColor[i][3] / 255.0f;
-        mikupan_light_data.uSpotPower[i][0]  = SgLightSpotp->Spot_btimes[i];
-    }
-
+    // Data was already populated by MikuPan_SetupAmbientLighting from the
+    // canonical LIGHT_PACK; this just publishes the staged buffer to the GPU.
     glad_glBufferSubData(
         GL_UNIFORM_BUFFER,
         0,
@@ -481,16 +945,63 @@ void MikuPan_SetupAmbientLighting2()
 
 void MikuPan_RenderSetDebugValues()
 {
-    MikuPan_SetUniform1iToAllShaders(MikuPan_IsNormalsRendering(), "renderNormals");
-    float* cc = MikuPan_GetLightColor();
-    MikuPan_SetUniform1fToAllShaders(cc[0], "uColorScale");
-    MikuPan_SetUniform1fToAllShaders(MikuPan_GetNormalLength(), "uNormalLength");
+    // These are debug toggles driven by the ImGui panel — they only change
+    // when the user moves a slider or flips a checkbox, but the original code
+    // re-pushed all three to every shader every frame. Track the last-set
+    // value and skip the broadcast when nothing changed. Float comparisons
+    // are exact on purpose: the values come straight from UI controls, so
+    // "no change" is bit-identical.
+    //
+    // Sentinels (-1 / NaN-ish) trigger the first set after init.
+    static int   last_render_normals   = -1;
+    static float last_color_scale      = -1.0f;
+    static float last_normal_length    = -1.0f;
+    static int   last_disable_lighting = -1;
+
+    int   render_normals   = MikuPan_IsNormalsRendering();
+    float color_scale      = MikuPan_GetLightColor()[0];
+    float normal_length    = MikuPan_GetNormalLength();
+    int   disable_lighting = MikuPan_IsLightingDisabled();
+
+    if (render_normals != last_render_normals)
+    {
+        MikuPan_SetUniform1iToAllShaders(render_normals, "renderNormals");
+        last_render_normals = render_normals;
+    }
+    if (color_scale != last_color_scale)
+    {
+        MikuPan_SetUniform1fToAllShaders(color_scale, "uColorScale");
+        last_color_scale = color_scale;
+    }
+    if (normal_length != last_normal_length)
+    {
+        MikuPan_SetUniform1fToAllShaders(normal_length, "uNormalLength");
+        last_normal_length = normal_length;
+    }
+    if (disable_lighting != last_disable_lighting)
+    {
+        MikuPan_SetUniform1iToAllShaders(disable_lighting, "disableLighting");
+        last_disable_lighting = disable_lighting;
+    }
+}
+
+/// Driver-reported max anisotropy. Cached lazily on first texture creation —
+/// the value is fixed for the GL context, so re-querying for every texture
+/// (the original code path) is pure overhead. Negative sentinel = uninitialized.
+static GLfloat g_max_aniso = -1.0f;
+
+static GLfloat MikuPan_GetMaxAniso(void)
+{
+    if (g_max_aniso < 0.0f)
+    {
+        glad_glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &g_max_aniso);
+    }
+    return g_max_aniso;
 }
 
 MikuPan_TextureInfo *MikuPan_CreateGLTexture(sceGsTex0 *tex0)
 {
     GLuint tex = 0;
-    GLfloat maxAniso = 0.0f;
 
     int width = 1 << tex0->TW;
     int height = 1 << tex0->TH;
@@ -504,19 +1015,18 @@ MikuPan_TextureInfo *MikuPan_CreateGLTexture(sceGsTex0 *tex0)
     }
 
     glad_glGenTextures(1, &tex);
-    glad_glBindTexture(GL_TEXTURE_2D, tex);
+    MikuPan_BindTexture2DCached(tex);
     glad_glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glad_glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8,
                       width, height, 0, GL_RGBA,
                       GL_UNSIGNED_BYTE, pixels);
-    glad_glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &maxAniso);
-    glad_glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, maxAniso);
+    glad_glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY_EXT, MikuPan_GetMaxAniso());
     glad_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glad_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR_MIPMAP_LINEAR);
     glad_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glad_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
     glad_glGenerateMipmap(GL_TEXTURE_2D);
-    glad_glBindTexture(GL_TEXTURE_2D, 0);
+    MikuPan_BindTexture2DCached(0);
 
     MikuPan_TextureInfo *texture_info = malloc(sizeof(MikuPan_TextureInfo));
     texture_info->height = height;
@@ -534,19 +1044,37 @@ MikuPan_TextureInfo *MikuPan_CreateGLTexture(sceGsTex0 *tex0)
 
 void MikuPan_SetTexture(sceGsTex0 *tex0)
 {
-    uint64_t hash = MikuPan_GetTextureHash(tex0);
-
-    MikuPan_TextureInfo *texture_info = MikuPan_GetTextureInfo(hash);
+    // L1: lookup by raw tex0 register value. Avoids the per-call XXH3 over
+    // GS memory (which can run into many MB/frame for textured scenes).
+    uint64_t tex0_value = *(uint64_t *)tex0;
+    MikuPan_TextureInfo *texture_info = MikuPan_LookupTextureByTex0(tex0_value);
 
     if (texture_info == NULL)
     {
-        texture_info = MikuPan_CreateGLTexture(tex0);
+        g_tex_l1_misses_curr++;
+        // L2: hash-based lookup. Same texture data may be referenced by
+        // different tex0 values; the GS-memory hash unifies them.
+        uint64_t hash = MikuPan_GetTextureHash(tex0);
+        texture_info = MikuPan_GetTextureInfo(hash);
+
+        if (texture_info == NULL)
+        {
+            texture_info = MikuPan_CreateGLTexture(tex0);
+        }
+
+        if (texture_info != NULL)
+        {
+            MikuPan_RegisterTextureForTex0(tex0_value, tex0, texture_info);
+        }
+    }
+    else
+    {
+        g_tex_l1_hits_curr++;
     }
 
     if (texture_info != NULL)
     {
-        glad_glActiveTexture(GL_TEXTURE0);
-        glad_glBindTexture(GL_TEXTURE_2D, texture_info->id);
+        MikuPan_BindTexture2DCached(texture_info->id);
     }
 }
 
@@ -573,6 +1101,7 @@ void MikuPan_Render2DMessage(DISP_SPRT *sprite)
 void MikuPan_RenderLine(float x1, float y1, float x2, float y2, u_char r,
                         u_char g, u_char b, u_char a)
 {
+    MikuPan_FlushTexturedSpriteBatch();
     float sx1 = (300.0f + x1) / PS2_RESOLUTION_X_FLOAT;
     float sy1 = (200.0f + y1) / PS2_RESOLUTION_Y_FLOAT;
     float sx2 = (300.0f + x2) / PS2_RESOLUTION_X_FLOAT;
@@ -599,8 +1128,8 @@ void MikuPan_RenderLine(float x1, float y1, float x2, float y2, u_char r,
     MikuPan_SetCurrentShaderProgram(UNTEXTURED_COLOURED_SPRITE_SHADER);
     MikuPan_PipelineInfo* pipeline = MikuPan_GetPipelineInfo(COLOUR4_POSITION4);
 
-    glad_glBindVertexArray(pipeline->vao);
-    glad_glBindBuffer(GL_ARRAY_BUFFER, pipeline->buffers[0].id);
+    MikuPan_BindVAO(pipeline->vao);
+    MikuPan_BindBufferCached(GL_ARRAY_BUFFER, pipeline->buffers[0].id);
 
     glad_glBufferSubData(
         GL_ARRAY_BUFFER, pipeline->buffers[0].attributes[0].offset,
@@ -618,6 +1147,8 @@ void MikuPan_RenderBoundingBox(sceVu0FVECTOR *vertices)
         return;
     }
 
+    MikuPan_FlushTexturedSpriteBatch();
+
     float bb_color[4] = {0.0f, 1.0f, 0.0f, 1.0f};
 
     MikuPan_SetCurrentShaderProgram(BOUNDING_BOX_SHADER);
@@ -626,8 +1157,8 @@ void MikuPan_RenderBoundingBox(sceVu0FVECTOR *vertices)
 
     MikuPan_SetUniform4fvToCurrentShader(bb_color, "uColor");
 
-    glad_glBindVertexArray(pipeline->vao);
-    glad_glBindBuffer(GL_ARRAY_BUFFER, pipeline->buffers[0].id);
+    MikuPan_BindVAO(pipeline->vao);
+    MikuPan_BindBufferCached(GL_ARRAY_BUFFER, pipeline->buffers[0].id);
     glad_glBufferSubData(
         GL_ARRAY_BUFFER,
         pipeline->buffers[0].attributes[0].offset,
@@ -640,10 +1171,46 @@ void MikuPan_RenderBoundingBox(sceVu0FVECTOR *vertices)
     }
 }
 
+/// Submit any pending textured-sprite batch as a single triangle-list draw.
+/// Callers must invoke this before any other 2D draw (untextured sprite,
+/// 3D-style sprite, line, bounding box) and before ImGui rendering.
+void MikuPan_FlushTexturedSpriteBatch(void)
+{
+    MIKUPAN_PERF_SCOPE(PERF_SECT_BATCH_FLUSH);
+
+    if (!g_textured_sprite_batch.active || g_textured_sprite_batch.sprite_count == 0)
+    {
+        g_textured_sprite_batch.active = 0;
+        g_textured_sprite_batch.sprite_count = 0;
+        return;
+    }
+
+    MikuPan_SetCurrentShaderProgram(SPRITE_SHADER);
+    MikuPan_PipelineInfo *pipeline = MikuPan_GetPipelineInfo(UV4_COLOUR4_POSITION4);
+    MikuPan_BindVAO(pipeline->vao);
+    MikuPan_SetRenderState2D();
+
+    MikuPan_BindTexture2DCached(g_textured_sprite_batch.texture_id);
+
+    int n_verts = g_textured_sprite_batch.sprite_count * 6;
+    MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[0].id,
+        (GLsizeiptr)(n_verts * 12 * sizeof(float)),
+        g_textured_sprite_cpu_buf);
+
+    int mode = MikuPan_IsWireframeRendering() ? GL_LINES : GL_TRIANGLES;
+    MikuPan_TimedDrawArrays(mode, 0, n_verts);
+    draw_calls++;
+
+    g_textured_sprite_batch.active = 0;
+    g_textured_sprite_batch.sprite_count = 0;
+}
+
 void MikuPan_RenderSprite(MikuPan_Rect src, MikuPan_Rect dst, u_char r,
                           u_char g, u_char b, u_char a,
                           MikuPan_TextureInfo *texture_info)
 {
+    MIKUPAN_PERF_SCOPE(PERF_SECT_SPRITE_RENDER);
+
     if (texture_info == NULL)
     {
         info_log("Cannot render texture due texture_info being NULL");
@@ -651,118 +1218,113 @@ void MikuPan_RenderSprite(MikuPan_Rect src, MikuPan_Rect dst, u_char r,
     }
 
     float ndc[4] = {0};
-
     MikuPan_ConvertPs2ScreenCoordToNDCMaintainAspectRatio(ndc, (float)MikuPan_GetWindowWidth(), (float)MikuPan_GetWindowHeight(), dst.x, dst.y);
     MikuPan_ConvertPs2ScreenCoordToNDCMaintainAspectRatio(&ndc[2], (float)MikuPan_GetWindowWidth(), (float)MikuPan_GetWindowHeight(), dst.x + src.w, dst.y + src.h);
 
-    // Container size (PS2 texture memory size)
     float texW = (float) (texture_info->width);
     float texH = (float) (texture_info->height);
 
-    // Half-texel offsets (PS2-style snapping)
     float halfU = 0.5f / texW;
     float halfV = 0.5f / texH;
 
-    // Normalize sprite rectangle (pixel-accurate)
     float u0 = (src.x / texW) + halfU;
     float v0 = (src.y / texH) + halfV;
     float u1 = ((src.x + dst.w) / texW) - halfU;
     float v1 = ((src.y + dst.h) / texH) - halfV;
 
-    float color[4] = {
-        MikuPan_ConvertScaleColor(r),
-        MikuPan_ConvertScaleColor(g),
-        MikuPan_ConvertScaleColor(b),
-        MikuPan_ConvertScaleColor(a)
-    };
+    const float c0 = MikuPan_ConvertScaleColor(r);
+    const float c1 = MikuPan_ConvertScaleColor(g);
+    const float c2 = MikuPan_ConvertScaleColor(b);
+    const float c3 = MikuPan_ConvertScaleColor(a);
 
-    float vertices[4][12] =
+    // Flush if the texture changes or batch is full.
+    if (g_textured_sprite_batch.active &&
+        (g_textured_sprite_batch.texture_id != texture_info->id ||
+         g_textured_sprite_batch.sprite_count >= TEXTURED_SPRITE_BATCH_MAX))
     {
-        {
-            u0, v0, 0.0f, 0.0f,
-            color[0], color[1], color[2], color[3],
-            ndc[0], ndc[1], 0.0f, 1.0f
-        },
-        {
-            u1, v0, 0.0f, 0.0f,
-            color[0], color[1], color[2], color[3],
-            ndc[2], ndc[1], 0.0f, 1.0f
-        },
-        {
-            u0, v1, 0.0f, 0.0f,
-            color[0], color[1], color[2], color[3],
-            ndc[0], ndc[3], 0.0f, 1.0f
-        },
-        {
-            u1, v1, 0.0f, 0.0f,
-            color[0], color[1], color[2], color[3],
-            ndc[2], ndc[3], 0.0f, 1.0f
-        }
-    };
+        MikuPan_FlushTexturedSpriteBatch();
+    }
 
-    MikuPan_SetCurrentShaderProgram(SPRITE_SHADER);
-    MikuPan_PipelineInfo* pipeline = MikuPan_GetPipelineInfo(UV4_COLOUR4_POSITION4);
+    if (!g_textured_sprite_batch.active)
+    {
+        g_textured_sprite_batch.active = 1;
+        g_textured_sprite_batch.texture_id = texture_info->id;
+        g_textured_sprite_batch.sprite_count = 0;
+    }
 
-    MikuPan_SetRenderState2D();
+    // Append 6 vertices (two triangles forming the quad: TL, BL, TR, TR, BL, BR).
+    float *vp = g_textured_sprite_cpu_buf + g_textured_sprite_batch.sprite_count * 6 * 12;
 
-    glad_glBindVertexArray(pipeline->vao);
-    glad_glBindBuffer(GL_ARRAY_BUFFER, pipeline->buffers[0].id);
-    glad_glBufferSubData(
-        GL_ARRAY_BUFFER,
-        pipeline->buffers[0].attributes[0].offset,
-        pipeline->buffers[0].buffer_length,
-        vertices);
+    #define WRITE_VERT(idx, vu, vv, vx, vy) do { \
+        float *p = vp + (idx) * 12; \
+        p[0] = (vu); p[1] = (vv); p[2] = 0.0f; p[3] = 0.0f; \
+        p[4] = c0;   p[5] = c1;   p[6] = c2;   p[7] = c3;   \
+        p[8] = (vx); p[9] = (vy); p[10] = 0.0f; p[11] = 1.0f; \
+    } while (0)
 
-    glad_glActiveTexture(GL_TEXTURE0);
-    glad_glBindTexture(GL_TEXTURE_2D, texture_info->id);
-    MikuPan_SetRenderState2D();
+    WRITE_VERT(0, u0, v0, ndc[0], ndc[1]);  // TL
+    WRITE_VERT(1, u0, v1, ndc[0], ndc[3]);  // BL
+    WRITE_VERT(2, u1, v0, ndc[2], ndc[1]);  // TR
+    WRITE_VERT(3, u1, v0, ndc[2], ndc[1]);  // TR
+    WRITE_VERT(4, u0, v1, ndc[0], ndc[3]);  // BL
+    WRITE_VERT(5, u1, v1, ndc[2], ndc[3]);  // BR
 
-    glad_glDrawArrays(MikuPan_GetRenderMode(), 0, 4);
+    #undef WRITE_VERT
+
+    g_textured_sprite_batch.sprite_count++;
 }
 
 void MikuPan_RenderSprite2D(sceGsTex0 *tex, float *buffer)
 {
+    MIKUPAN_PERF_SCOPE(PERF_SECT_SPRITE_RENDER);
+    MikuPan_FlushTexturedSpriteBatch();
     MikuPan_SetCurrentShaderProgram(SPRITE_SHADER);
     MikuPan_PipelineInfo* pipeline = MikuPan_GetPipelineInfo(UV4_COLOUR4_POSITION4);
 
-    glad_glBindVertexArray(pipeline->vao);
+    MikuPan_BindVAO(pipeline->vao);
     MikuPan_SetTexture(tex);
 
     MikuPan_SetRenderState2D();
 
-    glad_glBindBuffer(GL_ARRAY_BUFFER, pipeline->buffers[0].id);
-    glad_glBufferSubData(GL_ARRAY_BUFFER, 0, pipeline->buffers[0].buffer_length, buffer);
+    // Caller passes a 4-vert quad worth of data (UV4_COLOUR4_POSITION4 layout).
+    MikuPan_BindBufferCached(GL_ARRAY_BUFFER, pipeline->buffers[0].id);
+    glad_glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)sizeof(float[4][12]), buffer);
 
     glad_glDrawArrays(MikuPan_GetRenderMode(), 0, 4);
 }
 
 void MikuPan_RenderUntexturedSprite(float *buffer)
 {
+    MIKUPAN_PERF_SCOPE(PERF_SECT_SPRITE_RENDER);
+    MikuPan_FlushTexturedSpriteBatch();
     MikuPan_SetCurrentShaderProgram(UNTEXTURED_COLOURED_SPRITE_SHADER);
     MikuPan_PipelineInfo* pipeline = MikuPan_GetPipelineInfo(COLOUR4_POSITION4);
 
-    glad_glBindVertexArray(pipeline->vao);
+    MikuPan_BindVAO(pipeline->vao);
 
     MikuPan_SetRenderState2D();
 
-    glad_glBindBuffer(GL_ARRAY_BUFFER, pipeline->buffers[0].id);
-    glad_glBufferSubData(GL_ARRAY_BUFFER, 0, pipeline->buffers[0].buffer_length, buffer);
+    // Caller passes a 4-vert quad worth of data (COLOUR4_POSITION4 layout: 8 floats / vert).
+    MikuPan_BindBufferCached(GL_ARRAY_BUFFER, pipeline->buffers[0].id);
+    glad_glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)sizeof(float[4][8]), buffer);
 
     glad_glDrawArrays(MikuPan_GetRenderMode(), 0, 4);
 }
 
 void MikuPan_RenderSprite3D(sceGsTex0 *tex, float* buffer)
 {
+    MIKUPAN_PERF_SCOPE(PERF_SECT_SPRITE_RENDER);
+    MikuPan_FlushTexturedSpriteBatch();
     MikuPan_SetCurrentShaderProgram(SPRITE_SHADER);
     MikuPan_PipelineInfo* pipeline = MikuPan_GetPipelineInfo(UV4_COLOUR4_POSITION4);
 
-    glad_glBindVertexArray(pipeline->vao);
+    MikuPan_BindVAO(pipeline->vao);
     MikuPan_SetTexture(tex);
 
     MikuPan_SetRenderStateSprite3D();
 
-    glad_glBindBuffer(GL_ARRAY_BUFFER, pipeline->buffers[0].id);
-    glad_glBufferSubData(GL_ARRAY_BUFFER, 0, pipeline->buffers[0].buffer_length, buffer);
+    MikuPan_BindBufferCached(GL_ARRAY_BUFFER, pipeline->buffers[0].id);
+    glad_glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)sizeof(float[4][12]), buffer);
 
     glad_glDrawArrays(MikuPan_GetRenderMode(), 0, 4);
 }
@@ -795,11 +1357,68 @@ void MikuPan_SetWorldClipView()
     MikuPan_SetModelTransformMatrix(WorldClipView);
 }
 
+/// CPU-side cache of the last model matrix passed to the engine. Used to
+/// recompute derived matrices without re-reading from the uniform.
+static mat4 g_cached_model_matrix;
+static int  g_has_cached_model = 0;
+
+static void MikuPan_RecomputeAndUploadDerived(void)
+{
+    mat4 mv, mvp, vp;
+    mat3 mv3, view3, normalMatrix3, viewNormalMatrix3;
+
+    // mv = view * model
+    if (g_has_cached_model)
+        glm_mat4_mul(WorldView, g_cached_model_matrix, mv);
+    else
+        glm_mat4_copy(WorldView, mv);
+
+    // mvp = projection * mv
+    glm_mat4_mul(projection, mv, mvp);
+
+    // vp = projection * view (used by shaders that don't apply model — e.g. 0xA)
+    glm_mat4_mul(projection, WorldView, vp);
+
+    // normalMatrix3 = transpose(inverse(mv_3x3))
+    glm_mat4_pick3(mv, mv3);
+    glm_mat3_inv(mv3, normalMatrix3);
+    glm_mat3_transpose(normalMatrix3);
+
+    // viewNormalMatrix3 = transpose(inverse(view_3x3))
+    glm_mat4_pick3(WorldView, view3);
+    glm_mat3_inv(view3, viewNormalMatrix3);
+    glm_mat3_transpose(viewNormalMatrix3);
+
+    MikuPan_SetUniformMatrix4fvToAllShaders((float*)mvp,               "mvp");
+    MikuPan_SetUniformMatrix4fvToAllShaders((float*)mv,                "modelView");
+    MikuPan_SetUniformMatrix4fvToAllShaders((float*)vp,                "viewProj");
+    MikuPan_SetUniformMatrix3fvToAllShaders((float*)normalMatrix3,     "normalMatrix");
+    MikuPan_SetUniformMatrix3fvToAllShaders((float*)viewNormalMatrix3, "viewNormalMatrix");
+}
+
 void MikuPan_SetModelTransformMatrix(sceVu0FVECTOR *m)
 {
+    // Game code often calls this redundantly (re-setting the transform between
+    // every render even when consecutive objects share a transform). Cache the
+    // last matrix and short-circuit if it's identical: skips the flush, the
+    // multi-shader uniform broadcast, AND the resulting draw-call boundary,
+    // which means consecutive same-transform meshes batch into one draw.
+    if (g_has_cached_model && memcmp(g_cached_model_matrix, m, sizeof(g_cached_model_matrix)) == 0)
+    {
+        return;
+    }
+
+    memcpy(g_cached_model_matrix, m, sizeof(g_cached_model_matrix));
+    g_has_cached_model = 1;
+
+    // Real change — flush the previous batch with the OLD matrix, then update.
+    MikuPan_FlushMeshBatch();
     state_changes++;
-    //MikuPan_SetupAmbientLighting();
+
+    // Keep the legacy "model" uniform updated for any shader that still uses it,
+    // and push the precomputed derived matrices that the new shaders consume.
     MikuPan_SetUniformMatrix4fvToAllShaders((float*)m, "model");
+    MikuPan_RecomputeAndUploadDerived();
 }
 
 void MikuPan_SetFontTexture(int fnt)
@@ -844,6 +1463,11 @@ void MikuPan_Shutdown()
 
 void MikuPan_SetupCamera(MikuPan_Camera *mikupan_camera)
 {
+    // The view + projection uniforms (and derived mvp/modelView/etc.) are
+    // about to change. Drain anything queued under the OLD camera so it
+    // renders with the right matrices.
+    MikuPan_FlushMeshBatch();
+
     // View -> camera->wv
     vec3 center = {0};
     glm_vec3_add(mikupan_camera->p, mikupan_camera->zd, center);
@@ -886,6 +1510,9 @@ void MikuPan_SetupCamera(MikuPan_Camera *mikupan_camera)
     MikuPan_SetUniformMatrix4fvToAllShaders((float*)WorldView, "view");
     MikuPan_SetUniformMatrix4fvToAllShaders((float*)projection, "projection");
 
+    // View / projection just changed — refresh the precomputed mvp/modelView/etc.
+    MikuPan_RecomputeAndUploadDerived();
+
     nearz = mikupan_camera->nearz;
     float gs_width  = 4096.0f;
     float gs_height = 4096.0f;
@@ -913,12 +1540,19 @@ void MikuPan_SetupCamera(MikuPan_Camera *mikupan_camera)
 
 void MikuPan_Setup3D()
 {
+    // Called right after a mirror render returns, to swing cull mode back to
+    // back-face. Drain the queue first so the just-queued reflection meshes
+    // still render with their RS_3D_MIRROR (cull-front) snapshot before the
+    // mode flips.
+    MikuPan_FlushMeshBatch();
+
     MikuPan_SetRenderState3D();
     glad_glCullFace(GL_BACK);
 }
 
 void MikuPan_SetupMirrorMtx(float* mtx)
 {
+    MikuPan_FlushMeshBatch(); // view uniform changes — flush previous batch
     MikuPan_SetRenderState3DMirror();
 
     mat4 out = {0};
@@ -929,10 +1563,102 @@ void MikuPan_SetupMirrorMtx(float* mtx)
     glm_mat4_mul(projection, out, WorldClipView);
 
     MikuPan_SetUniformMatrix4fvToAllShaders((float*)out, "view");
+
+    // Recompute derived matrices using the mirrored view rather than the
+    // current WorldView. Treat `out` as the active view for this pass.
+    {
+        mat4 mv, mvp, vp;
+        mat3 mv3, view3, normalMatrix3, viewNormalMatrix3;
+
+        if (g_has_cached_model)
+            glm_mat4_mul(out, g_cached_model_matrix, mv);
+        else
+            glm_mat4_copy(out, mv);
+
+        glm_mat4_mul(projection, mv, mvp);
+        glm_mat4_mul(projection, out, vp);
+
+        glm_mat4_pick3(mv, mv3);
+        glm_mat3_inv(mv3, normalMatrix3);
+        glm_mat3_transpose(normalMatrix3);
+
+        glm_mat4_pick3(out, view3);
+        glm_mat3_inv(view3, viewNormalMatrix3);
+        glm_mat3_transpose(viewNormalMatrix3);
+
+        MikuPan_SetUniformMatrix4fvToAllShaders((float*)mvp,               "mvp");
+        MikuPan_SetUniformMatrix4fvToAllShaders((float*)mv,                "modelView");
+        MikuPan_SetUniformMatrix4fvToAllShaders((float*)vp,                "viewProj");
+        MikuPan_SetUniformMatrix3fvToAllShaders((float*)normalMatrix3,     "normalMatrix");
+        MikuPan_SetUniformMatrix3fvToAllShaders((float*)viewNormalMatrix3, "viewNormalMatrix");
+    }
+}
+
+/// Public flush-batch entry point. Kept so existing call sites in this file
+/// (state-change boundaries: material change, lighting change, view/mirror
+/// matrix change, end-of-frame) and in mikupan_texture_manager.cpp keep
+/// linking. The renderer no longer batches mesh draws across calls — each
+/// MikuPan_RenderMeshType* uploads + draws immediately — so there is no
+/// pending state for this function to flush.
+void MikuPan_FlushMeshBatch(void)
+{
+}
+
+/// Returns the per-mesh-type lighting mode for the GLSL frag shader.
+///
+/// Currently returns 0 (full dynamic — parallel + ambient + point + spot)
+/// for every mesh type. The two modes were kept separate to allow a future
+/// "skip dynamic point/spot for static-baked vertex colour" path, but the
+/// PS2 itself does NOT actually skip — see sgsuvp2.vsm::DP2_PROLOGUE which
+/// dispatches CalcSpotPoint at draw time even for the preset (0x10/0x12/
+/// 0x32) variants. The PS2 just accepts double-counting against any
+/// scene-load static lights baked into pVMCD->avColor by SgPreRender.
+///
+/// And in MikuPan that double-counting is rarely visible: SgPreRender is
+/// only invoked at scene load / room transitions / black-and-white toggle
+/// (gra3d.c, scene.c, load3d.c), never per frame. Flashlight and other
+/// runtime-added lights are NEVER baked into vertex colours during play —
+/// the only way they reach pixels is through this dynamic shader path.
+/// Skipping them for 0x10/0x12/0x32 (rooms / furniture) hid the flashlight
+/// entirely, which is what we hit reverting from the per-type gate.
+///
+/// If MikuPan later starts re-baking per frame (matching the original PS2
+/// engine cadence more closely), this should switch back to:
+///     if (mesh_type == 0x10 || 0x12 || 0x32) return 1;
+///     return 0;
+/// — at which point the shader will correctly skip point/spot for those
+/// types and rely on the freshly-baked vertex colour.
+static inline int MikuPan_MeshLightingModeFor(unsigned char mesh_type)
+{
+    (void)mesh_type;
+    return 0;
+}
+
+/// Push the lighting-mode uniform into the currently-bound shader program.
+/// Cheap on a no-op (glUniform1i is fast and we cache the location), so we
+/// don't try to dedup against the previous value — it changes only on
+/// mesh-type boundaries, which already trigger a batch flush + state change.
+static inline void MikuPan_ApplyMeshLightingMode(unsigned char mesh_type)
+{
+    MikuPan_SetUniform1iToCurrentShader(
+        MikuPan_MeshLightingModeFor(mesh_type), "uMeshLightingMode");
+}
+
+/// Build position/normal/UV/color/index data for one 0x32 mesh into the global
+/// temp buffers, then upload everything to dedicated VBOs and capture them into
+/// a fresh VAO. This runs once per unique mesh asset.
+/// Public entry point for clearing any cached static mesh state. The renderer
+/// no longer caches per-mesh GL objects (each MikuPan_RenderMeshType* uploads
+/// + draws immediately), so this is a no-op. Kept for the
+/// mikupan_texture_manager.cpp call site at level transitions.
+void MikuPan_FlushStaticMeshCache(void)
+{
 }
 
 void MikuPan_RenderMeshType0x32(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPUHead)
 {
+    MIKUPAN_PERF_SCOPE(PERF_SECT_MESH_RENDER);
+
     char mesh_type = GET_MESH_TYPE(pPUHead);
 
     if ((mesh_type != 0x12 && mesh_type != 0x10 && mesh_type != 0x32) ||
@@ -942,48 +1668,71 @@ void MikuPan_RenderMeshType0x32(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPU
         return;
     }
 
-    MikuPan_SetCurrentShaderProgram(MESH_0x12_SHADER);
-    MikuPan_PipelineInfo* pipeline = MikuPan_GetPipelineInfo(POSITION3_NORMAL3_UV2);
-
-    SGDPROCUNITDATA *pVUVNData = (SGDPROCUNITDATA *) &pVUVN[1];
     SGDPROCUNITDATA *pProcData = (SGDPROCUNITDATA *) &pPUHead[1];
-    SGDVUMESHPOINTNUM *pMeshInfo = (SGDVUMESHPOINTNUM *) &pPUHead[4];
+    sceGsTex0 *mesh_tex_reg = (sceGsTex0 *) ((int64_t) pProcData + 0x28);
+    SGDPROCUNITDATA *pVUVNData = (SGDPROCUNITDATA *) &pVUVN[1];
     SGDVUMESHSTDATA *sgdMeshData = (SGDVUMESHSTDATA *)((int64_t) pProcData + (pProcData->VUMeshData_Preset.sOffsetToST - 1) * 4);
     _SGDVUMESHCOLORDATA *pVMCD = (_SGDVUMESHCOLORDATA*) (&pPUHead->pNext + pProcData->VUMeshData_Preset.sOffsetToPrim);
 
-    glad_glBindVertexArray(pipeline->vao);
+    // 0x32 uses an SoA pipeline so positions and normals can be written directly
+    // (memcpy + tight repeated fill) instead of being interleaved per-vertex.
+    // 0x12/0x10 keep using the AoS pipeline since their source data is already
+    // interleaved in the matching layout.
+    int desired_pipeline = (mesh_type == 0x32) ? POSITION3_NORMAL3_UV2_SOA
+                                               : POSITION3_NORMAL3_UV2;
+    MikuPan_PipelineInfo *pipeline = MikuPan_GetPipelineInfo(desired_pipeline);
 
-    sceGsTex0 *mesh_tex_reg = (sceGsTex0 *) ((int64_t) pProcData + 0x28);
+    // ── State setup (immediate-mode: each call sets its own state and draws). ──
+    MikuPan_FlushTexturedSpriteBatch();
+    Uint64 _sc_t0 = SDL_GetPerformanceCounter();
+    Uint64 _t = MikuPan_PerfBegin();
+    MikuPan_SetCurrentShaderProgram(MESH_0x12_SHADER);
+    MikuPan_ApplyMeshLightingMode((unsigned char)mesh_type);
+    MikuPan_PerfEnd(PERF_SECT_SC_SHADER, _t);
+    _t = MikuPan_PerfBegin();
+    MikuPan_BindVAO(pipeline->vao);
+    MikuPan_PerfEnd(PERF_SECT_SC_VAO, _t);
+    _t = MikuPan_PerfBegin();
     MikuPan_SetTexture(mesh_tex_reg);
+    MikuPan_PerfEnd(PERF_SECT_SC_TEXTURE, _t);
+    _t = MikuPan_PerfBegin();
     MikuPan_SetRenderState3D();
+    MikuPan_PerfEnd(PERF_SECT_SC_RS3D, _t);
+    Uint64 _sc_t1 = SDL_GetPerformanceCounter();
+    g_perf_section_ms_curr[PERF_SECT_STATE_CHANGE] +=
+        (double)(_sc_t1 - _sc_t0) * 1000.0 / (double)SDL_GetPerformanceFrequency();
 
+    // ── Vertex source ──
     GLfloat *vertices = NULL;
-    GLfloat *normals = NULL;
-
     if (mesh_type == 0x32)
     {
-        vertices =
-            (GLfloat *) (pVUVNData->VUVNData_Preset.aui
-                         + (pVUVN->VUVNDesc.sNumNormal) * 3
-                         + 10);
+        vertices = (GLfloat *)(pVUVNData->VUVNData_Preset.aui
+                               + (pVUVN->VUVNDesc.sNumNormal) * 3 + 10);
+        // SoA path: positions are contiguous in the source array — bulk memcpy
+        // into the staging buffer. Normals are per-submesh and get expanded
+        // per-vertex below in the inner loop.
+        memcpy(g_mesh_buffers_0x32.positions, vertices,
+               (size_t)pVUVN->VUVNDesc.sNumVertex * 3 * sizeof(float));
     }
-    else if (mesh_type == 0x12 || mesh_type == 0x10)
+    else /* 0x12 / 0x10 */
     {
-        vertices = ((float *) &(((int *) pVUVN)[14]));
+        vertices = (float *)&(((int *)pVUVN)[14]);
+        // AoS source data is already interleaved pos+norm in the layout the
+        // POSITION3_NORMAL3_UV2 pipeline expects — stream it straight to the
+        // GPU buffer.
+        size_t byte_size = pVUVN->VUVNDesc.sNumVertex * pipeline->buffers[0].attributes[0].stride;
+        MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[0].id,
+                                 (GLsizeiptr)byte_size, vertices);
     }
 
-    size_t byte_size = pVUVN->VUVNDesc.sNumVertex * pipeline->buffers[0].attributes[0].stride;
+    // ── Build CPU staging buffers (UVs, colors, normals (SoA), indices) ──
+    const int uv_buf_idx    = (mesh_type == 0x32) ? 2 : 1;
+    const int color_buf_idx = (mesh_type == 0x32) ? 3 : 2;
+    const int uv_stride    = pipeline->buffers[uv_buf_idx].attributes[0].stride;
+    const int color_stride = pipeline->buffers[color_buf_idx].attributes[0].stride;
 
     int vertex_offset = 0;
-
-    MikuPan_SetTriangleStripRestart();
-
-    if (GET_NUM_MESH(pPUHead) * pVUVN->VUVNDesc.sNumVertex * 4 > (1024 * 1024))
-    {
-        info_log("OVERFLOW!");
-    }
-
-    SGDMESHVERTEXDATA_TYPE2* buf = (SGDMESHVERTEXDATA_TYPE2*)temp_render_buffer;
+    int index_write_offset = 0;
 
     for (int i = 0; i < GET_NUM_MESH(pPUHead); i++)
     {
@@ -992,37 +1741,29 @@ void MikuPan_RenderMeshType0x32(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPU
 
         MikuPan_FixUV((float*)&sgdMeshData->astData, vertex_count);
         MikuPan_FixColors((float*)&pVMCD->avColor, vertex_count);
-        MikuPan_SetTriangleIndex(vertex_index, vertex_count, vertex_offset, i);
+        index_write_offset += MikuPan_SetTriangleIndex(
+            g_mesh_buffers_0x32.indices, vertex_count, vertex_offset, index_write_offset);
 
-        glad_glBindBuffer(GL_ARRAY_BUFFER, pipeline->buffers[1].id);
-        glad_glBufferSubData(
-            GL_ARRAY_BUFFER,
-            vertex_offset * pipeline->buffers[1].attributes[0].stride,
-            vertex_count * pipeline->buffers[1].attributes[0].stride,
-            sgdMeshData->astData);
+        memcpy((char *)g_mesh_buffers_0x32.uvs + vertex_offset * uv_stride,
+               sgdMeshData->astData,
+               (size_t)vertex_count * uv_stride);
 
-        glad_glBindBuffer(GL_ARRAY_BUFFER, pipeline->buffers[2].id);
-        glad_glBufferSubData(
-            GL_ARRAY_BUFFER,
-            vertex_offset * pipeline->buffers[2].attributes[0].stride,
-            vertex_count * pipeline->buffers[2].attributes[0].stride,
-            pVMCD->avColor);
+        memcpy((char *)g_mesh_buffers_0x32.colors + vertex_offset * color_stride,
+               pVMCD->avColor,
+               (size_t)vertex_count * color_stride);
 
         if (mesh_type == 0x32)
         {
-            normals = (GLfloat *) (pVUVNData->VUVNData_Preset.aui
-                               + (i * 3)
-                               + 10);
-
+            // Per-submesh normal: tight contiguous fill (compiler auto-vectorizes).
+            const GLfloat *normals =
+                (GLfloat *)(pVUVNData->VUVNData_Preset.aui + (i * 3) + 10);
+            const float n0 = normals[0], n1 = normals[1], n2 = normals[2];
+            float *ndst = g_mesh_buffers_0x32.normals + vertex_offset * 3;
             for (int j = 0; j < vertex_count; j++)
             {
-                buf[vertex_offset + j].vVertex[0] = vertices[(vertex_offset + j) * 3 + 0];
-                buf[vertex_offset + j].vVertex[1] = vertices[(vertex_offset + j) * 3 + 1];
-                buf[vertex_offset + j].vVertex[2] = vertices[(vertex_offset + j) * 3 + 2];
-
-                buf[vertex_offset + j].vNormal[0] = normals[0];
-                buf[vertex_offset + j].vNormal[1] = normals[1];
-                buf[vertex_offset + j].vNormal[2] = normals[2];
+                ndst[j * 3 + 0] = n0;
+                ndst[j * 3 + 1] = n1;
+                ndst[j * 3 + 2] = n2;
             }
         }
 
@@ -1031,32 +1772,52 @@ void MikuPan_RenderMeshType0x32(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPU
         pVMCD = (_SGDVUMESHCOLORDATA *) &pVMCD->avColor[vertex_count];
     }
 
-    glad_glBindBuffer(GL_ARRAY_BUFFER, pipeline->buffers[0].id);
-
-    if (mesh_type == 0x32)
+    // ── Upload staging to GPU ──
+    const int N = vertex_offset;
+    if (desired_pipeline == POSITION3_NORMAL3_UV2_SOA)
     {
-        glad_glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)byte_size, buf);
+        MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[0].id,
+            (GLsizeiptr)(N * pipeline->buffers[0].attributes[0].stride),
+            g_mesh_buffers_0x32.positions);
+        MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[1].id,
+            (GLsizeiptr)(N * pipeline->buffers[1].attributes[0].stride),
+            g_mesh_buffers_0x32.normals);
+        MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[2].id,
+            (GLsizeiptr)(N * pipeline->buffers[2].attributes[0].stride),
+            g_mesh_buffers_0x32.uvs);
+        MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[3].id,
+            (GLsizeiptr)(N * pipeline->buffers[3].attributes[0].stride),
+            g_mesh_buffers_0x32.colors);
     }
     else
     {
-        glad_glBufferSubData(GL_ARRAY_BUFFER, 0, (GLsizeiptr)byte_size, vertices);
+        // pos+norm AoS already uploaded above. UV and color come from staging.
+        MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[1].id,
+            (GLsizeiptr)(N * uv_stride), g_mesh_buffers_0x32.uvs);
+        MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[2].id,
+            (GLsizeiptr)(N * color_stride), g_mesh_buffers_0x32.colors);
     }
+    MikuPan_StreamUploadFull(GL_ELEMENT_ARRAY_BUFFER, pipeline->ibo,
+        (GLsizeiptr)(index_write_offset * (int)sizeof(u_int)),
+        g_mesh_buffers_0x32.indices);
 
-    int index_count_0x32 = pVUVN->VUVNDesc.sNumVertex + GET_NUM_MESH(pPUHead);
-    glad_glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, index_count_0x32 * (int)sizeof(u_int), vertex_index);
-
+    // ── Draw ──
     draw_calls++;
-    glad_glDrawElements(MikuPan_GetRenderMode(), index_count_0x32, GL_UNSIGNED_INT, (void*)0);
+    MikuPan_TimedDrawElements(MikuPan_GetMeshRenderMode(),
+                              index_write_offset, GL_UNSIGNED_INT, (void *)0);
 
     if (MikuPan_IsNormalsRendering())
     {
         MikuPan_SetCurrentShaderProgram(NORMALS_0x12_SHADER);
-        glad_glDrawElements(GL_TRIANGLE_STRIP, index_count_0x32, GL_UNSIGNED_INT, (void*)0);
+        MikuPan_TimedDrawElements(GL_TRIANGLES,
+                                  index_write_offset, GL_UNSIGNED_INT, (void *)0);
     }
 }
 
 void MikuPan_RenderMeshType0x82(unsigned int *pVUVN, unsigned int *pPUHead)
 {
+    MIKUPAN_PERF_SCOPE(PERF_SECT_MESH_RENDER);
+
     if (!MikuPan_IsMesh0x82Rendering())
     {
         return;
@@ -1068,120 +1829,136 @@ void MikuPan_RenderMeshType0x82(unsigned int *pVUVN, unsigned int *pPUHead)
     SGDVUMESHSTREGSET* sgdVuMeshStRegSet = (SGDVUMESHSTREGSET *) &pMeshInfo[GET_NUM_MESH(pPUHead)];
     SGDVUMESHSTDATA* sgdMeshData = (SGDVUMESHSTDATA *) &sgdVuMeshStRegSet->auiVifCode[3];
     VUVN_PRIM *v = ((VUVN_PRIM *) &((int*)pVUVN)[2]);
-
-    MikuPan_SetCurrentShaderProgram(MESH_0x12_SHADER);
-    MikuPan_PipelineInfo* pipeline = MikuPan_GetPipelineInfo(POSITION3_NORMAL3_UV2);
-    glad_glBindVertexArray(pipeline->vao);
-
     sceGsTex0 *mesh_tex_reg = (sceGsTex0 *) ((int64_t) pProcData + 0x18);
+
+    MikuPan_PipelineInfo *pipeline = MikuPan_GetPipelineInfo(POSITION3_NORMAL3_UV2);
+
+    // ── State setup ──
+    MikuPan_FlushTexturedSpriteBatch();
+    Uint64 _sc_t0 = SDL_GetPerformanceCounter();
+    Uint64 _t = MikuPan_PerfBegin();
+    MikuPan_SetCurrentShaderProgram(MESH_0x12_SHADER);
+    MikuPan_ApplyMeshLightingMode(0x82);
+    MikuPan_PerfEnd(PERF_SECT_SC_SHADER, _t);
+    _t = MikuPan_PerfBegin();
+    MikuPan_BindVAO(pipeline->vao);
+    MikuPan_PerfEnd(PERF_SECT_SC_VAO, _t);
+    _t = MikuPan_PerfBegin();
     MikuPan_SetTexture(mesh_tex_reg);
-
-    int vertex_offset = 0;
-
+    MikuPan_PerfEnd(PERF_SECT_SC_TEXTURE, _t);
+    _t = MikuPan_PerfBegin();
     MikuPan_SetRenderState3D();
+    MikuPan_PerfEnd(PERF_SECT_SC_RS3D, _t);
+    Uint64 _sc_t1 = SDL_GetPerformanceCounter();
+    g_perf_section_ms_curr[PERF_SECT_STATE_CHANGE] +=
+        (double)(_sc_t1 - _sc_t0) * 1000.0 / (double)SDL_GetPerformanceFrequency();
 
-    glad_glBindBuffer(GL_ARRAY_BUFFER, pipeline->buffers[0].id);
-    glad_glBufferSubData(GL_ARRAY_BUFFER,
-        0,
-        v->vnum * pipeline->buffers[0].attributes[0].stride,
+    // ── Pos+norm AoS uploaded directly from the source ──
+    MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[0].id,
+        (GLsizeiptr)(v->vnum * pipeline->buffers[0].attributes[0].stride),
         pVUVNData->avt2);
 
+    // ── Build UV / color (zeros for NVL) / index staging ──
+    int vertex_offset = 0;
+    int index_write_offset = 0;
     for (int i = 0; i < GET_NUM_MESH(pPUHead); i++)
     {
         int vertex_count = pMeshInfo[i].uiPointNum;
-
-        if (vertex_count == 0)
-        {
-            continue;
-        }
+        if (vertex_count == 0) continue;
 
         MikuPan_FixUV((float*)sgdMeshData->astData, vertex_count);
-        MikuPan_SetTriangleIndex(vertex_index, vertex_count, vertex_offset, i);
+        index_write_offset += MikuPan_SetTriangleIndex(
+            g_mesh_buffers_0x82.indices, vertex_count, vertex_offset, index_write_offset);
 
-        glad_glBindBuffer(GL_ARRAY_BUFFER, pipeline->buffers[1].id);
-        glad_glBufferSubData(
-            GL_ARRAY_BUFFER,
-            vertex_offset * pipeline->buffers[1].attributes[0].stride,
-            vertex_count * pipeline->buffers[1].attributes[0].stride,
-            sgdMeshData->astData);
+        memcpy((char *)g_mesh_buffers_0x82.uvs + vertex_offset * pipeline->buffers[1].attributes[0].stride,
+               sgdMeshData->astData,
+               (size_t)vertex_count * pipeline->buffers[1].attributes[0].stride);
 
-        glad_glBindBuffer(GL_ARRAY_BUFFER, pipeline->buffers[2].id);
-        glad_glBufferSubData(
-            GL_ARRAY_BUFFER,
-            vertex_offset * pipeline->buffers[2].attributes[0].stride,
-            vertex_count * pipeline->buffers[2].attributes[0].stride,
-            temp_empty_buffer);
+        memcpy((char *)g_mesh_buffers_0x82.colors + vertex_offset * pipeline->buffers[2].attributes[0].stride,
+               g_zero_floats,
+               (size_t)vertex_count * pipeline->buffers[2].attributes[0].stride);
 
         sgdMeshData = (SGDVUMESHSTDATA*) &sgdMeshData->astData[vertex_count];
         vertex_offset += vertex_count;
     }
 
-    int index_count_0x82 = v->nnum + GET_NUM_MESH(pPUHead);
-    glad_glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, index_count_0x82 * (int)sizeof(u_int), vertex_index);
+    // ── Upload UV + color + indices ──
+    const int N = vertex_offset;
+    MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[1].id,
+        (GLsizeiptr)(N * pipeline->buffers[1].attributes[0].stride),
+        g_mesh_buffers_0x82.uvs);
+    MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[2].id,
+        (GLsizeiptr)(N * pipeline->buffers[2].attributes[0].stride),
+        g_mesh_buffers_0x82.colors);
+    MikuPan_StreamUploadFull(GL_ELEMENT_ARRAY_BUFFER, pipeline->ibo,
+        (GLsizeiptr)(index_write_offset * (int)sizeof(u_int)),
+        g_mesh_buffers_0x82.indices);
 
+    // ── Draw ──
     draw_calls++;
-    glad_glDrawElements(MikuPan_GetRenderMode(), index_count_0x82, GL_UNSIGNED_INT, (void*)0);
+    MikuPan_TimedDrawElements(MikuPan_GetMeshRenderMode(),
+                              index_write_offset, GL_UNSIGNED_INT, (void *)0);
 
     if (MikuPan_IsNormalsRendering())
     {
         MikuPan_SetCurrentShaderProgram(NORMALS_0x12_SHADER);
-        glad_glDrawElements(GL_TRIANGLE_STRIP, index_count_0x82, GL_UNSIGNED_INT, (void*)0);
+        MikuPan_TimedDrawElements(GL_TRIANGLES,
+                                  index_write_offset, GL_UNSIGNED_INT, (void *)0);
     }
 }
 
 void MikuPan_RenderMeshType0x2(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPUHead, float* vertices)
 {
+    MIKUPAN_PERF_SCOPE(PERF_SECT_MESH_RENDER);
+
     if (!MikuPan_IsMesh0x2Rendering())
     {
         return;
     }
 
-    if (GET_MESH_TYPE(pPUHead) == 0x2)
-    {
-        MikuPan_SetCurrentShaderProgram(MESH_0x2_SHADER);
-    }
-    else if (GET_MESH_TYPE(pPUHead) == 0xA)
-    {
-        MikuPan_SetCurrentShaderProgram(MESH_0xA_SHADER);
-    }
-    else
-    {
-        return;
-    }
+    char mesh_type = GET_MESH_TYPE(pPUHead);
+    int shader;
+    if (mesh_type == 0x2)      shader = MESH_0x2_SHADER;
+    else if (mesh_type == 0xA) shader = MESH_0xA_SHADER;
+    else return;
 
-    MikuPan_PipelineInfo* pipeline = MikuPan_GetPipelineInfo(POSITION4_NORMAL4_UV2);
     VUVN_PRIM *v = ((VUVN_PRIM *) &((int*)pVUVN)[2]);
-
     SGDVUMESHPOINTNUM *pMeshInfo = (SGDVUMESHPOINTNUM *) &pPUHead[4];
     SGDVUMESHSTREGSET *sgdVuMeshStRegSet = (SGDVUMESHSTREGSET *) &pMeshInfo[GET_NUM_MESH(pPUHead)];
     SGDVUMESHSTDATA *sgdMeshData = (SGDVUMESHSTDATA *) &sgdVuMeshStRegSet->auiVifCode[3];
     SGDPROCUNITDATA *pProcData = (SGDPROCUNITDATA *) &pPUHead[1];
-
-    glad_glBindVertexArray(pipeline->vao);
-
     sceGsTex0 *mesh_tex_reg = (sceGsTex0 *) ((int64_t) pProcData + 0x18);
+
+    MikuPan_PipelineInfo *pipeline = MikuPan_GetPipelineInfo(POSITION4_NORMAL4_UV2);
+
+    // ── State setup ──
+    MikuPan_FlushTexturedSpriteBatch();
+    Uint64 _sc_t0 = SDL_GetPerformanceCounter();
+    Uint64 _t = MikuPan_PerfBegin();
+    MikuPan_SetCurrentShaderProgram(shader);
+    MikuPan_ApplyMeshLightingMode((unsigned char)mesh_type);
+    MikuPan_PerfEnd(PERF_SECT_SC_SHADER, _t);
+    _t = MikuPan_PerfBegin();
+    MikuPan_BindVAO(pipeline->vao);
+    MikuPan_PerfEnd(PERF_SECT_SC_VAO, _t);
+    _t = MikuPan_PerfBegin();
     MikuPan_SetTexture(mesh_tex_reg);
-
+    MikuPan_PerfEnd(PERF_SECT_SC_TEXTURE, _t);
+    _t = MikuPan_PerfBegin();
     MikuPan_SetRenderState3D();
+    MikuPan_PerfEnd(PERF_SECT_SC_RS3D, _t);
+    Uint64 _sc_t1 = SDL_GetPerformanceCounter();
+    g_perf_section_ms_curr[PERF_SECT_STATE_CHANGE] +=
+        (double)(_sc_t1 - _sc_t0) * 1000.0 / (double)SDL_GetPerformanceFrequency();
 
-    glad_glBindBuffer(GL_ARRAY_BUFFER, pipeline->buffers[0].id);
-    glad_glBufferSubData(
-        GL_ARRAY_BUFFER,
-        0,
-        v->vnum * pipeline->buffers[0].attributes[0].stride,
+    // ── Pos+norm AoS uploaded directly from caller's `vertices` (CPU-skinned) ──
+    MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[0].id,
+        (GLsizeiptr)(v->vnum * pipeline->buffers[0].attributes[0].stride),
         vertices);
 
-    glad_glBindBuffer(GL_ARRAY_BUFFER, pipeline->buffers[1].id);
-
+    // ── Build UV + index staging (POSITION4_NORMAL4_UV2 has no color stream) ──
     int vertex_offset = 0;
-
-    MikuPan_SetTriangleStripRestart();
-
-    if (GET_NUM_MESH(pPUHead) * pVUVN->VUVNDesc.sNumVertex * 4 > (1024 * 1024))
-    {
-        info_log("OVERFLOW!");
-    }
-
+    int index_write_offset = 0;
     for (int i = 0; i < GET_NUM_MESH(pPUHead); i++)
     {
         int vertex_count = pMeshInfo[i].uiPointNum;
@@ -1191,27 +1968,35 @@ void MikuPan_RenderMeshType0x2(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPUH
             MikuPan_FixUV((float*)&sgdMeshData->astData, vertex_count);
         }
 
-        MikuPan_SetTriangleIndex(vertex_index, vertex_count, vertex_offset, i);
+        index_write_offset += MikuPan_SetTriangleIndex(
+            g_mesh_buffers_0x2.indices, vertex_count, vertex_offset, index_write_offset);
 
-        glad_glBufferSubData(
-            GL_ARRAY_BUFFER,
-            vertex_offset * pipeline->buffers[1].attributes[0].stride,
-            vertex_count * pipeline->buffers[1].attributes[0].stride,
-            sgdMeshData->astData);
+        memcpy((char *)g_mesh_buffers_0x2.uvs + vertex_offset * pipeline->buffers[1].attributes[0].stride,
+               sgdMeshData->astData,
+               (size_t)vertex_count * pipeline->buffers[1].attributes[0].stride);
 
         sgdMeshData = (SGDVUMESHSTDATA *) &sgdMeshData->astData[vertex_count];
         vertex_offset += vertex_count;
     }
 
-    int index_count_0x2 = v->nnum + GET_NUM_MESH(pPUHead);
-    glad_glBufferSubData(GL_ELEMENT_ARRAY_BUFFER, 0, index_count_0x2 * (int)sizeof(u_int), vertex_index);
+    // ── Upload UV + indices ──
+    const int N = vertex_offset;
+    MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[1].id,
+        (GLsizeiptr)(N * pipeline->buffers[1].attributes[0].stride),
+        g_mesh_buffers_0x2.uvs);
+    MikuPan_StreamUploadFull(GL_ELEMENT_ARRAY_BUFFER, pipeline->ibo,
+        (GLsizeiptr)(index_write_offset * (int)sizeof(u_int)),
+        g_mesh_buffers_0x2.indices);
 
+    // ── Draw ──
     draw_calls++;
-    glad_glDrawElements(MikuPan_GetRenderMode(), index_count_0x2, GL_UNSIGNED_INT, (void*)0);
+    MikuPan_TimedDrawElements(MikuPan_GetMeshRenderMode(),
+                              index_write_offset, GL_UNSIGNED_INT, (void *)0);
 
     if (MikuPan_IsNormalsRendering())
     {
         MikuPan_SetCurrentShaderProgram(NORMALS_0x2_SHADER);
-        glad_glDrawElements(GL_TRIANGLE_STRIP, index_count_0x2, GL_UNSIGNED_INT, (void*)0);
+        MikuPan_TimedDrawElements(GL_TRIANGLES,
+                                  index_write_offset, GL_UNSIGNED_INT, (void *)0);
     }
 }

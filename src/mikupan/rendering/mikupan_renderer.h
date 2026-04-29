@@ -63,6 +63,14 @@ float* MikuPan_GetWorldClipView();
 float* MikuPan_GetWorldClip();
 void MikuPan_SetupAmbientLighting(const LIGHT_PACK* lp);
 void MikuPan_SetupAmbientLighting2();
+/// Called from sglight.c:SetMaterialData when the active SgMaterialC changes.
+/// Pushes the four colour vectors (Ambient/Diffuse/Specular/Emission) into the
+/// MaterialBlock UBO so the fragment shader can apply them per the original
+/// PS2 lighting maths (sglight.c:505-531).
+void MikuPan_SetMaterial(const sceVu0FVECTOR* ambient,
+                         const sceVu0FVECTOR* diffuse,
+                         const sceVu0FVECTOR* specular,
+                         const sceVu0FVECTOR* emission);
 void MikuPan_SetFontTexture(int fnt);
 void MikuPan_DeleteTexture(MikuPan_TextureInfo* texture_info);
 MikuPan_TextureInfo* MikuPan_CreateGLTexture(sceGsTex0 *tex0);
@@ -76,6 +84,47 @@ void MikuPan_SetModelTransformMatrix(sceVu0FVECTOR* m);
 void MikuPan_RenderMeshType0x32(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPUHead);
 void MikuPan_RenderMeshType0x82(unsigned int* pVUVN, unsigned int *pPUHead);
 void MikuPan_RenderMeshType0x2(SGDPROCUNITHEADER* pVUVN, SGDPROCUNITHEADER *pPUHead, float* vertices);
+void MikuPan_FlushMeshBatch(void);
+void MikuPan_FlushStaticMeshCache(void);
+void MikuPan_FlushTexturedSpriteBatch(void);
+float MikuPan_GetLastFrameCpuMs(void);
+float MikuPan_GetLastFrameGpuMs(void);
+
+/// CPU section IDs for the per-section perf graph. Keep in sync with
+/// MikuPan_PerfSection in mikupan_renderer.c.
+enum {
+    MIKUPAN_PERF_SECT_MESH_RENDER   = 0,
+    MIKUPAN_PERF_SECT_SPRITE_RENDER = 1,
+    MIKUPAN_PERF_SECT_BATCH_FLUSH   = 2,
+    MIKUPAN_PERF_SECT_DRAWUI        = 3,
+    MIKUPAN_PERF_SECT_RENDERUI      = 4,
+    MIKUPAN_PERF_SECT_DRAW_SUBMIT   = 5,
+    MIKUPAN_PERF_SECT_BUFFER_UPLOAD = 6,
+    MIKUPAN_PERF_SECT_STATE_CHANGE  = 7, ///< outer aggregate; the four below decompose it
+    MIKUPAN_PERF_SECT_SC_SHADER     = 8,
+    MIKUPAN_PERF_SECT_SC_TEXTURE    = 9,
+    MIKUPAN_PERF_SECT_SC_RS3D       = 10,
+    MIKUPAN_PERF_SECT_SC_VAO        = 11
+};
+float MikuPan_PerfGetSectionMs(int section);
+
+/// Static-mesh-cache hit/miss counters from the previous frame. Reset every
+/// frame; useful for diagnosing whether the cached fast path is dominant.
+/// `hits` = the (pVUVN, pPUHead) pair was already populated → cached draw.
+/// `misses_new` = a fresh slot was claimed → first-time populate (slow).
+/// `misses_full` = the cache table was full → fell through to the un-cached
+/// per-frame upload path (slowest).
+int MikuPan_PerfGetMeshCacheHits(void);
+int MikuPan_PerfGetMeshCacheMissesNew(void);
+int MikuPan_PerfGetMeshCacheMissesFull(void);
+
+/// Texture L1-cache (tex0 → MikuPan_TextureInfo) hit/miss counts from the
+/// previous frame. Misses fall through to MikuPan_GetTextureHash, which XXH3-
+/// hashes potentially KB/MB of GS memory — that's the suspected hot spot in
+/// SC_TEXTURE. The L1 is cleared on every MikuPan_GsUpload, so frames with
+/// any texture upload nuke the cache and pay the hash on first encounter.
+int MikuPan_PerfGetTexL1Hits(void);
+int MikuPan_PerfGetTexL1Misses(void);
 u_long GSAlphaToOpenGL(int A, int B, int C, int D, int fix);
 
 #endif //MIKUPAN_SDL_RENDERER_H

@@ -1,0 +1,567 @@
+#define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
+#include "cimgui.h"
+
+#include "typedefs.h"
+#include "mikupan/ui/mikupan_ui.h"
+#include "mikupan/gs/mikupan_texture_manager_c.h"
+#include "glad/gl.h"
+#include "main/glob.h"
+#include "graphics/graph2d/g2d_debug.h"
+#include "graphics/graph2d/message.h"
+
+#include <math.h>
+#include <string.h>
+#include <stdio.h>
+
+// -- Backend wrappers (defined in mikupan_ui.cpp) ----------------------------
+void MikuPan_ImGui_ImplInit(SDL_Window *window, void *gl_context);
+void MikuPan_ImGui_ImplShutdown(void);
+void MikuPan_ImGui_ImplNewFrame(void);
+void MikuPan_ImGui_ImplProcessEvent(SDL_Event *event);
+void MikuPan_ImGui_ImplRenderDrawData(void);
+
+// -- Renderer-side timing accessors (defined in mikupan_renderer.c) ----------
+float MikuPan_GetLastFrameCpuMs(void);
+float MikuPan_GetLastFrameGpuMs(void);
+float MikuPan_PerfGetSectionMs(int section);
+int   MikuPan_PerfGetTexL1Hits(void);
+int   MikuPan_PerfGetTexL1Misses(void);
+
+// CPU section IDs (must match MikuPan_PerfSection in mikupan_renderer.c)
+#define MP_PERF_MESH_RENDER   0
+#define MP_PERF_SPRITE_RENDER 1
+#define MP_PERF_BATCH_FLUSH   2
+#define MP_PERF_DRAWUI        3
+#define MP_PERF_RENDERUI      4
+#define MP_PERF_DRAW_SUBMIT   5
+#define MP_PERF_BUFFER_UPLOAD 6
+#define MP_PERF_STATE_CHANGE  7
+// Sub-sections decomposing MP_PERF_STATE_CHANGE (sum ≈ STATE_CHANGE).
+#define MP_PERF_SC_SHADER     8
+#define MP_PERF_SC_TEXTURE    9
+#define MP_PERF_SC_RS3D       10
+#define MP_PERF_SC_VAO        11
+
+// -- GS instrumentation (defined in mikupan_gs.cpp) --------------------------
+int   MikuPan_GsGetUploadCount(void);
+int   MikuPan_GsGetUploadBytes(void);
+float MikuPan_GsGetUploadMs(void);
+int   MikuPan_GsGetDownloadCount(void);
+int   MikuPan_GsGetDownloadBytes(void);
+float MikuPan_GsGetDownloadMs(void);
+
+// -- State -------------------------------------------------------------------
+int show_fps = 1;
+int show_menu_bar = 0;
+
+static int show_frame_time_graph = 0;
+static int render_wireframe = 0;
+static int render_normals = 0;
+static int msaa_samples = 0;
+
+// Render resolution defaults to the primary display's current mode and the
+// sliders cap there. MikuPan_InitUi queries SDL once at startup and fills in
+// these values; until that runs they fall back to a sensible 1080p.
+static int render_resolution_width  = 1920;
+static int render_resolution_height = 1080;
+static int screen_resolution_width  = 1920;
+static int screen_resolution_height = 1080;
+static int show_texture_list = 0;
+static int show_bounding_boxes = 0;
+static int show_mesh_0x82 = 1;
+static int show_mesh_0x32 = 1;
+static int show_mesh_0x12 = 1;
+static int show_mesh_0x2 = 1;
+static int disable_lighting = 0;
+
+static float light_color[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
+static float normal_length = 10.0f;
+
+// -- FrameTimeGraph ----------------------------------------------------------
+#define FRAME_GRAPH_CAPACITY 600
+
+typedef struct
+{
+    float times[FRAME_GRAPH_CAPACITY];  ///< total wall-clock per frame (ms)
+    float cpu  [FRAME_GRAPH_CAPACITY];  ///< CPU command-submission time (ms)
+    float gpu  [FRAME_GRAPH_CAPACITY];  ///< GPU execution time via GL_TIME_ELAPSED (ms)
+    int count;
+    int max_samples;
+    float ms_scale;
+} FrameTimeGraph;
+
+static FrameTimeGraph g_frame_graph = {
+    .count = 0,
+    .max_samples = 600,
+    .ms_scale = -1.0f
+};
+
+static void FrameTimeGraph_Update(FrameTimeGraph *g, float total_ms, float cpu_ms, float gpu_ms)
+{
+    if (g->count >= g->max_samples)
+    {
+        memmove(g->times, g->times + 1, (g->count - 1) * sizeof(float));
+        memmove(g->cpu,   g->cpu   + 1, (g->count - 1) * sizeof(float));
+        memmove(g->gpu,   g->gpu   + 1, (g->count - 1) * sizeof(float));
+        g->count--;
+    }
+    g->times[g->count] = total_ms;
+    g->cpu  [g->count] = cpu_ms;
+    g->gpu  [g->count] = gpu_ms;
+    g->count++;
+}
+
+static void FrameTimeGraph_Draw(FrameTimeGraph *g)
+{
+    if (g->count == 0)
+    {
+        igTextUnformatted("No frame data yet", NULL);
+        return;
+    }
+
+    igBegin("Frame Time Graph", NULL, 0);
+
+    float total_sum = 0.0f, total_max = g->times[0];
+    float cpu_sum   = 0.0f, cpu_max   = g->cpu[0];
+    float gpu_sum   = 0.0f, gpu_max   = g->gpu[0];
+
+    for (int i = 0; i < g->count; i++)
+    {
+        total_sum += g->times[i]; if (g->times[i] > total_max) total_max = g->times[i];
+        cpu_sum   += g->cpu[i];   if (g->cpu[i]   > cpu_max)   cpu_max   = g->cpu[i];
+        gpu_sum   += g->gpu[i];   if (g->gpu[i]   > gpu_max)   gpu_max   = g->gpu[i];
+    }
+
+    float total_avg = total_sum / (float)g->count;
+    float cpu_avg   = cpu_sum   / (float)g->count;
+    float gpu_avg   = gpu_sum   / (float)g->count;
+    float total_latest = g->times[g->count - 1];
+    float cpu_latest   = g->cpu  [g->count - 1];
+    float gpu_latest   = g->gpu  [g->count - 1];
+
+    igText("Frame:  %5.2f ms  (%4.1f FPS)  avg %5.2f  max %5.2f",
+           total_latest, total_latest > 0.0f ? 1000.0f / total_latest : 0.0f,
+           total_avg, total_max);
+    igText("CPU work:        %5.2f ms      avg %5.2f  max %5.2f", cpu_latest, cpu_avg, cpu_max);
+    igText("GPU finish wait: %5.2f ms      avg %5.2f  max %5.2f", gpu_latest, gpu_avg, gpu_max);
+    igTextDisabled("(measured via fence sync - GPU value is the time CPU spent waiting after submitting)");
+
+    // Heuristic: tag the dominant cost. With the new fence-sync measurement,
+    // a low GPU value means the GPU drained the queue as fast as the CPU
+    // could feed it (= CPU-bound), and a high GPU value means CPU finished
+    // first and waited (= GPU-bound).
+    if (gpu_latest < cpu_latest * 0.25f)
+    {
+        igTextColored((ImVec4){1.0f, 0.6f, 0.3f, 1.0f}, "CPU-bound (GPU drained queue fast)");
+    }
+    else if (gpu_latest > cpu_latest)
+    {
+        igTextColored((ImVec4){0.4f, 0.7f, 1.0f, 1.0f}, "GPU-bound (CPU waited for GPU)");
+    }
+    else
+    {
+        igTextColored((ImVec4){0.6f, 0.9f, 0.6f, 1.0f}, "CPU/GPU balanced");
+    }
+
+    igSpacing();
+
+    // Shared y-axis scale so the three plots are directly comparable.
+    float scale = total_max;
+    if (cpu_max > scale) scale = cpu_max;
+    if (gpu_max > scale) scale = gpu_max;
+    if (g->ms_scale > 0.0f) scale = g->ms_scale;
+    if (scale < 16.7f) scale = 16.7f; // always show at least the 60-fps line
+
+    char total_overlay[64], cpu_overlay[64], gpu_overlay[64];
+    snprintf(total_overlay, sizeof(total_overlay), "Total: %.2f ms",   total_latest);
+    snprintf(cpu_overlay,   sizeof(cpu_overlay),   "CPU:   %.2f ms",   cpu_latest);
+    snprintf(gpu_overlay,   sizeof(gpu_overlay),   "GPU:   %.2f ms",   gpu_latest);
+
+    const ImVec2 plot_size = (ImVec2){0.0f, 60.0f};
+    igPlotLines_FloatPtr("##frame_total", g->times, g->count, 0, total_overlay,
+                         0.0f, scale, plot_size, (int)sizeof(float));
+    igPlotLines_FloatPtr("##frame_cpu",   g->cpu,   g->count, 0, cpu_overlay,
+                         0.0f, scale, plot_size, (int)sizeof(float));
+    igPlotLines_FloatPtr("##frame_gpu",   g->gpu,   g->count, 0, gpu_overlay,
+                         0.0f, scale, plot_size, (int)sizeof(float));
+
+    igSpacing();
+    igTextUnformatted("CPU breakdown (last frame, ms)", NULL);
+
+    float perf_mesh   = MikuPan_PerfGetSectionMs(MP_PERF_MESH_RENDER);
+    float perf_sprite = MikuPan_PerfGetSectionMs(MP_PERF_SPRITE_RENDER);
+    float perf_flush  = MikuPan_PerfGetSectionMs(MP_PERF_BATCH_FLUSH);
+    float perf_drawui = MikuPan_PerfGetSectionMs(MP_PERF_DRAWUI);
+    float perf_render = MikuPan_PerfGetSectionMs(MP_PERF_RENDERUI);
+    float perf_gs_up  = MikuPan_GsGetUploadMs();
+    float perf_gs_dl  = MikuPan_GsGetDownloadMs();
+    float perf_known  = perf_mesh + perf_sprite + perf_flush
+                      + perf_drawui + perf_render + perf_gs_up + perf_gs_dl;
+    float perf_other  = cpu_latest - perf_known;
+    if (perf_other < 0.0f) perf_other = 0.0f;
+
+    igText("Mesh render:      %5.2f ms", perf_mesh);
+    igText("Sprite/UI render: %5.2f ms", perf_sprite);
+    igText("Batch flushes:    %5.2f ms", perf_flush);
+    igText("DrawUi (game):    %5.2f ms", perf_drawui);
+    igText("RenderUi (ImGui): %5.2f ms", perf_render);
+    igText("GS uploads:       %5.2f ms", perf_gs_up);
+    igText("GS downloads:     %5.2f ms", perf_gs_dl);
+    igText("Other / unknown:  %5.2f ms", perf_other);
+
+    igSpacing();
+    igTextUnformatted("Cross-cutting (sliced through everything above):", NULL);
+    float perf_draw   = MikuPan_PerfGetSectionMs(MP_PERF_DRAW_SUBMIT);
+    float perf_upload = MikuPan_PerfGetSectionMs(MP_PERF_BUFFER_UPLOAD);
+    float perf_state  = MikuPan_PerfGetSectionMs(MP_PERF_STATE_CHANGE);
+    igText("  glDraw* submit: %5.2f ms (driver overhead per draw call)", perf_draw);
+    igText("  Buffer uploads: %5.2f ms (map+memcpy+unmap)", perf_upload);
+    igText("  State changes:  %5.2f ms (shader/texture/render-state in cached path)", perf_state);
+
+    // Per-call decomposition of "State changes" — tells you which of the four
+    // calls (shader / texture / render-state / VAO) is the actual hot one.
+    // Sum ≈ perf_state (a few hundred ns/frame of timer overhead aside).
+    float perf_sc_shader  = MikuPan_PerfGetSectionMs(MP_PERF_SC_SHADER);
+    float perf_sc_texture = MikuPan_PerfGetSectionMs(MP_PERF_SC_TEXTURE);
+    float perf_sc_rs3d    = MikuPan_PerfGetSectionMs(MP_PERF_SC_RS3D);
+    float perf_sc_vao     = MikuPan_PerfGetSectionMs(MP_PERF_SC_VAO);
+    igText("      Shader:     %5.2f ms (glUseProgram / SetCurrentShaderProgram)", perf_sc_shader);
+    igText("      Texture:    %5.2f ms (lookup + glBindTexture)",                 perf_sc_texture);
+    {
+        // L1 (tex0 → info) hit/miss. Misses fall through to MikuPan_GetTextureHash
+        // which XXH3-hashes GS memory — usually the heaviest part of SC_TEXTURE.
+        // L1 is wiped on every MikuPan_GsUpload, so post-upload frames re-hash.
+        int l1_hits   = MikuPan_PerfGetTexL1Hits();
+        int l1_misses = MikuPan_PerfGetTexL1Misses();
+        igText("        L1 hits=%d misses=%d (misses → XXH3 over GS memory)",
+               l1_hits, l1_misses);
+    }
+    igText("      RenderState:%5.2f ms (depth / cull / blend mode)",              perf_sc_rs3d);
+    igText("      VAO:        %5.2f ms (glBindVertexArray)",                      perf_sc_vao);
+
+    igTextDisabled("These are subsets of the buckets above, not additional time.");
+
+    igSpacing();
+    igTextUnformatted("GS texture traffic (last frame)", NULL);
+
+    int   ul_count = MikuPan_GsGetUploadCount();
+    int   ul_bytes = MikuPan_GsGetUploadBytes();
+    int   dl_count = MikuPan_GsGetDownloadCount();
+    int   dl_bytes = MikuPan_GsGetDownloadBytes();
+
+    igText("Uploads:   %4d calls   %6.1f KB",
+           ul_count, ul_bytes / 1024.0f);
+    igText("Downloads: %4d calls   %6.1f KB",
+           dl_count, dl_bytes / 1024.0f);
+
+    igSpacing();
+    igTextUnformatted("Frame-time histogram (ms)", NULL);
+
+    #define HIST_BUCKETS 16
+    float histf[HIST_BUCKETS] = {0};
+    float step = scale / (float)HIST_BUCKETS;
+    int maxcount = 1;
+
+    for (int i = 0; i < g->count; i++)
+    {
+        int b = (int)floorf(g->times[i] / step);
+        if (b < 0) b = 0;
+        if (b >= HIST_BUCKETS) b = HIST_BUCKETS - 1;
+        histf[b] += 1.0f;
+        if ((int)histf[b] > maxcount) maxcount = (int)histf[b];
+    }
+
+    igPlotHistogram_FloatPtr("##hist", histf, HIST_BUCKETS, 0, NULL,
+                             0.0f, (float)maxcount, (ImVec2){0.0f, 60.0f}, (int)sizeof(float));
+
+    igEnd();
+}
+
+// -- Texture list helpers ----------------------------------------------------
+#define TEXTURE_LIST_MAX 4096
+
+static MikuPan_TextureInfo *tex_list[TEXTURE_LIST_MAX];
+static int tex_list_count = 0;
+
+static void CollectTexture(MikuPan_TextureInfo *tex, void *ud)
+{
+    int *count = (int *)ud;
+    if (*count < TEXTURE_LIST_MAX)
+    {
+        tex_list[(*count)++] = tex;
+    }
+}
+
+static int CompareTextureById(const void *a, const void *b)
+{
+    const MikuPan_TextureInfo *ta = *(const MikuPan_TextureInfo **)a;
+    const MikuPan_TextureInfo *tb = *(const MikuPan_TextureInfo **)b;
+    return (int)ta->id - (int)tb->id;
+}
+
+// -- Public API --------------------------------------------------------------
+
+void MikuPan_InitUi(SDL_Window *window, SDL_GLContext renderer)
+{
+    igCreateContext(NULL);
+    ImGuiIO *io = igGetIO_Nil();
+    io->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
+
+    // Pull the primary display's current mode so the resolution sliders cap
+    // at the user's actual screen size, and seed the default render resolution
+    // to match — both were previously hardcoded at 5120/1440 (max) and 640/448
+    // (default), which were wrong on every machine that wasn't exactly that.
+    SDL_DisplayID primary = SDL_GetPrimaryDisplay();
+    if (primary != 0)
+    {
+        const SDL_DisplayMode *mode = SDL_GetCurrentDisplayMode(primary);
+        if (mode != NULL && mode->w > 0 && mode->h > 0)
+        {
+            screen_resolution_width  = mode->w;
+            screen_resolution_height = mode->h;
+            render_resolution_width  = mode->w;
+            render_resolution_height = mode->h;
+        }
+    }
+
+    MikuPan_ImGui_ImplInit(window, renderer);
+}
+
+void MikuPan_RenderUi(void)
+{
+    igRender();
+    ImGuiIO *io = igGetIO_Nil();
+    glad_glViewport(0, 0, (int)io->DisplaySize.x, (int)io->DisplaySize.y);
+    MikuPan_ImGui_ImplRenderDrawData();
+}
+
+void MikuPan_StartFrameUi(void)
+{
+    MikuPan_ImGui_ImplNewFrame();
+    igNewFrame();
+}
+
+void MikuPan_DrawUi(void)
+{
+    ImGuiIO *io = igGetIO_Nil();
+    FrameTimeGraph_Update(&g_frame_graph,
+                          1000.0f / io->Framerate,
+                          MikuPan_GetLastFrameCpuMs(),
+                          MikuPan_GetLastFrameGpuMs());
+
+    MikuPan_UiHandleShortcuts();
+    MikuPan_UiMenuBar();
+
+    if (dbg_wrk.mode_on == 1)
+    {
+        gra2dDrawDbgMenu();
+    }
+
+    if (show_frame_time_graph)
+    {
+        FrameTimeGraph_Draw(&g_frame_graph);
+    }
+
+    if (show_texture_list)
+    {
+        MikuPan_ShowTextureList();
+    }
+
+    if (show_fps)
+    {
+        SetString2(0x10, 0.0f, 420.0f, 1, 0x80, 0x80, 0x80, (char *)"FPS %d", (int)MikuPan_GetFrameRate());
+    }
+}
+
+void MikuPan_ShutDownUi(void)
+{
+    MikuPan_ImGui_ImplShutdown();
+    igDestroyContext(NULL);
+}
+
+void MikuPan_ProcessEventUi(SDL_Event *event)
+{
+    MikuPan_ImGui_ImplProcessEvent(event);
+}
+
+float MikuPan_GetFrameRate(void)
+{
+    ImGuiIO *io = igGetIO_Nil();
+    return io->Framerate;
+}
+
+int MikuPan_IsWireframeRendering(void)
+{
+    return render_wireframe;
+}
+
+int MikuPan_IsNormalsRendering(void)
+{
+    return render_normals;
+}
+
+void MikuPan_ShowTextureList(void)
+{
+    tex_list_count = 0;
+    MikuPan_ForEachTexture(CollectTexture, &tex_list_count);
+
+    qsort(tex_list, tex_list_count, sizeof(MikuPan_TextureInfo *), CompareTextureById);
+
+    igBegin("OpenGL Texture", NULL, 0);
+
+    for (int i = 0; i < tex_list_count; i++)
+    {
+        char label[64];
+        snprintf(label, sizeof(label), "Texture ID %u", tex_list[i]->id);
+
+        if (igCollapsingHeader_TreeNodeFlags(label, 0))
+        {
+            igText("%u: %d x %d", tex_list[i]->id, tex_list[i]->width, tex_list[i]->height);
+            igImage(
+                (ImTextureRef_c){ ._TexID = (ImTextureID)(uintptr_t)tex_list[i]->id },
+                (ImVec2){(float)tex_list[i]->width, (float)tex_list[i]->height},
+                (ImVec2){0.0f, 0.0f},
+                (ImVec2){1.0f, 1.0f});
+        }
+    }
+
+    igEnd();
+}
+
+void MikuPan_UiHandleShortcuts(void)
+{
+    if (igIsKeyPressed_Bool(ImGuiKey_F1, 0))
+    {
+        show_menu_bar = !show_menu_bar;
+    }
+
+    if (igIsKeyPressed_Bool(ImGuiKey_F2, 0))
+    {
+        dbg_wrk.mode_on = !dbg_wrk.mode_on;
+    }
+}
+
+void MikuPan_UiMenuBar(void)
+{
+    if (!show_menu_bar || !igBeginMainMenuBar())
+    {
+        return;
+    }
+
+    if (igBeginMenu("Debug", 1))
+    {
+        if (igBeginMenu("Rendering", 1))
+        {
+            igCheckbox("Wireframe", (bool *)&render_wireframe);
+            igCheckbox("Normals", (bool *)&render_normals);
+
+            if (render_normals)
+            {
+                igSliderFloat("Normal Length", &normal_length, 0.1f, 100.0f, "%.1f", 0);
+            }
+
+            igCheckbox("Disable Lighting", (bool *)&disable_lighting);
+
+            igCheckbox("Textures", (bool *)&show_texture_list);
+            igCheckbox("BoundingBox", (bool *)&show_bounding_boxes);
+
+            if (igBeginMenu("Meshes", 1))
+            {
+                igCheckbox("Mesh 0x82", (bool *)&show_mesh_0x82);
+                igCheckbox("Mesh 0x32", (bool *)&show_mesh_0x32);
+                igCheckbox("Mesh 0x12", (bool *)&show_mesh_0x12);
+                igCheckbox("Mesh 0x2",  (bool *)&show_mesh_0x2);
+                igEndMenu();
+            }
+
+            if (igButton("Clear Texture Cache", (ImVec2){0.0f, 0.0f}))
+            {
+                MikuPan_RequestFlushTextureCache();
+            }
+
+            igSliderInt("MSAA", &msaa_samples, 0, 5, "", 0);
+            igSameLine(0.0f, -1.0f);
+            igText("%dx", msaa_samples << 1);
+            // Cap slider max at the primary display's current mode (queried
+            // once in MikuPan_InitUi). Lower bound stays at the minimum useful
+            // PS2 internal resolution; if the user's screen is smaller than
+            // that for some reason, hold at the minimum to keep the slider
+            // consistent.
+            int max_w = screen_resolution_width  < 640 ? 640 : screen_resolution_width;
+            int max_h = screen_resolution_height < 224 ? 224 : screen_resolution_height;
+            igSliderInt("Width",  &render_resolution_width,  640, max_w, "%d", 0);
+            igSliderInt("Height", &render_resolution_height, 224, max_h, "%d", 0);
+            igSliderFloat4("Light Color", light_color, 0.0f, 3.0f, "%.3f", 0);
+
+            igEndMenu();
+        }
+
+        igCheckbox("Ingame Debug Menu", (bool *)&dbg_wrk.mode_on);
+
+        igEndMenu();
+    }
+
+    if (igBeginMenu("Performance", 1))
+    {
+        igCheckbox("FPS Counter",       (bool *)&show_fps);
+        igCheckbox("Frame Time Graph",  (bool *)&show_frame_time_graph);
+        igEndMenu();
+    }
+
+    igEndMainMenuBar();
+}
+
+int MikuPan_IsBoundingBoxRendering(void)
+{
+    return show_bounding_boxes;
+}
+
+int MikuPan_IsMesh0x82Rendering(void)
+{
+    return show_mesh_0x82;
+}
+
+int MikuPan_IsMesh0x32Rendering(void)
+{
+    return show_mesh_0x32;
+}
+
+int MikuPan_IsMesh0x12Rendering(void)
+{
+    return show_mesh_0x12;
+}
+
+int MikuPan_IsMesh0x2Rendering(void)
+{
+    return show_mesh_0x2;
+}
+
+int MikuPan_IsLightingDisabled(void)
+{
+    return disable_lighting;
+}
+
+float *MikuPan_GetLightColor(void)
+{
+    return light_color;
+}
+
+float MikuPan_GetNormalLength(void)
+{
+    return normal_length;
+}
+
+int MikuPan_GetRenderResolutionWidth(void)
+{
+    return render_resolution_width;
+}
+
+int MikuPan_GetRenderResolutionHeight(void)
+{
+    return render_resolution_height;
+}
+
+int MikuPan_GetMSAA(void)
+{
+    return msaa_samples << 1;
+}

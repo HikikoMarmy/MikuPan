@@ -3,9 +3,11 @@ layout (location = 0) in vec4 aPos;
 layout (location = 1) in vec4 aNormal;
 layout (location = 2) in vec2 aUV;
 
-uniform mat4 model;
-uniform mat4 view;
-uniform mat4 projection;
+// 0xA vertices are CPU-skinned into world space — no per-object model matrix.
+// All matrix derivations are pre-computed once per frame on the CPU.
+uniform mat4 viewProj;         // projection * view
+uniform mat4 view;             // view (for view-space position)
+uniform mat3 viewNormalMatrix; // transpose(inverse(view))
 
 out vec2 vUV;
 out vec4 vNormal;
@@ -16,14 +18,15 @@ void main()
 {
     vUV = aUV;
 
-    /// Weighted mesh get converted to world space on the CPU
-    gl_Position = projection * view * aPos;
+    gl_Position = viewProj * aPos;
 
-    mat3 normalMat = mat3(transpose(inverse(view)));
-    vec3 normalVS = normalize(normalMat * vec3(aNormal));
+    vec3 normalVS = normalize(viewNormalMatrix * vec3(aNormal));
     vNormal = vec4(normalVS, 1.0f);
 
-    vec4 a = view * aPos;
-    oViewPosition = a;
-    oVertexColor = vec3(0.0f, 0.0f, 0.0f);
+    oViewPosition = view * aPos;
+    // 0xA shares the no-colour pipeline with 0x2. Same VU dispatch (sgsuv
+    // DRAWTYPE2 → CalcSpotPoint), no SgPreRender pre-bake. Use a zero base so
+    // the frag's full dynamic lighting (uMeshLightingMode=0) shows through;
+    // see mesh_0x2.vert for the full rationale.
+    oVertexColor = vec3(0.0f);
 }

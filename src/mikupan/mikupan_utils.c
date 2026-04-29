@@ -145,15 +145,26 @@ void MikuPan_FixColors(float *color_buf, int num)
     }
 }
 
-void MikuPan_SetTriangleIndex(int *triangle_index, int vertex_count,
-                              int vertex_offset, int mesh_offset)
+int MikuPan_SetTriangleIndex(int *triangle_index, int vertex_count,
+                             int vertex_offset, int index_write_offset)
 {
-    for (int j = 0; j < vertex_count; j++)
+    int idx = index_write_offset;
+    for (int j = 0; j < vertex_count - 2; j++)
     {
-        triangle_index[vertex_offset + j + mesh_offset] = vertex_offset + j;
+        if (j % 2 == 0)
+        {
+            triangle_index[idx++] = vertex_offset + j;
+            triangle_index[idx++] = vertex_offset + j + 1;
+            triangle_index[idx++] = vertex_offset + j + 2;
+        }
+        else
+        {
+            triangle_index[idx++] = vertex_offset + j + 1;
+            triangle_index[idx++] = vertex_offset + j;
+            triangle_index[idx++] = vertex_offset + j + 2;
+        }
     }
-
-    triangle_index[vertex_offset + mesh_offset + vertex_count] = -1;
+    return idx - index_write_offset;
 }
 
 unsigned int *MikuPan_GetNextUnpackAddr(unsigned int *prim)

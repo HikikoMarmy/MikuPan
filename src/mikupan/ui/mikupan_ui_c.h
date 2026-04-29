@@ -15,6 +15,7 @@ int MikuPan_IsMesh0x82Rendering();
 int MikuPan_IsMesh0x32Rendering();
 int MikuPan_IsMesh0x12Rendering();
 int MikuPan_IsMesh0x2Rendering();
+int MikuPan_IsLightingDisabled();
 float* MikuPan_GetLightColor();
 float MikuPan_GetNormalLength();
 int MikuPan_GetRenderResolutionWidth();

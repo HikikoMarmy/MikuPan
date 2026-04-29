@@ -92,7 +92,7 @@ void InitEffectOthEF()
 {
     int i;
 
-    for(i = 0; i < cont_facespr_tbl[3]; i++) // out of bounds access!
+    for(i = 0; i < cont_facespr_tbl[2]; i++) // out of bounds access!
     {
         cont_facespr_otbl[i] = cont_facespr_tbl[i];
         cont_facespr_tbl[i] = -1;
