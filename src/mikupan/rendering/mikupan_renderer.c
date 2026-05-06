@@ -633,7 +633,7 @@ static int MikuPan_GetMeshRenderMode()
     return MikuPan_IsWireframeRendering() ? GL_LINES : GL_TRIANGLES;
 }
 
-void MikuPan_SetupAmbientLighting(const LIGHT_PACK* lp)
+void MikuPan_SetupAmbientLighting(const LIGHT_PACK *lp, float *eyevec)
 {
 #define MAX_LIGHTS 3
     // Populate the entire LightBlock UBO straight from the LIGHT_PACK input.
@@ -657,9 +657,10 @@ void MikuPan_SetupAmbientLighting(const LIGHT_PACK* lp)
     //     halfway = normalize(ieye + dir)   where ieye = -normalize(eye)
     // Both vectors live in view space here so we don't need an `eye` parameter
     // — the camera sits at the origin in view space, so ieye is just (0,0,1).
-    const vec3 ieye_vs = {0.0f, 0.0f, 1.0f};
+    const vec3 ieye_vs = {eyevec[0], eyevec[1], eyevec[2]};
 
-    int parCount = lp->parallel_num > MAX_LIGHTS ? MAX_LIGHTS : lp->parallel_num;
+    int parCount =
+        lp->parallel_num > MAX_LIGHTS ? MAX_LIGHTS : lp->parallel_num;
     mikupan_light_data.uParCount[0] = parCount;
 
     for (int i = 0; i < parCount; i++)
@@ -667,14 +668,11 @@ void MikuPan_SetupAmbientLighting(const LIGHT_PACK* lp)
         // Direction is in world space; rotate (no translation) into view space
         // so the shader can dot it against view-space normals directly.
         vec4 dirWS = {
-            lp->parallel[i].direction[0],
-            lp->parallel[i].direction[1],
-            lp->parallel[i].direction[2],
-            lp->parallel[i].direction[3]
-        };
+            lp->parallel[i].direction[0], lp->parallel[i].direction[1],
+            lp->parallel[i].direction[2], lp->parallel[i].direction[3]};
         vec4 dirVS;
         glm_mat3_mulv(view3, dirWS, dirVS);
-        vec3 dirVSn = { dirVS[0], dirVS[1], dirVS[2] };
+        vec3 dirVSn = {dirVS[0], dirVS[1], dirVS[2]};
         glm_vec3_normalize(dirVSn);
 
         mikupan_light_data.uParDir[i][0] = dirVSn[0];
@@ -696,7 +694,8 @@ void MikuPan_SetupAmbientLighting(const LIGHT_PACK* lp)
         mikupan_light_data.uParSpecular[i][3] = lp->parallel[i].diffuse[3];
 
         // Halfway vector for Blinn-Phong — matches sglight.c:118-120 exactly.
-        vec3 halfway = { ieye_vs[0] + dirVSn[0], ieye_vs[1] + dirVSn[1], ieye_vs[2] + dirVSn[2] };
+        vec3 halfway = {ieye_vs[0] + dirVSn[0], ieye_vs[1] + dirVSn[1],
+                        ieye_vs[2] + dirVSn[2]};
         glm_vec3_normalize(halfway);
         mikupan_light_data.uParHalfway[i][0] = halfway[0];
         mikupan_light_data.uParHalfway[i][1] = halfway[1];
@@ -710,10 +709,8 @@ void MikuPan_SetupAmbientLighting(const LIGHT_PACK* lp)
 
     for (int i = 0; i < pointCount; i++)
     {
-        vec4 posWS = {
-            lp->point[i].pos[0], lp->point[i].pos[1],
-            lp->point[i].pos[2], lp->point[i].pos[3]
-        };
+        vec4 posWS = {lp->point[i].pos[0], lp->point[i].pos[1],
+                      lp->point[i].pos[2], lp->point[i].pos[3]};
         vec4 posVS;
         glm_mat4_mulv(WorldView, posWS, posVS);
 
@@ -742,10 +739,8 @@ void MikuPan_SetupAmbientLighting(const LIGHT_PACK* lp)
 
     for (int i = 0; i < spotCount; i++)
     {
-        vec4 posWS = {
-            lp->spot[i].pos[0], lp->spot[i].pos[1],
-            lp->spot[i].pos[2], lp->spot[i].pos[3]
-        };
+        vec4 posWS = {lp->spot[i].pos[0], lp->spot[i].pos[1],
+                      lp->spot[i].pos[2], lp->spot[i].pos[3]};
         vec4 posVS;
         glm_mat4_mulv(WorldView, posWS, posVS);
 
@@ -754,10 +749,8 @@ void MikuPan_SetupAmbientLighting(const LIGHT_PACK* lp)
         mikupan_light_data.uSpotPos[i][2] = posVS[2];
         mikupan_light_data.uSpotPos[i][3] = 1.0f;
 
-        vec4 dirWS = {
-            lp->spot[i].direction[0], lp->spot[i].direction[1],
-            lp->spot[i].direction[2], lp->spot[i].direction[3]
-        };
+        vec4 dirWS = {lp->spot[i].direction[0], lp->spot[i].direction[1],
+                      lp->spot[i].direction[2], lp->spot[i].direction[3]};
         vec4 dirVS;
         glm_mat3_mulv(view3, dirWS, dirVS);
         glm_vec3_normalize(dirVS);
@@ -778,7 +771,7 @@ void MikuPan_SetupAmbientLighting(const LIGHT_PACK* lp)
         mikupan_light_data.uSpotSpecular[i][2] = lp->spot[i].diffuse[2];
         mikupan_light_data.uSpotSpecular[i][3] = lp->spot[i].diffuse[3];
 
-        mikupan_light_data.uSpotPower[i][0]  = lp->spot[i].power;
+        mikupan_light_data.uSpotPower[i][0] = lp->spot[i].power;
 
         // Cone gate parameters. Match SgSetSpotLights (sglight.c:914):
         //   intens   = cos²(half-angle), the inner-cone threshold
@@ -788,7 +781,7 @@ void MikuPan_SetupAmbientLighting(const LIGHT_PACK* lp)
         // intens == 1.0 is degenerate (zero-width cone) — clamp away from it
         // so we don't divide by zero. The shader ignores the spot anyway when
         // cone² <= intens, so the clamp is purely a numerical guard.
-        float intens   = lp->spot[i].intens;
+        float intens = lp->spot[i].intens;
         float intens_b = 0.0f;
         if (intens < 0.9999f)
         {
@@ -797,6 +790,20 @@ void MikuPan_SetupAmbientLighting(const LIGHT_PACK* lp)
         mikupan_light_data.uSpotIntens[i][0] = intens;
         mikupan_light_data.uSpotIntens[i][1] = intens_b;
     }
+
+    // The LightBlock UBO is bound to indexed binding point 0 via
+    // glBindBufferBase at init, but glBufferSubData(GL_UNIFORM_BUFFER, ...)
+    // reads from the *generic* GL_UNIFORM_BUFFER target — which was left at
+    // 0 (unbound) after pipeline init. Without this bind the upload was a
+    // silent no-op and the shader saw zeros for diffuse colors / counts,
+    // leaving the scene effectively unlit.
+    MikuPan_PipelineInfo *p = MikuPan_GetPipelineInfo(LIGHTING_DATA);
+    glad_glBindBuffer(GL_UNIFORM_BUFFER, p->buffers[0].id);
+
+    // Data was already populated by MikuPan_SetupAmbientLighting from the
+    // canonical LIGHT_PACK; this just publishes the staged buffer to the GPU.
+    glad_glBufferSubData(GL_UNIFORM_BUFFER, 0, sizeof(MikuPan_LightData),
+                         &mikupan_light_data);
 }
 
 /// Push the current SgMaterialC's colours into the MaterialBlock UBO. Called

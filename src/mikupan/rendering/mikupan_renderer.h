@@ -61,7 +61,7 @@ void MikuPan_SetupFntTexture();
 void MikuPan_SetWorldClipView();
 float* MikuPan_GetWorldClipView();
 float* MikuPan_GetWorldClip();
-void MikuPan_SetupAmbientLighting(const LIGHT_PACK* lp);
+void MikuPan_SetupAmbientLighting(const LIGHT_PACK* lp, float *eyevec);
 void MikuPan_SetupAmbientLighting2();
 /// Called from sglight.c:SetMaterialData when the active SgMaterialC changes.
 /// Pushes the four colour vectors (Ambient/Diffuse/Specular/Emission) into the
