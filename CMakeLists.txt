@@ -236,6 +236,7 @@ set(MIKUPAN_SOURCES
         "src/mikupan/mikupan_memory.c"
         src/mikupan/ui/mikupan_ui.cpp
         src/mikupan/ui/mikupan_ui.c
+        src/mikupan/rendering/mikupan_profiler.c
         src/mikupan/rendering/mikupan_renderer.c
         src/mikupan/rendering/mikupan_shader.c
         src/mikupan/gs/mikupan_gs.cpp

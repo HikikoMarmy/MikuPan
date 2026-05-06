@@ -27,7 +27,7 @@ float MikuPan_PerfGetSectionMs(int section);
 int   MikuPan_PerfGetTexL1Hits(void);
 int   MikuPan_PerfGetTexL1Misses(void);
 
-// CPU section IDs (must match MikuPan_PerfSection in mikupan_renderer.c)
+// CPU section IDs (must match MikuPan_PerfSection in mikupan_profiler.h)
 #define MP_PERF_MESH_RENDER   0
 #define MP_PERF_SPRITE_RENDER 1
 #define MP_PERF_BATCH_FLUSH   2
@@ -41,6 +41,20 @@ int   MikuPan_PerfGetTexL1Misses(void);
 #define MP_PERF_SC_TEXTURE    9
 #define MP_PERF_SC_RS3D       10
 #define MP_PERF_SC_VAO        11
+// Per-mesh-type sub-sections decomposing MP_PERF_MESH_RENDER.
+#define MP_PERF_MESH_0x2      12
+#define MP_PERF_MESH_0xA      13
+#define MP_PERF_MESH_0x10     14
+#define MP_PERF_MESH_0x12     15
+#define MP_PERF_MESH_0x32     16
+#define MP_PERF_MESH_0x82     17
+// Sub-sections decomposing MP_PERF_SC_TEXTURE — fine-grained breakdown of
+// where MikuPan_SetTexture spends its time.
+#define MP_PERF_TEX_L1_LOOKUP 18
+#define MP_PERF_TEX_HASH      19
+#define MP_PERF_TEX_L2_LOOKUP 20
+#define MP_PERF_TEX_CREATE    21
+#define MP_PERF_TEX_BIND      22
 
 // -- GS instrumentation (defined in mikupan_gs.cpp) --------------------------
 int   MikuPan_GsGetUploadCount(void);
@@ -76,6 +90,13 @@ static int disable_lighting = 0;
 
 static float light_color[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 static float normal_length = 10.0f;
+
+// Post-process tone controls — applied by the POSTPROCESS_SHADER on the
+// final scene-to-window blit. Defaults are no-ops (1.0 brightness, 1.0
+// gamma); the renderer reads them via the getters below each frame and
+// pushes them as uniforms.
+static float brightness  = 1.0f;
+static float gamma_value = 1.0f;
 
 // -- FrameTimeGraph ----------------------------------------------------------
 #define FRAME_GRAPH_CAPACITY 600
@@ -201,6 +222,24 @@ static void FrameTimeGraph_Draw(FrameTimeGraph *g)
     if (perf_other < 0.0f) perf_other = 0.0f;
 
     igText("Mesh render:      %5.2f ms", perf_mesh);
+
+    // Per-mesh-type breakdown (sub-sections of MESH_RENDER). Sum ≈ perf_mesh
+    // minus the dispatch / early-return overhead at the top of each renderer.
+    {
+        float perf_mesh_0x2  = MikuPan_PerfGetSectionMs(MP_PERF_MESH_0x2);
+        float perf_mesh_0xA  = MikuPan_PerfGetSectionMs(MP_PERF_MESH_0xA);
+        float perf_mesh_0x10 = MikuPan_PerfGetSectionMs(MP_PERF_MESH_0x10);
+        float perf_mesh_0x12 = MikuPan_PerfGetSectionMs(MP_PERF_MESH_0x12);
+        float perf_mesh_0x32 = MikuPan_PerfGetSectionMs(MP_PERF_MESH_0x32);
+        float perf_mesh_0x82 = MikuPan_PerfGetSectionMs(MP_PERF_MESH_0x82);
+        igText("    0x2:          %5.2f ms", perf_mesh_0x2);
+        igText("    0xA:          %5.2f ms", perf_mesh_0xA);
+        igText("    0x10:         %5.2f ms", perf_mesh_0x10);
+        igText("    0x12:         %5.2f ms", perf_mesh_0x12);
+        igText("    0x32:         %5.2f ms", perf_mesh_0x32);
+        igText("    0x82:         %5.2f ms", perf_mesh_0x82);
+    }
+
     igText("Sprite/UI render: %5.2f ms", perf_sprite);
     igText("Batch flushes:    %5.2f ms", perf_flush);
     igText("DrawUi (game):    %5.2f ms", perf_drawui);
@@ -235,6 +274,20 @@ static void FrameTimeGraph_Draw(FrameTimeGraph *g)
         int l1_misses = MikuPan_PerfGetTexL1Misses();
         igText("        L1 hits=%d misses=%d (misses → XXH3 over GS memory)",
                l1_hits, l1_misses);
+
+        // Per-step decomposition of SC_TEXTURE — tells you exactly which step
+        // inside MikuPan_SetTexture is dominant. Sum ≈ perf_sc_texture minus a
+        // small amount of dispatch overhead between the inner timers.
+        float perf_tex_l1     = MikuPan_PerfGetSectionMs(MP_PERF_TEX_L1_LOOKUP);
+        float perf_tex_hash   = MikuPan_PerfGetSectionMs(MP_PERF_TEX_HASH);
+        float perf_tex_l2     = MikuPan_PerfGetSectionMs(MP_PERF_TEX_L2_LOOKUP);
+        float perf_tex_create = MikuPan_PerfGetSectionMs(MP_PERF_TEX_CREATE);
+        float perf_tex_bind   = MikuPan_PerfGetSectionMs(MP_PERF_TEX_BIND);
+        igText("        L1 lookup:  %5.2f ms (tex0 → info hash table probe)",     perf_tex_l1);
+        igText("        Hash:       %5.2f ms (XXH3 over GS memory — L1-miss only)", perf_tex_hash);
+        igText("        L2 lookup:  %5.2f ms (hash → info)",                       perf_tex_l2);
+        igText("        Create:     %5.2f ms (glTexImage2D + glGenerateMipmap)",   perf_tex_create);
+        igText("        Bind:       %5.2f ms (glBindTexture under cache)",         perf_tex_bind);
     }
     igText("      RenderState:%5.2f ms (depth / cull / blend mode)",              perf_sc_rs3d);
     igText("      VAO:        %5.2f ms (glBindVertexArray)",                      perf_sc_vao);
@@ -493,6 +546,13 @@ void MikuPan_UiMenuBar(void)
             igSliderInt("Height", &render_resolution_height, 224, max_h, "%d", 0);
             igSliderFloat4("Light Color", light_color, 0.0f, 3.0f, "%.3f", 0);
 
+            // Brightness / gamma — read by the renderer each frame and
+            // pushed as uniforms on POSTPROCESS_SHADER for the final
+            // scene-to-window blit (see MikuPan_GetBrightness/Gamma below
+            // and the EndFrame post-process bind in mikupan_renderer.c).
+            igSliderFloat("Brightness", &brightness,  0.0f, 2.0f, "%.2f", 0);
+            igSliderFloat("Gamma",      &gamma_value, 0.1f, 3.0f, "%.2f", 0);
+
             igEndMenu();
         }
 
@@ -564,4 +624,14 @@ int MikuPan_GetRenderResolutionHeight(void)
 int MikuPan_GetMSAA(void)
 {
     return msaa_samples << 1;
+}
+
+float MikuPan_GetBrightness(void)
+{
+    return brightness;
+}
+
+float MikuPan_GetGamma(void)
+{
+    return gamma_value;
 }

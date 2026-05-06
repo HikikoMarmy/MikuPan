@@ -92,6 +92,9 @@ const char* shader_file_name[MAX_SHADER_PROGRAMS][3] = {
     {"./resources/shaders/sprite.vert",                      NULL,                                        "./resources/shaders/sprite.frag"},
     {"./resources/shaders/mesh_0x12.vert",                   "./resources/shaders/normals_debug.geom",    "./resources/shaders/normals_debug.frag"},
     {"./resources/shaders/mesh_0x2.vert",                    "./resources/shaders/normals_debug.geom",    "./resources/shaders/normals_debug.frag"},
+    // Final scene-to-window blit. Vertex layout matches sprite.vert
+    // (UV4_COLOUR4_POSITION4) so the same fullscreen-quad VBO drives it.
+    {"./resources/shaders/sprite.vert",                      NULL,                                        "./resources/shaders/postprocess.frag"},
 };
 
 int MikuPan_InitShaders()

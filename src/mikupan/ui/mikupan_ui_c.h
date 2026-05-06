@@ -21,5 +21,7 @@ float MikuPan_GetNormalLength();
 int MikuPan_GetRenderResolutionWidth();
 int MikuPan_GetRenderResolutionHeight();
 int MikuPan_GetMSAA();
+float MikuPan_GetBrightness();
+float MikuPan_GetGamma();
 
 #endif //MIKUPAN_IMGUI_WINDOW_C_H

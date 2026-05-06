@@ -485,6 +485,13 @@ void SetEffSQTex(int n, float *v, int tp, float w, float h, u_char r, u_char g, 
 
     float* buf = (float*)&pbuf[ndpkt];
 
+    // Hoisted out of the loop — the render target dimensions don't change
+    // between vertices. The helper letterboxes the PS2 image inside the
+    // current buffer so the on-screen position is consistent at any
+    // internal-buffer or window resolution.
+    const float win_w = (float)MikuPan_GetWindowWidth();
+    const float win_h = (float)MikuPan_GetWindowHeight();
+
     for (i = 0; i < 4; i++)
     {
         pbuf[ndpkt].fl32[0] = (float)(i % 2 ? tw - 8 : 8) / tw;
@@ -497,8 +504,15 @@ void SetEffSQTex(int n, float *v, int tp, float w, float h, u_char r, u_char g, 
         pbuf[ndpkt].fl32[2] = MikuPan_ConvertScaleColor(bb);
         pbuf[ndpkt++].fl32[3] = MikuPan_ConvertScaleColor(a);
 
-        pbuf[ndpkt].fl32[0] = ((float)(xx[i % 2] - 2048.0f) / 2048.0f) * 2.0f - 1.0f;
-        pbuf[ndpkt].fl32[1] = 1.0f - ((float)(yy[i / 2] - 2048.0f) / 2048.0f) * 2.0f;
+        // xx/yy are in PS2 GS framebuffer pixels (origin (2048, 2048); visible
+        // window is the 640×224 viewport centered on that). Map to NDC via
+        // the shared helper instead of the previous (xx-2048)/2048 formula —
+        // that one treated 2048 as the screen half-width so the 640px visible
+        // region was getting squished into ~0.31 of NDC and offset off-screen.
+        float ndc[2];
+        MikuPan_ConvertPs2GSCoordToNDC(ndc, win_w, win_h, xx[i % 2], yy[i / 2]);
+        pbuf[ndpkt].fl32[0] = ndc[0];
+        pbuf[ndpkt].fl32[1] = ndc[1];
         pbuf[ndpkt].fl32[2] = 0.0f;
         //pbuf[ndpkt].fl32[2] = (float)(v[2] - 2048.0f) / 2048.0f;
         pbuf[ndpkt++].fl32[3] = 1.0f;
@@ -606,6 +620,12 @@ void SetEffSQITex(int n, int *v, int tp, float w, float h, u_char r, u_char g, u
 
     float* buffer = (float*)&pbuf[ndpkt];
 
+    // Hoisted: render-target dimensions are constant across the 4 vertices.
+    // The helper letterboxes PS2 into the current buffer so the on-screen
+    // position is the same at any window/buffer resolution.
+    const float win_w = (float)MikuPan_GetWindowWidth();
+    const float win_h = (float)MikuPan_GetWindowHeight();
+
     for (i = 0; i < 4; i++)
     {
         pbuf[ndpkt].fl32[0] = i % 2 ? 1.0f : 0.0f;
@@ -618,12 +638,14 @@ void SetEffSQITex(int n, int *v, int tp, float w, float h, u_char r, u_char g, u
         pbuf[ndpkt].fl32[2] = MikuPan_ConvertScaleColor(bb);
         pbuf[ndpkt++].fl32[3] = MikuPan_ConvertScaleColor(a);
 
-        float o_x, o_y, o_z = 0.0f;
-
-        MikuPan_GSToNDC(xx[i % 2], yy[i / 2], v[2], &o_x, &o_y, &o_z, (float)MikuPan_GetWindowWidth(), (float)MikuPan_GetWindowHeight());
-
-        pbuf[ndpkt].fl32[0] = o_x;
-        pbuf[ndpkt].fl32[1] = o_y;
+        // xx/yy are PS2 GS sub-pixel coords (1/16 px fixed-point — values
+        // typically land in the 32000+ range because FLT_TO_FIX4 multiplies
+        // post-perspective screen pixels by 16). Use the shared sub-pixel
+        // helper so this matches SetEffSQTex's pixel-space conversion path.
+        float ndc[2];
+        MikuPan_ConvertPs2GSSubPixelToNDC(ndc, win_w, win_h, xx[i % 2], yy[i / 2]);
+        pbuf[ndpkt].fl32[0] = ndc[0];
+        pbuf[ndpkt].fl32[1] = ndc[1];
         pbuf[ndpkt].fl32[2] = 0.0f;
         pbuf[ndpkt++].fl32[3] = 1.0f;
     }

@@ -25,6 +25,9 @@
 #include "enums.h"
 #include "main/glob.h"
 
+#define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
+#include "cimgui.h"
+
 #define PI 3.1415928f
 
 static u_short cam_no_save = 0;
@@ -2646,23 +2649,27 @@ void CameraIdMoveCtrl()
     sceVu0FVECTOR rav = {0.0f, 0.0f, 1000.0f, 0.0f};
     float delta = DEG2RAD(1.0f);
     u_short cn;
-    char *str = "NORMAL       ";
-    char *str5 = "BATTLE       ";
-    char *str6 = "DRAMA        ";
-    char *str7 = "DOOR         ";
-    char *str0 = "CAMERA TYPE  ";
-    char *str1 = "STEP         ";
-    char *str2 = "MOVE ID      ";
-    char *str3 = "NEW DATA SET!!";
-    char *str4 = "MISSION NO   ";
-    char *str_save = "FILE SAVE MODE";
-    char *str_renewal = "RENEWAL DATA!!";
+    char *str           = "NORMAL       ";
+    char *str5          = "BATTLE       ";
+    char *str6          = "DRAMA        ";
+    char *str7          = "DOOR         ";
+    char *str0          = "CAMERA TYPE  ";
+    char *str1          = "STEP         ";
+    char *str2          = "MOVE ID      ";
+    char *str3          = "NEW DATA SET!!";
+    char *str4          = "MISSION NO   ";
+    char *str_save      = "FILE SAVE MODE";
+    char *str_renewal   = "RENEWAL DATA!!";
     char *str_norenewal = "NO RENEWAL DATA";
+
+    igBegin("Camera Id Move Ctrl", NULL, ImGuiWindowFlags_NoTitleBar);
 
     if (R3_PRESSED() == 1)
     {
         cam_info_disp ^= 1;
     }
+
+    igTextColored((ImVec4){1.0f, 0.6f, 0.3f, 1.0f}, "Camera Kind %d", cam_kind);
 
     switch (cam_kind)
     {
@@ -2674,6 +2681,9 @@ void CameraIdMoveCtrl()
             {
                 SetASCIIString2(0, 430.0f, 10.0f, 1, 0xdc, 0xdc, 0x32, str);
                 SetInteger2(0, 540.0f, 10.0f, 1, 0xff, 0xff, 0x32, cn);
+                // Mirror in ImGui: yellow for the NORMAL camera-kind row.
+                // Colour ≈ 0xff,0xff,0x32 normalised (matches the integer's tint).
+                igTextColored((ImVec4){1.00f, 1.00f, 0.20f, 1.0f}, "%s%d", str, cn);
             }
             break;
         case 1:
@@ -2684,6 +2694,8 @@ void CameraIdMoveCtrl()
             {
                 SetASCIIString2(0, 430.0f, 10.0f, 1, 0xdc, 0x64, 0x64, str5);
                 SetInteger2(0, 540.0f, 10.0f, 1, 0xff, 0x64, 0x64, cn);
+                // Mirror in ImGui: red for BATTLE.
+                igTextColored((ImVec4){1.00f, 0.39f, 0.39f, 1.0f}, "%s%d", str5, cn);
             }
             break;
         case 2:
@@ -2694,6 +2706,8 @@ void CameraIdMoveCtrl()
             {
                 SetASCIIString2(0, 430.0f, 10.0f, 1, 0x32, 0xdc, 0x32, str6);
                 SetInteger2(0, 540.0f, 10.0f, 1, 0x32, 0xff, 0x32, cn);
+                // Mirror in ImGui: green for DRAMA.
+                igTextColored((ImVec4){0.20f, 1.00f, 0.20f, 1.0f}, "%s%d", str6, cn);
             }
             break;
         case 3:
@@ -2704,6 +2718,8 @@ void CameraIdMoveCtrl()
             {
                 SetASCIIString2(0, 430.0f, 10.0f, 1, 0x32, 0xdc, 0x32, str7);
                 SetInteger2(0, 540.0f, 10.0f, 1, 0x32, 0xff, 0x32, cn);
+                // Mirror in ImGui: green for DOOR (same palette as DRAMA).
+                igTextColored((ImVec4){0.20f, 1.00f, 0.20f, 1.0f}, "%s%d", str7, cn);
             }
             break;
     }
@@ -2720,6 +2736,14 @@ void CameraIdMoveCtrl()
 
             SetASCIIString2(0, 430.0f, 70.0f, 1, 0x64, 0x64, 0xfa, str2);
             SetInteger2(0, 540.0f, 70.0f, 1, 0xff, 0xff, 0xff, cam_id);
+
+            // Mirror in ImGui. Original draws label + value side by side at
+            // x=430/540 with the label tinted blue and the integer in white;
+            // we collapse each pair to a single line and pick a neutral
+            // light-blue tint that reads on dark backgrounds either way.
+            igTextColored((ImVec4){0.39f, 0.39f, 0.98f, 1.0f}, "%s%d", str0, cam_type);
+            igTextColored((ImVec4){0.39f, 0.39f, 0.98f, 1.0f}, "%s%d", str1, cd_step);
+            igTextColored((ImVec4){0.39f, 0.39f, 0.98f, 1.0f}, "%s%d", str2, cam_id);
         }
         else
         {
@@ -2727,6 +2751,11 @@ void CameraIdMoveCtrl()
             SetInteger2(0, 540.0f, 70.0f, 1, 0xff, 0xff, 0xff, msn_no);
 
             SetASCIIString2(0, 430.0f, 50.0f, 1, 0xf5, 0x67, 0xcb, str_save);
+
+            // Mirror in ImGui — pink for the file-save indicator (matches
+            // original 0xf5,0x67,0xcb), light-blue for the mission-number row.
+            igTextColored((ImVec4){0.96f, 0.40f, 0.80f, 1.0f}, "%s",   str_save);
+            igTextColored((ImVec4){0.39f, 0.39f, 0.98f, 1.0f}, "%s%d", str4, msn_no);
         }
     }
 
@@ -2837,6 +2866,8 @@ void CameraIdMoveCtrl()
         if (cam_type < 6)
         {
             SetASCIIString2(0, 430.0f, 90.0f, 1, 0xff, 0x32, 0x32, str3);
+            // Mirror in ImGui — bright red "NEW DATA SET!!" banner.
+            igTextColored((ImVec4){1.00f, 0.20f, 0.20f, 1.0f}, "%s", str3);
             renewal_data_chk = 1;
             renewal_data_chk_cnt = 0;
             GetMCLocalPosPer(0, 0x0, 0xff);
@@ -2847,6 +2878,8 @@ void CameraIdMoveCtrl()
             {
                 SetASCIIString2(0, 430.0f, 90.0f, 1, 0xf0, 0x32, 0x32,
                                 str_renewal);
+                // Mirror in ImGui — slightly darker red for "RENEWAL DATA!!".
+                igTextColored((ImVec4){0.94f, 0.20f, 0.20f, 1.0f}, "%s", str_renewal);
 
                 if (renewal_data_chk_cnt > 40)
                 {
@@ -2860,6 +2893,8 @@ void CameraIdMoveCtrl()
             {
                 SetASCIIString2(0, 430.0f, 90.0f, 1, 0xdc, 0xdc, 0x32,
                                 str_norenewal);
+                // Mirror in ImGui — yellow for the "NO RENEWAL DATA" path.
+                igTextColored((ImVec4){0.86f, 0.86f, 0.20f, 1.0f}, "%s", str_norenewal);
             }
         }
 
@@ -3030,6 +3065,8 @@ void CameraIdMoveCtrl()
     camera.p[1] = cam_id_move.p[1];
     camera.p[2] = cam_id_move.p[2];
     camera.p[3] = cam_id_move.p[3];
+
+    igEnd();
 }
 
 // Editor Sets
