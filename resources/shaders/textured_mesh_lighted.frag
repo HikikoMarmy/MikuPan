@@ -249,10 +249,16 @@ void main()
 {
     vec4 color = texture(uTexture, vUV);
 
-    if (color.a == 0.0)
+    if (disableLighting == 1)
     {
-        discard;
+        FragColor = color;
+        return;
     }
+
+    //if (color.a == 0.0)
+    //{
+    //    discard;
+    //}
 
     vec3 albedo = color.rgb * oVertexColor;
 
@@ -265,14 +271,7 @@ void main()
     // colour and the texture colour separately, accumulates lighting onto the
     // vertex colour additively (matching `MADDA` chains in CalcIntens), and
     // performs the GS modulate (vertex_color × texture) at the end.
-    if (disableLighting == 1)
-    {
-        color.rgb = albedo;
-    }
-    else
-    {
-        color.rgb = ApplyPS2Lights(vNormal, oViewPosition, oVertexColor, color.rgb);
-    }
+    color.rgb = ApplyPS2Lights(vNormal, oViewPosition, oVertexColor, color.rgb);
 
     // Fog after lighting
     color = mix(uFogColor, color, fogFactor);

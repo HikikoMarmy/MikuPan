@@ -114,7 +114,7 @@ void MikuPan_FixUV(float *uv, int num)
 
     v2 *uvf = (v2 *) uv;
 
-    for (int i = 0; i < num; i++)
+    for (int i = 2; i < num; i++)
     {
         if (*((int *) &uvf[i].v) == 1)
         {
@@ -134,7 +134,7 @@ void MikuPan_FixColors(float *color_buf, int num)
 
     colour *uvf = (colour *) color_buf;
 
-    for (int i = 0; i < num; i++)
+    for (int i = 2; i < num; i++)
     {
         if (*((int *) &uvf[i].r) == 1)
         {

@@ -61,8 +61,7 @@ void MikuPan_SetupFntTexture();
 void MikuPan_SetWorldClipView();
 float* MikuPan_GetWorldClipView();
 float* MikuPan_GetWorldClip();
-void MikuPan_SetupAmbientLighting(const LIGHT_PACK* lp);
-void MikuPan_SetupAmbientLighting2();
+void MikuPan_SetupAmbientLighting(const LIGHT_PACK* lp, float *eyevec);
 /// Called from sglight.c:SetMaterialData when the active SgMaterialC changes.
 /// Pushes the four colour vectors (Ambient/Diffuse/Specular/Emission) into the
 /// MaterialBlock UBO so the fragment shader can apply them per the original
@@ -84,7 +83,6 @@ void MikuPan_SetModelTransformMatrix(sceVu0FVECTOR* m);
 void MikuPan_RenderMeshType0x32(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPUHead);
 void MikuPan_RenderMeshType0x82(unsigned int* pVUVN, unsigned int *pPUHead);
 void MikuPan_RenderMeshType0x2(SGDPROCUNITHEADER* pVUVN, SGDPROCUNITHEADER *pPUHead, float* vertices);
-void MikuPan_FlushMeshBatch(void);
 void MikuPan_FlushStaticMeshCache(void);
 void MikuPan_FlushTexturedSpriteBatch(void);
 float MikuPan_GetLastFrameCpuMs(void);

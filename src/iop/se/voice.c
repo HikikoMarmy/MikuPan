@@ -156,6 +156,7 @@ void Key_On(int vNo)
 
 void Key_Off(int vNo)
 {
+    info_log("Key_Off vNo=%d", vNo);
     VOICE *v = &voices[vNo];
 
     if (v->stream)

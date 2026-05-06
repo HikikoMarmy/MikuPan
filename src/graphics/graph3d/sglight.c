@@ -856,8 +856,6 @@ void SetLightData(SgCOORDUNIT *cp0, SgCOORDUNIT *cp1)
 
     *((int *) &SCRATCHPAD[0x64]) = SgSpotGroupNum;
     *((int *) &SCRATCHPAD[0x68]) = SgPointGroupNum;
-
-    MikuPan_SetupAmbientLighting2();
 }
 
 void SgSetInfiniteLights(sceVu0FVECTOR eye, SgLIGHT *lights, int num)
