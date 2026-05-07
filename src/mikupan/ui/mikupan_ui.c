@@ -541,9 +541,9 @@ void MikuPan_UiMenuBar(void)
             // that for some reason, hold at the minimum to keep the slider
             // consistent.
             int max_w = screen_resolution_width  < 640 ? 640 : screen_resolution_width;
-            int max_h = screen_resolution_height < 224 ? 224 : screen_resolution_height;
+            int max_h = screen_resolution_height < 448 ? 448 : screen_resolution_height;
             igSliderInt("Width",  &render_resolution_width,  640, max_w, "%d", 0);
-            igSliderInt("Height", &render_resolution_height, 224, max_h, "%d", 0);
+            igSliderInt("Height", &render_resolution_height, 448, max_h, "%d", 0);
             igSliderFloat4("Light Color", light_color, 0.0f, 3.0f, "%.3f", 0);
 
             // Brightness / gamma — read by the renderer each frame and

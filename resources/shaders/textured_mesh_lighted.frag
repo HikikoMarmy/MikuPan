@@ -230,8 +230,9 @@ vec3 ApplyPS2Lights(vec4 normal, vec4 viewPos, vec3 vertexColor, vec3 textureCol
 
         float NdotL = max(dot(N, Ldir), 0.0);
         float intensity = min(NdotL * uSpotPower[i].x * inv_dist, 1.0);
+        float len = uSpotPower[i].x / sqrt(dist2) /* * 0.25f */;
 
-        vc += uSpotDiffuse[i].rgb * uMatDiffuse.rgb * intensity * gate;
+        vc += uSpotDiffuse[i].rgb * len * uMatDiffuse.rgb * intensity * gate;
 
         float spec = intensity * intensity;   // ^2
         spec *= spec;                         // ^4
@@ -274,7 +275,11 @@ void main()
     color.rgb = ApplyPS2Lights(vNormal, oViewPosition, oVertexColor, color.rgb);
 
     // Fog after lighting
-    color = mix(uFogColor, color, fogFactor);
+    if (oVertexColor.rgb == vec3(0.0f, 0.0f, 0.0f))
+    {
+        color = mix(uFogColor, color, fogFactor);
+    }
+
 
     if (renderNormals == 1)
     {

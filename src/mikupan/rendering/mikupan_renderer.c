@@ -771,7 +771,7 @@ void MikuPan_SetupAmbientLighting(const LIGHT_PACK *lp, float *eyevec)
         mikupan_light_data.uSpotSpecular[i][2] = lp->spot[i].diffuse[2];
         mikupan_light_data.uSpotSpecular[i][3] = lp->spot[i].diffuse[3];
 
-        mikupan_light_data.uSpotPower[i][0] = lp->spot[i].power;
+        mikupan_light_data.uSpotPower[i][0] = lp->spot[i].power;//1250
 
         // Cone gate parameters. Match SgSetSpotLights (sglight.c:914):
         //   intens   = cos²(half-angle), the inner-cone threshold
