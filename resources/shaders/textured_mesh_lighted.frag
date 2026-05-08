@@ -39,15 +39,6 @@ layout(std140) uniform MaterialBlock
     vec4 uMatEmission;
 };
 
-/// Input variables from vertex shader
-in vec2 vUV;
-in vec4 vNormal;
-in vec4 oViewPosition;
-in vec4 oWorldPosition;
-in vec3 oVertexColor;
-
-out vec4 FragColor;
-
 /// Texture Uniforms
 uniform sampler2D uTexture;
 uniform int renderNormals;
@@ -67,37 +58,18 @@ uniform float     uShadowStrength;
 /// stays intact. Driven by the "Disable Lighting" UI checkbox.
 uniform int disableLighting;
 
-/// Per-mesh-type lighting selector. The PS2 path splits pre-baking across the
-/// six standard mesh types:
-///
-///   * 0x10 / 0x12 / 0x32 — preset/static meshes go through gra3d.c::SgPreRender
-///     which calls sglight.c::SetPreRenderTYPE0/2/2F. Those iterate the prim
-///     packet and bake CalcPointLight() + CalcSpotLight() into the per-vertex
-///     colour slot (sglight.c:1498/1576/1680 write back into prim[0..2]).
-///     The VU then adds only parallel + ambient at draw time. Our renderer
-///     reads the same baked colour via pVMCD->avColor, so to match the PS2
-///     we MUST skip dynamic point/spot in the shader for these types.
-///
-///   * 0x2 / 0xA / 0x82 — skinned/dynamic and NVL meshes have NO CPU pre-bake
-///     (SetPreRenderMeshData switch only covers 0x10/0x12/0x32). At draw the
-///     VU's CalcSpotPoint dispatch (sgsuv.vsm D_EL_*) does parallel + spot +
-///     point per-vertex on top of an authored or zero base colour. We must
-///     run the full dynamic lighting in the shader.
-///
-/// uMeshLightingMode encodes which path to take:
-///   0 = full dynamic (parallel + point + spot + ambient)  → 0x2/0xA/0x82
-///   1 = pre-baked dynamic (parallel + ambient only)       → 0x10/0x12/0x32
-///
-/// Setting this incorrectly is what made bright rooms look blown-out before:
-/// 0x12 meshes were getting point+spot doubled (once baked in oVertexColor,
-/// once added by the shader).
-uniform int uMeshLightingMode;
-
 /// Fog uniforms (kept as regular uniforms)
 uniform vec4 uFog;      // x=min, y=max, z=base, w=scale
 uniform vec4 uFogColor;
 
-uniform float uColorScale;
+/// Input variables from vertex shader
+in vec2 vUV;
+in vec4 vNormal;
+in vec4 oViewPosition;
+in vec4 oWorldPosition;
+in vec3 oVertexColor;
+
+out vec4 FragColor;
 
 // PS2 lighting model — matches the VU1 microcode in vu1/sgsuv/sgexlit.vsm
 // and the C reference impls in graphics/graph3d/sglight.c (CalcIntens for
@@ -194,8 +166,6 @@ vec3 ApplyPS2Lights(vec4 normal, vec4 viewPos, vec3 vertexColor, vec3 textureCol
     // scenes via SgPreRender's per-vertex bake (gra3d.c, scene.c) and
     // currently fall through to nothing in gameplay; fixing it requires the
     // PS2's max_color normalisation upstream of this shader.
-    //
-    // Skip when uMeshLightingMode == 1: see uniform comment above.
     for (int i = 0; i < uPointCount.x; i++)
     {
         vec3 L = uPointPos[i].xyz - viewPos.xyz;
@@ -223,7 +193,11 @@ vec3 ApplyPS2Lights(vec4 normal, vec4 viewPos, vec3 vertexColor, vec3 textureCol
     {
         vec3 L = uSpotPos[i].xyz - viewPos.xyz;       // vert → light (= -L_to_v)
         float dist2 = dot(L, L);
-        if (dist2 <= 0.0) continue;
+        if (dist2 <= 0.0)
+        {
+            continue;
+        }
+
         float inv_dist = inversesqrt(dist2);
         vec3 Ldir = L * inv_dist;
 
@@ -237,11 +211,15 @@ vec3 ApplyPS2Lights(vec4 normal, vec4 viewPos, vec3 vertexColor, vec3 textureCol
         float cos2 = cd * cd;
         float gate = max(cos2 - uSpotIntens[i].x, 0.0) * uSpotIntens[i].y;
         gate = clamp(gate, 0.0, 1.0);
-        if (cos2 <= uSpotIntens[i].x) continue;
+
+        if (cos2 <= uSpotIntens[i].x)
+        {
+            continue;
+        }
 
         float NdotL = max(dot(N, Ldir), 0.0);
         float intensity = min(NdotL * uSpotPower[i].x * inv_dist, 1.0);
-        float len = uSpotPower[i].x / sqrt(dist2) /* * 0.25f */;
+        float len = uSpotPower[i].x / sqrt(dist2) * 0.25f;
 
         vc += uSpotDiffuse[i].rgb * len * uMatDiffuse.rgb * intensity * gate;
 
@@ -267,12 +245,16 @@ void main()
         return;
     }
 
-    //if (color.a == 0.0)
-    //{
-    //    discard;
-    //}
+    if (renderNormals == 1)
+    {
+        FragColor = vec4(oVertexColor, 1.0f);
+        return;
+    }
 
-    vec3 albedo = color.rgb * oVertexColor;
+    if (color.a == 0.0f)
+    {
+        discard;
+    }
 
     // Fog
     float fogFactor = uFog.w * (1.0 / -oViewPosition.z) + uFog.z;
@@ -291,13 +273,6 @@ void main()
         color = mix(uFogColor, color, fogFactor);
     }
 
-
-    if (renderNormals == 1)
-    {
-        FragColor = vec4(oVertexColor, 1.0f);
-        return;
-    }
-
     // PS2-style projector shadow — sample the silhouette texture using the
     // shadow camera's world-clip-view. Anything outside the [0,1] square of
     // shadow UVs reads 0 (CLAMP_TO_BORDER), so fragments outside the caster's
@@ -309,6 +284,7 @@ void main()
         {
             vec3 sndc = shadowClip.xyz / shadowClip.w;
             vec2 suv  = sndc.xy * 0.5 + 0.5;
+
             // Sampling guard: only inside the projector frustum AND the
             // receiver must be in front of the light (sndc.z >= -1) — keeps
             // us from "casting up" onto fragments behind the light plane.

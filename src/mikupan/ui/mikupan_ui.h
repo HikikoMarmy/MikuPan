@@ -19,7 +19,6 @@ int MikuPan_IsNormalsRendering(void);
 void MikuPan_ShowTextureList(void);
 void MikuPan_UiHandleShortcuts(void);
 void MikuPan_UiMenuBar(void);
-void MikuPan_UiControllerRemapWindow(void);
 void MikuPan_UiShaderReloadWindow(void);
 void MikuPan_UiDrawCallInspector(void);
 int MikuPan_IsBoundingBoxRendering(void);
@@ -28,10 +27,10 @@ int MikuPan_IsMesh0x32Rendering(void);
 int MikuPan_IsMesh0x12Rendering(void);
 int MikuPan_IsMesh0x2Rendering(void);
 int MikuPan_IsLightingDisabled(void);
-float *MikuPan_GetLightColor(void);
 float MikuPan_GetNormalLength(void);
 int MikuPan_GetRenderResolutionWidth(void);
 int MikuPan_GetRenderResolutionHeight(void);
 int MikuPan_GetMSAA(void);
+int MikuPan_ShowControllerRemapWindow(void);
 
 #endif // MIKUPAN_IMGUI_WINDOW_H

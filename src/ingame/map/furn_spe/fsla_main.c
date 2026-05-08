@@ -328,8 +328,11 @@ void CandleAnmCtrl()
             break;
             }
 
-            lw->time = lw->ap_in->time;
-            lw->now_magnif = lw->ap_in->magnif * 100.0f;
+            if (lw->ap_in != NULL)
+            {
+                lw->time = lw->ap_in->time;
+                lw->now_magnif = lw->ap_in->magnif * 100.0f;
+            }
         }
     }
 }

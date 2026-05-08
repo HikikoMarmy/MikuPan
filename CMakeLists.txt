@@ -250,6 +250,8 @@ set(MIKUPAN_SOURCES
         src/ingame/map/furn_spe/fsla_dat.c
         src/mikupan/mikupan_config.c
         src/mikupan/mikupan_config.h
+        src/mikupan/mikupan_controller.c
+        src/mikupan/mikupan_controller.h
 )
 
 add_executable(MikuPan ${MIKUPAN_SOURCES} ${APP_ICON_RESOURCE_WINDOWS})

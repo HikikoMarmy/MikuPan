@@ -1,11 +1,33 @@
 #include "mikupan_pipeline.h"
-
 #include "mikupan/mikupan_types.h"
-
 #include <glad/gl.h>
 #include <stdlib.h>
 
+typedef enum
+{
+    MIKUPAN_RS_UNINIT = 0,
+    MIKUPAN_RS_3D,
+    MIKUPAN_RS_3D_MIRROR,
+    MIKUPAN_RS_2D,
+    MIKUPAN_RS_SPRITE_3D
+} MikuPan_RenderStateMode;
+
+/// GL bind dedup. The driver still validates every glBind*/glActiveTexture/
+/// glViewport call even when nothing changes; redundant calls are pure
+/// overhead. We shadow the bound state and skip the underlying GL call when
+/// the requested value already matches.
+///
+/// Sentinels: 0 means "no buffer/texture/VAO bound" (the GL default) AND
+/// "cache cold" — both correctly force the next bind through. -1 in the
+/// viewport array forces the first SetViewport call after reset.
+static GLuint g_bound_vao             = 0;
+static GLuint g_bound_array_buffer    = 0;
+static GLuint g_bound_element_buffer  = 0;
+static GLenum g_active_texture_unit   = GL_TEXTURE0;
+static GLuint g_bound_texture_2d      = 0;
+static int    g_viewport[4]           = {-1, -1, -1, -1};
 MikuPan_PipelineInfo pipelines[MAX_NUMBER_OF_PIPELINES] = {0};
+static MikuPan_RenderStateMode g_current_render_state = MIKUPAN_RS_UNINIT;
 
 void MikuPan_InitPipeline()
 {
@@ -304,18 +326,6 @@ MikuPan_PipelineInfo* MikuPan_GetPipelineInfo(enum MikuPan_PipelineType pipeline
     return &pipelines[pipeline_type];
 }
 
-/// Cache the current high-level render-state mode so repeated calls with the
-/// same target mode (the common case during the 3D mesh phase) become no-ops.
-typedef enum {
-    MIKUPAN_RS_UNINIT = 0,
-    MIKUPAN_RS_3D,
-    MIKUPAN_RS_3D_MIRROR,
-    MIKUPAN_RS_2D,
-    MIKUPAN_RS_SPRITE_3D
-} MikuPan_RenderStateMode;
-
-static MikuPan_RenderStateMode g_current_render_state = MIKUPAN_RS_UNINIT;
-
 void MikuPan_SetRenderState3D()
 {
     if (g_current_render_state == MIKUPAN_RS_3D) return;
@@ -379,11 +389,6 @@ int MikuPan_GetCurrentRenderStateMode(void)
     return (int)g_current_render_state;
 }
 
-/// Apply a previously-captured mode (from MikuPan_GetCurrentRenderStateMode).
-/// Used by the cached-draw queue to restore each entry's expected render state
-/// at flush time — necessary because the queue defers draws past mirror /
-/// non-mirror state transitions, and the per-entry expected state would
-/// otherwise be lost.
 void MikuPan_ApplyRenderStateMode(int mode)
 {
     switch ((MikuPan_RenderStateMode)mode)
@@ -395,21 +400,6 @@ void MikuPan_ApplyRenderStateMode(int mode)
         default:                   MikuPan_SetRenderState3D();        break;
     }
 }
-
-/// GL bind dedup. The driver still validates every glBind*/glActiveTexture/
-/// glViewport call even when nothing changes; redundant calls are pure
-/// overhead. We shadow the bound state and skip the underlying GL call when
-/// the requested value already matches.
-///
-/// Sentinels: 0 means "no buffer/texture/VAO bound" (the GL default) AND
-/// "cache cold" — both correctly force the next bind through. -1 in the
-/// viewport array forces the first SetViewport call after reset.
-static GLuint g_bound_vao             = 0;
-static GLuint g_bound_array_buffer    = 0;
-static GLuint g_bound_element_buffer  = 0;
-static GLenum g_active_texture_unit   = GL_TEXTURE0;
-static GLuint g_bound_texture_2d      = 0;
-static int    g_viewport[4]           = {-1, -1, -1, -1};
 
 void MikuPan_BindVAO(GLuint vao)
 {
@@ -497,5 +487,12 @@ void MikuPan_ResetGLBindCache(void)
     g_viewport[3] = -1;
 }
 
-GLuint MikuPan_GetBoundVAO(void)         { return g_bound_vao; }
-GLuint MikuPan_GetBoundTexture2D(void)   { return g_bound_texture_2d; }
+GLuint MikuPan_GetBoundVAO(void)
+{
+    return g_bound_vao;
+}
+
+GLuint MikuPan_GetBoundTexture2D(void)
+{
+    return g_bound_texture_2d;
+}

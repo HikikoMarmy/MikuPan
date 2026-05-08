@@ -22,18 +22,7 @@
 #include "mikupan_pipeline.h"
 #include <glad/gl.h>
 
-/// Per-mesh-type CPU staging buffers used by the immediate-mode render path.
-/// Each MikuPan_RenderMeshType* fills its family's struct from offset 0,
-/// streams it to the pipeline VBOs, and draws — all in one call. There is no
-/// batching across calls and no per-mesh GL-object cache, so the buffers
-/// hold one mesh's worth of data at a time and a per-family split keeps
-/// concurrent draws (e.g. 0x82 calling FlushTexturedSpriteBatch which itself
-/// does not touch these) from interfering.
-///
-/// Three families, matching the three public render functions:
-///   * 0x32 family: mesh types 0x32 (SoA) / 0x12 / 0x10
-///   * 0x82 family: mesh type 0x82
-///   * 0x2  family: mesh types 0x2 / 0xA
+#define TEXTURED_SPRITE_BATCH_MAX 4096
 #define MIKUPAN_MESH_BUFFER_CAPACITY (1024 * 1024)
 
 typedef struct
@@ -58,62 +47,6 @@ typedef struct
     float uvs    [MIKUPAN_MESH_BUFFER_CAPACITY];
 } MikuPan_MeshBuffers0x2;
 
-static MikuPan_MeshBuffers0x32 g_mesh_buffers_0x32 = {0};
-static MikuPan_MeshBuffers0x82 g_mesh_buffers_0x82 = {0};
-static MikuPan_MeshBuffers0x2  g_mesh_buffers_0x2  = {0};
-
-/// Read-only zero source for 0x82 color fill (PS2 0x82 has no per-vertex
-/// colors — the shader receives a constant black). Shared because it is never
-/// written, only memcpy'd from.
-static float g_zero_floats[MIKUPAN_MESH_BUFFER_CAPACITY] = {0};
-
-/// Stream-upload helper for dynamic vertex/index buffers.
-///
-/// On NVIDIA, glBufferSubData is fine because the driver does internal buffer
-/// renaming to avoid GPU stalls. On AMD/Intel/Mesa, glBufferSubData on a
-/// buffer the GPU is still using will implicitly *sync* the CPU with the GPU
-/// — exactly the wrong thing to do at frame time.
-///
-/// glMapBufferRange + GL_MAP_INVALIDATE_BUFFER_BIT explicitly tells the driver
-/// "discard whatever was here, give me a fresh region", which lets the driver
-/// rename the storage internally. The GPU finishes with the old storage in
-/// the background while we write into new storage, so there's no stall.
-///
-/// Use this for any per-frame upload that fully replaces the buffer's
-/// contents starting at offset 0.
-static inline void MikuPan_StreamUploadFull(GLenum target, GLuint buffer,
-                                            GLsizeiptr size, const void *data)
-{
-    if (size <= 0) return;
-
-    Uint64 t0 = MikuPan_PerfBegin();
-
-    MikuPan_BindBufferCached(target, buffer);
-
-    void *ptr = glad_glMapBufferRange(target, 0, size,
-        GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
-
-    if (ptr != NULL)
-    {
-        memcpy(ptr, data, (size_t)size);
-        glad_glUnmapBuffer(target);
-    }
-    else
-    {
-        // Map can fail under driver pressure — fall back to the slow path so
-        // we still upload correctly.
-        glad_glBufferSubData(target, 0, size, data);
-    }
-
-    MikuPan_PerfEnd(PERF_SECT_BUFFER_UPLOAD, t0);
-}
-
-/// 2D textured sprite batching. Game UI/font rendering goes character-by-character
-/// through MikuPan_RenderSprite; without batching that's one draw call per glyph.
-/// We accumulate into a CPU buffer (6 verts per quad as a triangle list) and flush
-/// when the texture changes, when a non-batched 2D function is called, or at
-/// end-of-frame.
-#define TEXTURED_SPRITE_BATCH_MAX 4096
 typedef struct
 {
     int active;
@@ -121,12 +54,14 @@ typedef struct
     GLuint texture_id;
 } MikuPan_TexturedSpriteBatch;
 
+static MikuPan_MeshBuffers0x32 g_mesh_buffers_0x32 = {0};
+static MikuPan_MeshBuffers0x82 g_mesh_buffers_0x82 = {0};
+static MikuPan_MeshBuffers0x2  g_mesh_buffers_0x2  = {0};
+static float g_zero_floats[MIKUPAN_MESH_BUFFER_CAPACITY] = {0};
 static MikuPan_TexturedSpriteBatch g_textured_sprite_batch = {0};
 static float g_textured_sprite_cpu_buf[TEXTURED_SPRITE_BATCH_MAX * 6 * 12];
-
 MikuPan_RenderWindow mikupan_render = {0};
 MikuPan_MsaaBufferObject render_back_msaa = {0};
-
 MikuPan_TextureInfo *fnt_texture[6] = {0};
 MikuPan_TextureInfo *curr_fnt_texture = NULL;
 
@@ -142,36 +77,19 @@ mat4 ViewClip = {0};
 
 /// SgCMtx or camera->wc
 mat4 WorldClip = {0};
-
-/// ---- Shadow pass state ---------------------------------------------------
-/// 256×256 R8 alpha texture — one shadow per scene, written once per frame
-/// inside DrawShadow and sampled by every subsequent mesh draw. R8 not RGBA
-/// because the silhouette is monochrome and the receiver only reads `.r`.
+static mat4 g_cached_model_matrix;
+static int  g_has_cached_model = 0;
+static GLfloat g_max_aniso = -1.0f;
 #define SHADOW_FBO_SIZE 256
 static GLuint g_shadow_fbo  = 0;
 static GLuint g_shadow_tex  = 0;
 static int    g_shadow_init = 0;
 static int    g_shadow_enabled = 1;
-
-/// Saved during BeginShadowPass so EndShadowPass can restore the main pass.
 static GLint  g_shadow_saved_fbo      = 0;
 static int    g_shadow_saved_viewport[4] = {0};
-
-/// The shadow camera's world-clip-view matrix, captured for the receiver
-/// shaders to sample with each frame. Identity before any shadow has been
-/// rendered → the sampling path is gated by `g_shadow_enabled`, so an
-/// uninitialised matrix is never read by a real shader.
 static mat4 g_shadow_world_clip_view;
 static int  g_shadow_matrix_valid = 0;
-
-/// 1 while DrawShadow is iterating the caster prims — the mesh-type
-/// renderers consult this to bypass the user-facing visibility toggles
-/// (we always want all caster polys in the silhouette regardless of
-/// "Mesh 0x12" debug filters) and to skip per-mesh state setup that the
-/// silhouette shader doesn't need (texture binding, lighting mode, etc.).
 static int g_shadow_pass_active = 0;
-int  MikuPan_IsShadowPassActive(void) { return g_shadow_pass_active; }
-
 MikuPan_LightData    mikupan_light_data    = {0};
 MikuPan_MaterialData mikupan_material_data = {
     {1.0f, 1.0f, 1.0f, 1.0f}, // Ambient — identity until first SetMaterial
@@ -180,6 +98,39 @@ MikuPan_MaterialData mikupan_material_data = {
     {0.0f, 0.0f, 0.0f, 0.0f}, // Emission
 };
 static int mikupan_material_dirty = 1;
+
+int MikuPan_IsShadowPassActive(void)
+{
+    return g_shadow_pass_active;
+}
+
+static inline void MikuPan_StreamUploadFull(GLenum target, GLuint buffer,
+                                            GLsizeiptr size, const void *data)
+{
+    if (size <= 0)
+    {
+        return;
+    }
+
+    Uint64 t0 = MikuPan_PerfBegin();
+
+    MikuPan_BindBufferCached(target, buffer);
+
+    void *ptr = glad_glMapBufferRange(target, 0, size,
+        GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
+
+    if (ptr != NULL)
+    {
+        memcpy(ptr, data, (size_t)size);
+        glad_glUnmapBuffer(target);
+    }
+    else
+    {
+        glad_glBufferSubData(target, 0, size, data);
+    }
+
+    MikuPan_PerfEnd(PERF_SECT_BUFFER_UPLOAD, t0);
+}
 
 SDL_AppResult MikuPan_Init()
 {
@@ -208,7 +159,10 @@ SDL_AppResult MikuPan_Init()
 
     info_log("Creating SDL Window");
 
-    mikupan_render.window = SDL_CreateWindow("MikuPan", 1920, 1080,
+    SDL_DisplayID primary = SDL_GetPrimaryDisplay();
+    const SDL_DisplayMode *mode = SDL_GetCurrentDisplayMode(primary);
+
+    mikupan_render.window = SDL_CreateWindow("MikuPan", mode->w, mode->h,
                               SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL);
 
     if (mikupan_render.window == NULL)
@@ -242,7 +196,7 @@ SDL_AppResult MikuPan_Init()
     info_log("GLad version loaded %d", gladLoadGLLoader((void*)SDL_GL_GetProcAddress));
 
     MikuPan_InitUi(mikupan_render.window, gl_context);
-    MikuPan_CreateInternalBuffer(640, 440, 0);
+    MikuPan_CreateInternalBuffer(mode->w, mode->h, 0);
     MikuPan_InitShaders();
     MikuPan_InitPipeline();
 
@@ -301,8 +255,6 @@ void MikuPan_DestroyInternalBuffer()
     }
 }
 
-/// Lazily allocate the shadow FBO + R8 texture on first use. Re-creating
-/// elsewhere would also work but Begin is the natural choke-point.
 static void MikuPan_EnsureShadowFbo(void)
 {
     if (g_shadow_init) return;
@@ -431,13 +383,25 @@ void MikuPan_EndShadowPass(void)
     MikuPan_ActiveTextureCached(GL_TEXTURE0);
 }
 
-unsigned int MikuPan_GetShadowTexture(void) { return g_shadow_tex; }
-float       *MikuPan_GetShadowMatrix(void)
+unsigned int MikuPan_GetShadowTexture(void)
+{
+    return g_shadow_tex;
+}
+
+float* MikuPan_GetShadowMatrix(void)
 {
     return g_shadow_matrix_valid ? (float *)g_shadow_world_clip_view : NULL;
 }
-int  MikuPan_IsShadowEnabled(void)         { return g_shadow_enabled; }
-void MikuPan_SetShadowEnabled(int enabled) { g_shadow_enabled = enabled ? 1 : 0; }
+
+int MikuPan_IsShadowEnabled(void)
+{
+    return g_shadow_enabled;
+}
+
+void MikuPan_SetShadowEnabled(int enabled)
+{
+    g_shadow_enabled = enabled ? 1 : 0;
+}
 
 int MikuPan_ReadFramebufferRGBA8TopLeft(int width, int height, unsigned char *out_rgba)
 {
@@ -687,7 +651,6 @@ void MikuPan_Clear()
 
 void MikuPan_EndFrame()
 {
-    // Submit any pending batched mesh before we switch to 2D post-processing.
     MikuPan_FlushMeshBatch();
 
     glad_glBindFramebuffer(GL_READ_FRAMEBUFFER, render_back_msaa.framebuffer_readback.id);
@@ -727,11 +690,7 @@ void MikuPan_EndFrame()
     MikuPan_BindTexture2DCached(render_back_msaa.texture.id);
 
     MikuPan_SetRenderState2D();
-    // Final scene-to-window blit uses POSTPROCESS_SHADER so brightness and
-    // gamma apply to everything rendered into the MSAA buffer (3D + 2D +
-    // game UI text). The shader is registered alongside the others in
-    // mikupan_shader.c and shares sprite.vert's UV4_COLOUR4_POSITION4
-    // layout, so it drives the same fullscreen-quad pipeline.
+
     MikuPan_SetCurrentShaderProgram(POSTPROCESS_SHADER);
     MikuPan_SetUniform1fToCurrentShader(MikuPan_GetBrightness(), "uBrightness");
     MikuPan_SetUniform1fToCurrentShader(MikuPan_GetGamma(),      "uGamma");
@@ -753,11 +712,10 @@ void MikuPan_EndFrame()
     {
         Uint64 _t0 = MikuPan_PerfBegin();
         MikuPan_DrawUi();
+
         MikuPan_PerfEnd(PERF_SECT_DRAWUI, _t0);
     }
 
-    // Drain any pending textured sprites (game UI text) before ImGui — ImGui
-    // mutates GL state arbitrarily for its own draws, which would orphan our batch.
     MikuPan_FlushTexturedSpriteBatch();
 
     {
@@ -766,9 +724,6 @@ void MikuPan_EndFrame()
         MikuPan_PerfEnd(PERF_SECT_RENDERUI, _t0);
     }
 
-    // Close the timing window: stop the GL query, snapshot the CPU duration,
-    // and pull the previous frame's GPU result. SwapWindow may block on vsync
-    // — we deliberately don't include that wait in either metric.
     MikuPan_PerfEndFrame();
 
     SDL_GL_SwapWindow(mikupan_render.window);
@@ -973,18 +928,11 @@ void MikuPan_SetupAmbientLighting(const LIGHT_PACK *lp, float *eyevec)
                          &mikupan_light_data);
 }
 
-/// Push the current SgMaterialC's colours into the MaterialBlock UBO. Called
-/// from sglight.c:SetMaterialData via the public hook below — gives the
-/// fragment shader access to the same Ambient / Diffuse / Specular / Emission
-/// values the original PS2 path bakes into Parallel_Ambient / Parallel_DColor /
-/// Parallel_SColor at SetMaterialData (sglight.c:505-531).
 void MikuPan_SetMaterial(const sceVu0FVECTOR *ambient,
                          const sceVu0FVECTOR *diffuse,
                          const sceVu0FVECTOR *specular,
                          const sceVu0FVECTOR *emission)
 {
-    // Skip if nothing changed — most consecutive draws share the same material
-    // because the PS2 SGD pipeline groups primitives by material.
     if (memcmp(mikupan_material_data.uMatAmbient,  *ambient,  sizeof(float[4])) == 0 &&
         memcmp(mikupan_material_data.uMatDiffuse,  *diffuse,  sizeof(float[4])) == 0 &&
         memcmp(mikupan_material_data.uMatSpecular, *specular, sizeof(float[4])) == 0 &&
@@ -993,8 +941,6 @@ void MikuPan_SetMaterial(const sceVu0FVECTOR *ambient,
         return;
     }
 
-    // Material is about to change — drain anything queued under the previous
-    // material so it renders with the right colours before the UBO update.
     MikuPan_FlushMeshBatch();
 
     memcpy(mikupan_material_data.uMatAmbient,  *ambient,  sizeof(float[4]));
@@ -1035,21 +981,11 @@ void MikuPan_SetupAmbientLighting2()
 
 void MikuPan_RenderSetDebugValues()
 {
-    // These are debug toggles driven by the ImGui panel — they only change
-    // when the user moves a slider or flips a checkbox, but the original code
-    // re-pushed all three to every shader every frame. Track the last-set
-    // value and skip the broadcast when nothing changed. Float comparisons
-    // are exact on purpose: the values come straight from UI controls, so
-    // "no change" is bit-identical.
-    //
-    // Sentinels (-1 / NaN-ish) trigger the first set after init.
     static int   last_render_normals   = -1;
-    static float last_color_scale      = -1.0f;
     static float last_normal_length    = -1.0f;
     static int   last_disable_lighting = -1;
 
     int   render_normals   = MikuPan_IsNormalsRendering();
-    float color_scale      = MikuPan_GetLightColor()[0];
     float normal_length    = MikuPan_GetNormalLength();
     int   disable_lighting = MikuPan_IsLightingDisabled();
 
@@ -1058,16 +994,13 @@ void MikuPan_RenderSetDebugValues()
         MikuPan_SetUniform1iToAllShaders(render_normals, "renderNormals");
         last_render_normals = render_normals;
     }
-    if (color_scale != last_color_scale)
-    {
-        MikuPan_SetUniform1fToAllShaders(color_scale, "uColorScale");
-        last_color_scale = color_scale;
-    }
+
     if (normal_length != last_normal_length)
     {
         MikuPan_SetUniform1fToAllShaders(normal_length, "uNormalLength");
         last_normal_length = normal_length;
     }
+
     if (disable_lighting != last_disable_lighting)
     {
         MikuPan_SetUniform1iToAllShaders(disable_lighting, "disableLighting");
@@ -1075,17 +1008,13 @@ void MikuPan_RenderSetDebugValues()
     }
 }
 
-/// Driver-reported max anisotropy. Cached lazily on first texture creation —
-/// the value is fixed for the GL context, so re-querying for every texture
-/// (the original code path) is pure overhead. Negative sentinel = uninitialized.
-static GLfloat g_max_aniso = -1.0f;
-
 static GLfloat MikuPan_GetMaxAniso(void)
 {
     if (g_max_aniso < 0.0f)
     {
         glad_glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY_EXT, &g_max_aniso);
     }
+
     return g_max_aniso;
 }
 
@@ -1277,9 +1206,6 @@ void MikuPan_RenderBoundingBox(sceVu0FVECTOR *vertices)
     }
 }
 
-/// Submit any pending textured-sprite batch as a single triangle-list draw.
-/// Callers must invoke this before any other 2D draw (untextured sprite,
-/// 3D-style sprite, line, bounding box) and before ImGui rendering.
 void MikuPan_FlushTexturedSpriteBatch(void)
 {
     MIKUPAN_PERF_SCOPE(PERF_SECT_BATCH_FLUSH);
@@ -1462,11 +1388,6 @@ void MikuPan_SetWorldClipView()
 {
     MikuPan_SetModelTransformMatrix(WorldClipView);
 }
-
-/// CPU-side cache of the last model matrix passed to the engine. Used to
-/// recompute derived matrices without re-reading from the uniform.
-static mat4 g_cached_model_matrix;
-static int  g_has_cached_model = 0;
 
 static void MikuPan_RecomputeAndUploadDerived(void)
 {
@@ -1700,63 +1621,10 @@ void MikuPan_SetupMirrorMtx(float* mtx)
     }
 }
 
-/// Public flush-batch entry point. Kept so existing call sites in this file
-/// (state-change boundaries: material change, lighting change, view/mirror
-/// matrix change, end-of-frame) and in mikupan_texture_manager.cpp keep
-/// linking. The renderer no longer batches mesh draws across calls — each
-/// MikuPan_RenderMeshType* uploads + draws immediately — so there is no
-/// pending state for this function to flush.
 void MikuPan_FlushMeshBatch(void)
 {
 }
 
-/// Returns the per-mesh-type lighting mode for the GLSL frag shader.
-///
-/// Currently returns 0 (full dynamic — parallel + ambient + point + spot)
-/// for every mesh type. The two modes were kept separate to allow a future
-/// "skip dynamic point/spot for static-baked vertex colour" path, but the
-/// PS2 itself does NOT actually skip — see sgsuvp2.vsm::DP2_PROLOGUE which
-/// dispatches CalcSpotPoint at draw time even for the preset (0x10/0x12/
-/// 0x32) variants. The PS2 just accepts double-counting against any
-/// scene-load static lights baked into pVMCD->avColor by SgPreRender.
-///
-/// And in MikuPan that double-counting is rarely visible: SgPreRender is
-/// only invoked at scene load / room transitions / black-and-white toggle
-/// (gra3d.c, scene.c, load3d.c), never per frame. Flashlight and other
-/// runtime-added lights are NEVER baked into vertex colours during play —
-/// the only way they reach pixels is through this dynamic shader path.
-/// Skipping them for 0x10/0x12/0x32 (rooms / furniture) hid the flashlight
-/// entirely, which is what we hit reverting from the per-type gate.
-///
-/// If MikuPan later starts re-baking per frame (matching the original PS2
-/// engine cadence more closely), this should switch back to:
-///     if (mesh_type == 0x10 || 0x12 || 0x32) return 1;
-///     return 0;
-/// — at which point the shader will correctly skip point/spot for those
-/// types and rely on the freshly-baked vertex colour.
-static inline int MikuPan_MeshLightingModeFor(unsigned char mesh_type)
-{
-    (void)mesh_type;
-    return 0;
-}
-
-/// Push the lighting-mode uniform into the currently-bound shader program.
-/// Cheap on a no-op (glUniform1i is fast and we cache the location), so we
-/// don't try to dedup against the previous value — it changes only on
-/// mesh-type boundaries, which already trigger a batch flush + state change.
-static inline void MikuPan_ApplyMeshLightingMode(unsigned char mesh_type)
-{
-    MikuPan_SetUniform1iToCurrentShader(
-        MikuPan_MeshLightingModeFor(mesh_type), "uMeshLightingMode");
-}
-
-/// Build position/normal/UV/color/index data for one 0x32 mesh into the global
-/// temp buffers, then upload everything to dedicated VBOs and capture them into
-/// a fresh VAO. This runs once per unique mesh asset.
-/// Public entry point for clearing any cached static mesh state. The renderer
-/// no longer caches per-mesh GL objects (each MikuPan_RenderMeshType* uploads
-/// + draws immediately), so this is a no-op. Kept for the
-/// mikupan_texture_manager.cpp call site at level transitions.
 void MikuPan_FlushStaticMeshCache(void)
 {
 }
@@ -1767,11 +1635,11 @@ void MikuPan_RenderMeshType0x32(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPU
 
     char mesh_type = GET_MESH_TYPE(pPUHead);
 
-    // Mesh-type gate. The first leg is always required (we only know how to
-    // process 0x10/0x12/0x32 here). The user-facing visibility filters are
-    // skipped during the shadow caster pass so the silhouette covers the
-    // full caster regardless of debug toggles in the UI.
-    if (mesh_type != 0x12 && mesh_type != 0x10 && mesh_type != 0x32) return;
+    if (mesh_type != 0x12 && mesh_type != 0x10 && mesh_type != 0x32)
+    {
+        return;
+    }
+
     if (!g_shadow_pass_active)
     {
         if (((mesh_type == 0x12 || mesh_type == 0x10) && !MikuPan_IsMesh0x12Rendering()) ||
@@ -1781,8 +1649,6 @@ void MikuPan_RenderMeshType0x32(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPU
         }
     }
 
-    // Per-type sub-section: 0x32 uses the SoA path, 0x12/0x10 use the AoS path
-    // — each ends up looking different in the breakdown, so we want them split.
     int per_type_sect = (mesh_type == 0x32) ? PERF_SECT_MESH_0x32 :
                         (mesh_type == 0x12) ? PERF_SECT_MESH_0x12 :
                                               PERF_SECT_MESH_0x10;
@@ -1794,27 +1660,25 @@ void MikuPan_RenderMeshType0x32(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPU
     SGDVUMESHSTDATA *sgdMeshData = (SGDVUMESHSTDATA *)((int64_t) pProcData + (pProcData->VUMeshData_Preset.sOffsetToST - 1) * 4);
     _SGDVUMESHCOLORDATA *pVMCD = (_SGDVUMESHCOLORDATA*) (&pPUHead->pNext + pProcData->VUMeshData_Preset.sOffsetToPrim);
 
-    // 0x32 uses an SoA pipeline so positions and normals can be written directly
-    // (memcpy + tight repeated fill) instead of being interleaved per-vertex.
-    // 0x12/0x10 keep using the AoS pipeline since their source data is already
-    // interleaved in the matching layout.
-    int desired_pipeline = (mesh_type == 0x32) ? POSITION3_NORMAL3_UV2_SOA
-                                               : POSITION3_NORMAL3_UV2;
+    int desired_pipeline = (mesh_type == 0x32) ? POSITION3_NORMAL3_UV2_SOA : POSITION3_NORMAL3_UV2;
+
     MikuPan_PipelineInfo *pipeline = MikuPan_GetPipelineInfo(desired_pipeline);
 
-    // ── State setup (immediate-mode: each call sets its own state and draws). ──
     MikuPan_FlushTexturedSpriteBatch();
+
     Uint64 _sc_t0 = SDL_GetPerformanceCounter();
     Uint64 _t = MikuPan_PerfBegin();
     MikuPan_SetCurrentShaderProgram(MESH_0x12_SHADER);
-    MikuPan_ApplyMeshLightingMode((unsigned char)mesh_type);
     MikuPan_PerfEnd(PERF_SECT_SC_SHADER, _t);
+
     _t = MikuPan_PerfBegin();
     MikuPan_BindVAO(pipeline->vao);
     MikuPan_PerfEnd(PERF_SECT_SC_VAO, _t);
+
     _t = MikuPan_PerfBegin();
     MikuPan_SetTexture(mesh_tex_reg);
     MikuPan_PerfEnd(PERF_SECT_SC_TEXTURE, _t);
+
     _t = MikuPan_PerfBegin();
     MikuPan_SetRenderState3D();
     MikuPan_PerfEnd(PERF_SECT_SC_RS3D, _t);
@@ -1826,18 +1690,12 @@ void MikuPan_RenderMeshType0x32(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPU
     {
         vertices = (GLfloat *)(pVUVNData->VUVNData_Preset.aui
                                + (pVUVN->VUVNDesc.sNumNormal) * 3 + 10);
-        // SoA path: positions are contiguous in the source array — bulk memcpy
-        // into the staging buffer. Normals are per-submesh and get expanded
-        // per-vertex below in the inner loop.
         memcpy(g_mesh_buffers_0x32.positions, vertices,
                (size_t)pVUVN->VUVNDesc.sNumVertex * 3 * sizeof(float));
     }
     else /* 0x12 / 0x10 */
     {
         vertices = (float *)&(((int *)pVUVN)[14]);
-        // AoS source data is already interleaved pos+norm in the layout the
-        // POSITION3_NORMAL3_UV2 pipeline expects — stream it straight to the
-        // GPU buffer.
         size_t byte_size = pVUVN->VUVNDesc.sNumVertex * pipeline->buffers[0].attributes[0].stride;
         MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[0].id,
                                  (GLsizeiptr)byte_size, vertices);
@@ -1936,8 +1794,6 @@ void MikuPan_RenderMeshType0x82(unsigned int *pVUVN, unsigned int *pPUHead)
 {
     MIKUPAN_PERF_SCOPE(PERF_SECT_MESH_RENDER);
 
-    // Visibility filter is skipped during the shadow pass so the silhouette
-    // captures all of the caster regardless of UI debug toggles.
     if (!g_shadow_pass_active && !MikuPan_IsMesh0x82Rendering())
     {
         return;
@@ -1960,7 +1816,6 @@ void MikuPan_RenderMeshType0x82(unsigned int *pVUVN, unsigned int *pPUHead)
     Uint64 _sc_t0 = SDL_GetPerformanceCounter();
     Uint64 _t = MikuPan_PerfBegin();
     MikuPan_SetCurrentShaderProgram(MESH_0x12_SHADER);
-    MikuPan_ApplyMeshLightingMode(0x82);
     MikuPan_PerfEnd(PERF_SECT_SC_SHADER, _t);
     _t = MikuPan_PerfBegin();
     MikuPan_BindVAO(pipeline->vao);
@@ -2062,14 +1917,16 @@ void MikuPan_RenderMeshType0x2(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPUH
     Uint64 _sc_t0 = SDL_GetPerformanceCounter();
     Uint64 _t = MikuPan_PerfBegin();
     MikuPan_SetCurrentShaderProgram(shader);
-    MikuPan_ApplyMeshLightingMode((unsigned char)mesh_type);
     MikuPan_PerfEnd(PERF_SECT_SC_SHADER, _t);
+
     _t = MikuPan_PerfBegin();
     MikuPan_BindVAO(pipeline->vao);
     MikuPan_PerfEnd(PERF_SECT_SC_VAO, _t);
+
     _t = MikuPan_PerfBegin();
     MikuPan_SetTexture(mesh_tex_reg);
     MikuPan_PerfEnd(PERF_SECT_SC_TEXTURE, _t);
+
     _t = MikuPan_PerfBegin();
     MikuPan_SetRenderState3D();
     MikuPan_PerfEnd(PERF_SECT_SC_RS3D, _t);

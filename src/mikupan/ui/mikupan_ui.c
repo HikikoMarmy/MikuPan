@@ -11,15 +11,11 @@
 #include "main/glob.h"
 #include "graphics/graph2d/g2d_debug.h"
 #include "graphics/graph2d/message.h"
-#include "sce/libpad.h"
-
-#include <SDL3/SDL_gamepad.h>
-#include <SDL3/SDL_keyboard.h>
-#include <SDL3/SDL_scancode.h>
 
 #include <math.h>
-#include <string.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 
 // -- Backend wrappers (defined in mikupan_ui.cpp) ----------------------------
 void MikuPan_ImGui_ImplInit(SDL_Window *window, void *gl_context);
@@ -35,7 +31,7 @@ float MikuPan_PerfGetSectionMs(int section);
 int   MikuPan_PerfGetTexL1Hits(void);
 int   MikuPan_PerfGetTexL1Misses(void);
 
-// CPU section IDs (must match MikuPan_PerfSection in mikupan_profiler.h)
+/// CPU section IDs (must match MikuPan_PerfSection in mikupan_profiler.h)
 #define MP_PERF_MESH_RENDER   0
 #define MP_PERF_SPRITE_RENDER 1
 #define MP_PERF_BATCH_FLUSH   2
@@ -44,20 +40,23 @@ int   MikuPan_PerfGetTexL1Misses(void);
 #define MP_PERF_DRAW_SUBMIT   5
 #define MP_PERF_BUFFER_UPLOAD 6
 #define MP_PERF_STATE_CHANGE  7
-// Sub-sections decomposing MP_PERF_STATE_CHANGE (sum ≈ STATE_CHANGE).
+
+/// Sub-sections decomposing MP_PERF_STATE_CHANGE (sum ≈ STATE_CHANGE).
 #define MP_PERF_SC_SHADER     8
 #define MP_PERF_SC_TEXTURE    9
 #define MP_PERF_SC_RS3D       10
 #define MP_PERF_SC_VAO        11
-// Per-mesh-type sub-sections decomposing MP_PERF_MESH_RENDER.
+
+/// Per-mesh-type sub-sections decomposing MP_PERF_MESH_RENDER.
 #define MP_PERF_MESH_0x2      12
 #define MP_PERF_MESH_0xA      13
 #define MP_PERF_MESH_0x10     14
 #define MP_PERF_MESH_0x12     15
 #define MP_PERF_MESH_0x32     16
 #define MP_PERF_MESH_0x82     17
-// Sub-sections decomposing MP_PERF_SC_TEXTURE — fine-grained breakdown of
-// where MikuPan_SetTexture spends its time.
+
+/// Sub-sections decomposing MP_PERF_SC_TEXTURE — fine-grained breakdown of
+/// where MikuPan_SetTexture spends its time.
 #define MP_PERF_TEX_L1_LOOKUP 18
 #define MP_PERF_TEX_HASH      19
 #define MP_PERF_TEX_L2_LOOKUP 20
@@ -98,20 +97,12 @@ static int show_draw_inspector = 0;
 // flying past in the log.
 static char last_reload_error[1280] = {0};
 
-// Remap target state — when >= 0 we're listening for the next physical input
-// to bind to that PS2 button index. `remap_target_kb` selects which mapping
-// table the rebind writes to (0 = sce_gp_map, 1 = sce_kb_map).
-static int remap_target = -1;
-static int remap_target_kb = 0;
-
 static int show_bounding_boxes = 0;
 static int show_mesh_0x82 = 1;
 static int show_mesh_0x32 = 1;
 static int show_mesh_0x12 = 1;
 static int show_mesh_0x2 = 1;
 static int disable_lighting = 0;
-
-static float light_color[4] = { 1.0f, 1.0f, 1.0f, 1.0f };
 static float normal_length = 10.0f;
 
 // Post-process tone controls — applied by the POSTPROCESS_SHADER on the
@@ -565,415 +556,6 @@ void MikuPan_UiDrawCallInspector(void)
     igEnd();
 }
 
-// -- Controller remap window -------------------------------------------------
-
-// Logical-PS2-button labels — one per index of sce_pad[]. Order must match
-// the defaults in sdk/sce/libpad.c (and the comment there).
-static const char *kPadLabels[SCE_PAD_LOGICAL_COUNT] = {
-    "Triangle",
-    "Cross",
-    "Square",
-    "Circle",
-    "DPad Up",
-    "DPad Down",
-    "DPad Left",
-    "DPad Right",
-    "R3 (Right Stick)",
-    "Select",
-    "Start",
-    "L3 (Left Stick)",
-    "R1 / RB",
-    "L2 / LT",
-    "R2 / RT",
-    "L1 / LB",
-};
-
-// pressed ? active : normal — keeps the per-shape callsites tight.
-static ImU32 col_if(int pressed, ImU32 normal, ImU32 active)
-{
-    return pressed ? active : normal;
-}
-
-// Stable-frame check: only commit a rebind when the listened-for input has
-// actually been *just* pressed. We use SDL gamepad button state directly so
-// it works whether or not libpad has read this frame yet.
-static int FindPressedGamepadInput(SDL_Gamepad *gp, int *out_kind, int *out_code)
-{
-    if (gp == NULL)
-    {
-        return 0;
-    }
-
-    for (int b = 0; b < SDL_GAMEPAD_BUTTON_COUNT; b++)
-    {
-        if (SDL_GetGamepadButton(gp, (SDL_GamepadButton)b))
-        {
-            *out_kind = SCE_BIND_BUTTON;
-            *out_code = b;
-            return 1;
-        }
-    }
-
-    // Triggers only — sticks have rest values that drift and would constantly
-    // commit a rebind. Use a generous half-press threshold.
-    if (SDL_GetGamepadAxis(gp, SDL_GAMEPAD_AXIS_LEFT_TRIGGER) > 16384)
-    {
-        *out_kind = SCE_BIND_AXIS;
-        *out_code = SDL_GAMEPAD_AXIS_LEFT_TRIGGER;
-        return 1;
-    }
-    if (SDL_GetGamepadAxis(gp, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 16384)
-    {
-        *out_kind = SCE_BIND_AXIS;
-        *out_code = SDL_GAMEPAD_AXIS_RIGHT_TRIGGER;
-        return 1;
-    }
-
-    return 0;
-}
-
-static int FindPressedScancode(void)
-{
-    const bool *keys = SDL_GetKeyboardState(NULL);
-    if (keys == NULL)
-    {
-        return -1;
-    }
-
-    // Skip ENTER/SPACE so the user can confirm UI buttons without
-    // immediately rebinding to the same key.
-    for (int i = 4; i < SDL_SCANCODE_COUNT; i++)
-    {
-        if (i == SDL_SCANCODE_RETURN || i == SDL_SCANCODE_KP_ENTER ||
-            i == SDL_SCANCODE_SPACE  || i == SDL_SCANCODE_ESCAPE)
-        {
-            continue;
-        }
-        if (keys[i])
-        {
-            return i;
-        }
-    }
-    return -1;
-}
-
-static void DrawGamepadImage(SDL_Gamepad *gp)
-{
-    const float W = 540.0f;
-    const float H = 270.0f;
-
-    ImVec2 origin = igGetCursorScreenPos();
-    igInvisibleButton("##gp_canvas", (ImVec2){W, H}, 0);
-
-    ImDrawList *dl = igGetWindowDrawList();
-
-    const ImU32 body_col     = 0xFF2A2A30;
-    const ImU32 body_outline = 0xFF606070;
-    const ImU32 plate_col    = 0xFF505058;
-    const ImU32 active_col   = 0xFF50C8FF;
-
-    // -- Body & grips --
-    ImVec2 b_min = (ImVec2){origin.x + 70.0f,        origin.y + 50.0f};
-    ImVec2 b_max = (ImVec2){origin.x + W - 70.0f,    origin.y + H - 30.0f};
-    ImDrawList_AddRectFilled(dl, b_min, b_max, body_col, 30.0f, 0);
-    ImDrawList_AddRect      (dl, b_min, b_max, body_outline, 30.0f, 0, 2.0f);
-
-    ImDrawList_AddCircleFilled(dl, (ImVec2){origin.x + 80,     origin.y + H - 60}, 50, body_col,     24);
-    ImDrawList_AddCircle      (dl, (ImVec2){origin.x + 80,     origin.y + H - 60}, 50, body_outline, 24, 2.0f);
-    ImDrawList_AddCircleFilled(dl, (ImVec2){origin.x + W - 80, origin.y + H - 60}, 50, body_col,     24);
-    ImDrawList_AddCircle      (dl, (ImVec2){origin.x + W - 80, origin.y + H - 60}, 50, body_outline, 24, 2.0f);
-
-    // -- Shoulders & triggers --
-    int lb = gp ? SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_LEFT_SHOULDER)         : 0;
-    int rb = gp ? SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_RIGHT_SHOULDER)        : 0;
-    int lt = gp ? (SDL_GetGamepadAxis(gp, SDL_GAMEPAD_AXIS_LEFT_TRIGGER)  > 8000)    : 0;
-    int rt = gp ? (SDL_GetGamepadAxis(gp, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER) > 8000)    : 0;
-
-    ImDrawList_AddRectFilled(dl, (ImVec2){origin.x + 60,  origin.y + 28},
-                                  (ImVec2){origin.x + 140, origin.y + 48},
-                                  col_if(lb, plate_col, active_col), 6.0f, 0);
-    ImDrawList_AddRectFilled(dl, (ImVec2){origin.x + 70,  origin.y + 8},
-                                  (ImVec2){origin.x + 130, origin.y + 26},
-                                  col_if(lt, plate_col, active_col), 6.0f, 0);
-    ImDrawList_AddRectFilled(dl, (ImVec2){origin.x + W - 140, origin.y + 28},
-                                  (ImVec2){origin.x + W - 60,  origin.y + 48},
-                                  col_if(rb, plate_col, active_col), 6.0f, 0);
-    ImDrawList_AddRectFilled(dl, (ImVec2){origin.x + W - 130, origin.y + 8},
-                                  (ImVec2){origin.x + W - 70,  origin.y + 26},
-                                  col_if(rt, plate_col, active_col), 6.0f, 0);
-
-    ImDrawList_AddText_Vec2(dl, (ImVec2){origin.x + 90,        origin.y + 31}, 0xFFFFFFFF, "L1", NULL);
-    ImDrawList_AddText_Vec2(dl, (ImVec2){origin.x + 90,        origin.y + 11}, 0xFFFFFFFF, "L2", NULL);
-    ImDrawList_AddText_Vec2(dl, (ImVec2){origin.x + W - 110,   origin.y + 31}, 0xFFFFFFFF, "R1", NULL);
-    ImDrawList_AddText_Vec2(dl, (ImVec2){origin.x + W - 110,   origin.y + 11}, 0xFFFFFFFF, "R2", NULL);
-
-    // -- D-Pad (cross of 4 rectangles) --
-    {
-        float dx = origin.x + 145.0f;
-        float dy = origin.y + 110.0f;
-        float a  = 18.0f;
-        float t  = 18.0f;
-
-        int up    = gp ? SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_DPAD_UP)    : 0;
-        int down  = gp ? SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_DPAD_DOWN)  : 0;
-        int left  = gp ? SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_DPAD_LEFT)  : 0;
-        int right = gp ? SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_DPAD_RIGHT) : 0;
-
-        ImDrawList_AddRectFilled(dl, (ImVec2){dx - t/2, dy - a},
-                                      (ImVec2){dx + t/2, dy - t/2},
-                                      col_if(up, plate_col, active_col), 3, 0);
-        ImDrawList_AddRectFilled(dl, (ImVec2){dx - t/2, dy + t/2},
-                                      (ImVec2){dx + t/2, dy + a},
-                                      col_if(down, plate_col, active_col), 3, 0);
-        ImDrawList_AddRectFilled(dl, (ImVec2){dx - a,   dy - t/2},
-                                      (ImVec2){dx - t/2, dy + t/2},
-                                      col_if(left, plate_col, active_col), 3, 0);
-        ImDrawList_AddRectFilled(dl, (ImVec2){dx + t/2, dy - t/2},
-                                      (ImVec2){dx + a,   dy + t/2},
-                                      col_if(right, plate_col, active_col), 3, 0);
-        ImDrawList_AddRectFilled(dl, (ImVec2){dx - t/2, dy - t/2},
-                                      (ImVec2){dx + t/2, dy + t/2},
-                                      plate_col, 0, 0);
-    }
-
-    // -- Face buttons (4 colored circles in a diamond) --
-    {
-        float fx = origin.x + W - 145.0f;
-        float fy = origin.y + 110.0f;
-        float r  = 14.0f;
-        float d  = 24.0f;
-
-        int north = gp ? SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_NORTH) : 0;
-        int south = gp ? SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_SOUTH) : 0;
-        int west  = gp ? SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_WEST)  : 0;
-        int east  = gp ? SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_EAST)  : 0;
-
-        // North = Triangle (green); South = Cross (blue);
-        // West  = Square   (pink ); East  = Circle (red ).
-        ImDrawList_AddCircleFilled(dl, (ImVec2){fx,     fy - d}, r, col_if(north, 0xFF306030, 0xFF60FF60), 0);
-        ImDrawList_AddCircleFilled(dl, (ImVec2){fx,     fy + d}, r, col_if(south, 0xFF303060, 0xFF6080FF), 0);
-        ImDrawList_AddCircleFilled(dl, (ImVec2){fx - d, fy    }, r, col_if(west,  0xFF603060, 0xFFFF60FF), 0);
-        ImDrawList_AddCircleFilled(dl, (ImVec2){fx + d, fy    }, r, col_if(east,  0xFF603030, 0xFFFF6060), 0);
-
-        ImDrawList_AddCircle(dl, (ImVec2){fx,     fy - d}, r, 0xFFA0A0A0, 0, 1.5f);
-        ImDrawList_AddCircle(dl, (ImVec2){fx,     fy + d}, r, 0xFFA0A0A0, 0, 1.5f);
-        ImDrawList_AddCircle(dl, (ImVec2){fx - d, fy    }, r, 0xFFA0A0A0, 0, 1.5f);
-        ImDrawList_AddCircle(dl, (ImVec2){fx + d, fy    }, r, 0xFFA0A0A0, 0, 1.5f);
-
-        ImDrawList_AddText_Vec2(dl, (ImVec2){fx - 4,     fy - d - 7}, 0xFFFFFFFF, "Y", NULL);
-        ImDrawList_AddText_Vec2(dl, (ImVec2){fx - 4,     fy + d - 7}, 0xFFFFFFFF, "A", NULL);
-        ImDrawList_AddText_Vec2(dl, (ImVec2){fx - d - 4, fy - 7    }, 0xFFFFFFFF, "X", NULL);
-        ImDrawList_AddText_Vec2(dl, (ImVec2){fx + d - 4, fy - 7    }, 0xFFFFFFFF, "B", NULL);
-    }
-
-    // -- Select / Start --
-    {
-        int back  = gp ? SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_BACK)  : 0;
-        int start = gp ? SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_START) : 0;
-
-        ImDrawList_AddRectFilled(dl, (ImVec2){origin.x + W/2 - 38, origin.y + 105},
-                                      (ImVec2){origin.x + W/2 - 12, origin.y + 117},
-                                      col_if(back, plate_col, active_col), 4, 0);
-        ImDrawList_AddRectFilled(dl, (ImVec2){origin.x + W/2 + 12, origin.y + 105},
-                                      (ImVec2){origin.x + W/2 + 38, origin.y + 117},
-                                      col_if(start, plate_col, active_col), 4, 0);
-        ImDrawList_AddText_Vec2(dl, (ImVec2){origin.x + W/2 - 42, origin.y + 92}, 0xFFC0C0C0, "Select", NULL);
-        ImDrawList_AddText_Vec2(dl, (ImVec2){origin.x + W/2 + 14, origin.y + 92}, 0xFFC0C0C0, "Start",  NULL);
-    }
-
-    // -- Analog sticks --
-    {
-        int lpress = gp ? SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_LEFT_STICK)  : 0;
-        int rpress = gp ? SDL_GetGamepadButton(gp, SDL_GAMEPAD_BUTTON_RIGHT_STICK) : 0;
-
-        float lsx = gp ? SDL_GetGamepadAxis(gp, SDL_GAMEPAD_AXIS_LEFTX)  / 32767.0f : 0.0f;
-        float lsy = gp ? SDL_GetGamepadAxis(gp, SDL_GAMEPAD_AXIS_LEFTY)  / 32767.0f : 0.0f;
-        float rsx = gp ? SDL_GetGamepadAxis(gp, SDL_GAMEPAD_AXIS_RIGHTX) / 32767.0f : 0.0f;
-        float rsy = gp ? SDL_GetGamepadAxis(gp, SDL_GAMEPAD_AXIS_RIGHTY) / 32767.0f : 0.0f;
-
-        float lcx = origin.x + 215.0f;
-        float lcy = origin.y + 190.0f;
-        float rcx = origin.x + W - 215.0f;
-        float rcy = origin.y + 190.0f;
-
-        ImDrawList_AddCircleFilled(dl, (ImVec2){lcx, lcy}, 26, 0xFF202028, 0);
-        ImDrawList_AddCircle      (dl, (ImVec2){lcx, lcy}, 26, body_outline, 0, 1.5f);
-        ImDrawList_AddCircleFilled(dl, (ImVec2){lcx + lsx*16, lcy + lsy*16}, 16,
-                                       col_if(lpress, plate_col, active_col), 0);
-
-        ImDrawList_AddCircleFilled(dl, (ImVec2){rcx, rcy}, 26, 0xFF202028, 0);
-        ImDrawList_AddCircle      (dl, (ImVec2){rcx, rcy}, 26, body_outline, 0, 1.5f);
-        ImDrawList_AddCircleFilled(dl, (ImVec2){rcx + rsx*16, rcy + rsy*16}, 16,
-                                       col_if(rpress, plate_col, active_col), 0);
-    }
-}
-
-static void DrawGamepadBindingList(SDL_Gamepad *gp)
-{
-    igTextDisabled(gp != NULL ? "Click 'Edit' on a row, then press a button on your controller."
-                              : "No controller connected. Connect one to remap gamepad bindings.");
-
-    for (int i = 0; i < SCE_PAD_LOGICAL_COUNT; i++)
-    {
-        igPushID_Int(i);
-
-        igText("%-18s", kPadLabels[i]);
-        igSameLine(180.0f, -1.0f);
-        igText("%-22s", scePadBindingLabel(sce_gp_map[i]));
-        igSameLine(390.0f, -1.0f);
-
-        if (remap_target == i && remap_target_kb == 0)
-        {
-            igTextColored((ImVec4){1.0f, 0.7f, 0.2f, 1.0f}, "Press a button...");
-            igSameLine(0.0f, -1.0f);
-            if (igButton("Cancel", (ImVec2){0, 0}))
-            {
-                remap_target = -1;
-            }
-        }
-        else
-        {
-            if (igButton("Edit", (ImVec2){60, 0}))
-            {
-                remap_target = i;
-                remap_target_kb = 0;
-            }
-            igSameLine(0.0f, -1.0f);
-            if (igButton("Clear", (ImVec2){60, 0}))
-            {
-                sce_gp_map[i].kind = SCE_BIND_NONE;
-                sce_gp_map[i].code = 0;
-            }
-        }
-
-        igPopID();
-    }
-
-    if (remap_target >= 0 && remap_target_kb == 0)
-    {
-        int kind = 0, code = 0;
-        if (FindPressedGamepadInput(gp, &kind, &code))
-        {
-            sce_gp_map[remap_target].kind = kind;
-            sce_gp_map[remap_target].code = code;
-            remap_target = -1;
-        }
-        if (igIsKeyPressed_Bool(ImGuiKey_Escape, 0))
-        {
-            remap_target = -1;
-        }
-    }
-}
-
-static void DrawKeyboardBindingList(void)
-{
-    igTextDisabled("Active when no controller is connected. Click 'Edit' then press a key.");
-
-    for (int i = 0; i < SCE_PAD_LOGICAL_COUNT; i++)
-    {
-        igPushID_Int(0x100 + i);
-
-        igText("%-18s", kPadLabels[i]);
-        igSameLine(180.0f, -1.0f);
-        igText("%-22s", scePadScancodeLabel(sce_kb_map[i]));
-        igSameLine(390.0f, -1.0f);
-
-        if (remap_target == i && remap_target_kb == 1)
-        {
-            igTextColored((ImVec4){1.0f, 0.7f, 0.2f, 1.0f}, "Press a key...");
-            igSameLine(0.0f, -1.0f);
-            if (igButton("Cancel", (ImVec2){0, 0}))
-            {
-                remap_target = -1;
-            }
-        }
-        else
-        {
-            if (igButton("Edit", (ImVec2){60, 0}))
-            {
-                remap_target = i;
-                remap_target_kb = 1;
-            }
-            igSameLine(0.0f, -1.0f);
-            if (igButton("Clear", (ImVec2){60, 0}))
-            {
-                sce_kb_map[i] = 0;
-            }
-        }
-
-        igPopID();
-    }
-
-    if (remap_target >= 0 && remap_target_kb == 1)
-    {
-        int sc = FindPressedScancode();
-        if (sc >= 0)
-        {
-            sce_kb_map[remap_target] = sc;
-            remap_target = -1;
-        }
-        if (igIsKeyPressed_Bool(ImGuiKey_Escape, 0))
-        {
-            remap_target = -1;
-        }
-    }
-}
-
-void MikuPan_UiControllerRemapWindow(void)
-{
-    if (!show_controller_remap)
-    {
-        return;
-    }
-
-    SDL_Gamepad *gp = scePadGetSdlGamepad();
-
-    igSetNextWindowSize((ImVec2){600.0f, 720.0f}, ImGuiCond_FirstUseEver);
-    if (!igBegin("Controller Mapping", (bool *)&show_controller_remap, 0))
-    {
-        igEnd();
-        return;
-    }
-
-    if (gp != NULL)
-    {
-        igText("Connected: %s", SDL_GetGamepadName(gp));
-    }
-    else
-    {
-        igTextDisabled("No controller connected (keyboard fallback active).");
-    }
-
-    DrawGamepadImage(gp);
-
-    if (igButton("Reset to defaults", (ImVec2){0, 0}))
-    {
-        scePadResetBindings();
-        remap_target = -1;
-    }
-    igSameLine(0.0f, -1.0f);
-    igTextDisabled("(restores both gamepad and keyboard mappings)");
-
-    igSpacing();
-
-    if (igBeginTabBar("##remap_tabs", 0))
-    {
-        if (igBeginTabItem("Gamepad", NULL, 0))
-        {
-            DrawGamepadBindingList(gp);
-            igEndTabItem();
-        }
-        if (igBeginTabItem("Keyboard", NULL, 0))
-        {
-            DrawKeyboardBindingList();
-            igEndTabItem();
-        }
-        igEndTabBar();
-    }
-
-    igEnd();
-}
-
 // -- Public API --------------------------------------------------------------
 
 void MikuPan_InitUi(SDL_Window *window, SDL_GLContext renderer)
@@ -982,10 +564,6 @@ void MikuPan_InitUi(SDL_Window *window, SDL_GLContext renderer)
     ImGuiIO *io = igGetIO_Nil();
     io->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
-    // Pull the primary display's current mode so the resolution sliders cap
-    // at the user's actual screen size, and seed the default render resolution
-    // to match — both were previously hardcoded at 5120/1440 (max) and 640/448
-    // (default), which were wrong on every machine that wasn't exactly that.
     SDL_DisplayID primary = SDL_GetPrimaryDisplay();
     if (primary != 0)
     {
@@ -1042,7 +620,6 @@ void MikuPan_DrawUi(void)
         MikuPan_ShowTextureList();
     }
 
-    MikuPan_UiControllerRemapWindow();
     MikuPan_UiShaderReloadWindow();
     MikuPan_UiDrawCallInspector();
 
@@ -1145,15 +722,16 @@ void MikuPan_UiMenuBar(void)
     {
         if (igBeginMenu("Rendering", 1))
         {
+            igBeginGroup();
             igCheckbox("Wireframe", (bool *)&render_wireframe);
+            igCheckbox("Disable Lighting", (bool *)&disable_lighting);
             igCheckbox("Normals", (bool *)&render_normals);
-
             if (render_normals)
             {
                 igSliderFloat("Normal Length", &normal_length, 0.1f, 100.0f, "%.1f", 0);
             }
+            igEndGroup();
 
-            igCheckbox("Disable Lighting", (bool *)&disable_lighting);
 
             int shadows_on = MikuPan_IsShadowEnabled();
             if (igCheckbox("Shadows", (bool *)&shadows_on))
@@ -1190,7 +768,6 @@ void MikuPan_UiMenuBar(void)
             int max_h = screen_resolution_height < 448 ? 448 : screen_resolution_height;
             igSliderInt("Width",  &render_resolution_width,  640, max_w, "%d", 0);
             igSliderInt("Height", &render_resolution_height, 448, max_h, "%d", 0);
-            igSliderFloat4("Light Color", light_color, 0.0f, 3.0f, "%.3f", 0);
 
             // Brightness / gamma — read by the renderer each frame and
             // pushed as uniforms on POSTPROCESS_SHADER for the final
@@ -1255,11 +832,6 @@ int MikuPan_IsLightingDisabled(void)
     return disable_lighting;
 }
 
-float *MikuPan_GetLightColor(void)
-{
-    return light_color;
-}
-
 float MikuPan_GetNormalLength(void)
 {
     return normal_length;
@@ -1278,6 +850,11 @@ int MikuPan_GetRenderResolutionHeight(void)
 int MikuPan_GetMSAA(void)
 {
     return msaa_samples << 1;
+}
+
+int MikuPan_ShowControllerRemapWindow(void)
+{
+    return show_controller_remap;
 }
 
 float MikuPan_GetBrightness(void)
