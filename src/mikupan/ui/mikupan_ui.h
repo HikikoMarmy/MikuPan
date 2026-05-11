@@ -24,6 +24,7 @@ void MikuPan_UiDrawCallInspector(void);
 int MikuPan_IsBoundingBoxRendering(void);
 int MikuPan_IsMesh0x82Rendering(void);
 int MikuPan_IsMesh0x32Rendering(void);
+int MikuPan_IsMesh0x10Rendering(void);
 int MikuPan_IsMesh0x12Rendering(void);
 int MikuPan_IsMesh0x2Rendering(void);
 int MikuPan_IsLightingDisabled(void);

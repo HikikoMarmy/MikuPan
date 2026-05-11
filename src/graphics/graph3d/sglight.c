@@ -14,6 +14,7 @@
 
 #include "mikupan/mikupan_logging_c.h"
 #include "mikupan/rendering/mikupan_renderer.h"
+#include "mikupan/ui/mikupan_ui.h"
 
 #include <stdio.h>
 
@@ -1421,13 +1422,17 @@ inline static void Vu0LoadVectorRegisterVF18(sceVu0FVECTOR first)
 
 inline static void Vu0ClampColors(sceVu0FVECTOR pcol)
 {
-    pcol[0] = __work_vf18[0] = MIN(__work_vf18[0], __work_vf19[3]);
-    pcol[1] = __work_vf18[1] = MIN(__work_vf18[1], __work_vf19[3]);
-    pcol[2] = __work_vf18[2] = MIN(__work_vf18[2], __work_vf19[3]);
-    pcol[3] = __work_vf18[3] = MIN(__work_vf18[3], __work_vf19[3]);
-    pcol[0] /= 255.0f;
-    pcol[1] /= 255.0f;
-    pcol[2] /= 255.0f;
+    if (MikuPan_IsMesh0x10Rendering())
+    {
+        pcol[0] = __work_vf18[0] = MIN(__work_vf18[0], __work_vf19[3]);
+        pcol[1] = __work_vf18[1] = MIN(__work_vf18[1], __work_vf19[3]);
+        pcol[2] = __work_vf18[2] = MIN(__work_vf18[2], __work_vf19[3]);
+        pcol[3] = __work_vf18[3] = MIN(__work_vf18[3], __work_vf19[3]);
+        pcol[0] /= 255.0f;
+        pcol[1] /= 255.0f;
+        pcol[2] /= 255.0f;
+    }
+
 }
 
 void SetPreRenderTYPE0(int gloops, u_int *prim)
@@ -1439,7 +1444,7 @@ void SetPreRenderTYPE0(int gloops, u_int *prim)
     sceVu0FVECTOR normal;
     sceVu0FVECTOR vertex;
     sceVu0FVECTOR first;
-    sceVu0FVECTOR pcol;
+    sceVu0FVECTOR pcol = {0.0f, 0.0f, 0.0f, 0.0f};
 
     first[0] = 0.0f;
     first[1] = 0.0f;
@@ -1653,22 +1658,6 @@ void SetPreRenderTYPE2F(int gloops, u_int *prim)
 
                 Vu0ClampColors(pcol);
 
-                // First few values
-                //0.000000 0.000000 0.000000
-                //0.000000 0.000000 0.000000
-                //0.000000 0.000000 0.000000
-                //4.524766 3.929444 2.738700
-                //3.921486 3.400946 2.370684
-                //5.327498 4.616670 3.218387
-                //4.544187 3.932461 2.741800
-                //6.348903 5.485382 3.825170
-                //5.315338 4.586745 3.198924
-                //3.862828 3.340322 2.329127
-                //4.422683 3.814847 2.660697
-                //3.921486 3.400946 2.370684
-                //3.390773 2.938075 2.048220
-                //4.544187 3.932461 2.741800
-                //3.862828 3.340322 2.329127
                 if (dbg_flg != 0)
                 {
                     info_log("%f %f %f", pcol[0], pcol[1], pcol[2]);
@@ -1692,11 +1681,8 @@ void SetPreRenderTYPE2F(int gloops, u_int *prim)
 
 void SetPreRenderMeshData(u_int *prim)
 {
-    int gloops;
-    int mtype;
-
-    gloops = GET_MESH_GLOOPS(prim);
-    mtype = GET_MESH_TYPE(prim);
+    int gloops = GET_MESH_GLOOPS(prim);
+    int mtype = GET_MESH_TYPE(prim);
 
     switch (mtype)
     {

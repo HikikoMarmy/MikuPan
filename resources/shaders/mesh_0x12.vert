@@ -20,8 +20,8 @@ out vec3 oVertexColor;
 
 void main()
 {
-    vUV = aUV;
     gl_Position = mvp * vec4(aPos, 1.0f);
+    vUV = aUV;
 
     vec3 normalVS = normalize(normalMatrix * aNormal);
     vNormal = vec4(normalVS, 1.0f);

@@ -239,6 +239,23 @@ void main()
 {
     vec4 color = texture(uTexture, vUV);
 
+    //if (vUV.x > 1.0f || vUV.x < 0.0f)
+    //{
+    //    FragColor = vec4(0.0f, vUV.x, 0.0f, 1.0f);
+    //    return;
+    //}
+    //if (vUV.y > 1.0f || vUV.y < 0.0f)
+    //{
+    //    FragColor = vec4(vUV.y, 0.0f, 0.0f, 1.0f);
+    //    return;
+    //}
+
+    //if (color.a == 0.0f)
+    //{
+    //    FragColor = vec4(0.0f, 1.0f, 0.0f, 1.0f);
+    //    return;
+    //}
+
     if (disableLighting == 1)
     {
         FragColor = color;
@@ -247,7 +264,7 @@ void main()
 
     if (renderNormals == 1)
     {
-        FragColor = vec4(oVertexColor, 1.0f);
+        FragColor = vNormal; //vec4(oVertexColor, 1.0f);
         return;
     }
 

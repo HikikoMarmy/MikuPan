@@ -42,64 +42,6 @@ typedef struct
 
 static CachedUniformLocations uniform_loc[MAX_SHADER_PROGRAMS] = {0};
 
-/// Linear scan — MAX_SHADER_PROGRAMS is 8, so this is faster than maintaining
-/// a parallel "current index" tracker that has to stay in sync with external
-/// glUseProgram calls (e.g. via MikuPan_ResetShaderCache).
-static int FindShaderIndex(GLuint program)
-{
-    for (int i = 0; i < MAX_SHADER_PROGRAMS; i++)
-    {
-        if (shader_list[i] == program)
-            return i;
-    }
-    return -1;
-}
-
-/// Resolve a uniform name to its cached location for shader `idx`.
-/// Returns -1 when the shader doesn't declare the uniform (glUniform* with -1
-/// is a no-op, so callers can skip the bind/draw entirely). Falls back to a
-/// driver query for unknown names — that path is correct but slow; if a name
-/// shows up here in a profile, add it to CachedUniformLocations.
-static GLint GetCachedLocation(int idx, const char *name)
-{
-    if (idx < 0 || idx >= MAX_SHADER_PROGRAMS)
-    {
-        return -1;
-    }
-    const CachedUniformLocations *u = &uniform_loc[idx];
-
-    if (strcmp(name, "model") == 0)
-        return u->model;
-    if (strcmp(name, "view") == 0)
-        return u->view;
-    if (strcmp(name, "projection") == 0)
-        return u->projection;
-    if (strcmp(name, "mvp") == 0)
-        return u->mvp;
-    if (strcmp(name, "modelView") == 0)
-        return u->modelView;
-    if (strcmp(name, "viewProj") == 0)
-        return u->viewProj;
-    if (strcmp(name, "normalMatrix") == 0)
-        return u->normalMatrix;
-    if (strcmp(name, "viewNormalMatrix") == 0)
-        return u->viewNormalMatrix;
-    if (strcmp(name, "uColor") == 0)
-        return u->uColor;
-    if (strcmp(name, "renderNormals") == 0)
-        return u->renderNormals;
-    if (strcmp(name, "uNormalLength") == 0)
-        return u->uNormalLength;
-    if (strcmp(name, "uFog") == 0)
-        return u->uFog;
-    if (strcmp(name, "uFogColor") == 0)
-        return u->uFogColor;
-    if (strcmp(name, "disableLighting") == 0)
-        return u->disableLighting;
-
-    return glad_glGetUniformLocation(shader_list[idx], name);
-}
-
 // [vert, geom (NULL = none), frag]
 const char *shader_file_name[MAX_SHADER_PROGRAMS][3] = {
     {                  "./resources/shaders/mesh_0x2.vert",NULL,
@@ -143,6 +85,59 @@ static const char *kShaderNames[MAX_SHADER_PROGRAMS] = {
     "POSTPROCESS",       "SHADOW_BLOB",
     "SHADOW_SILHOUETTE",
 };
+
+/// Linear scan — MAX_SHADER_PROGRAMS is 8, so this is faster than maintaining
+/// a parallel "current index" tracker that has to stay in sync with external
+/// glUseProgram calls (e.g. via MikuPan_ResetShaderCache).
+static int FindShaderIndex(GLuint program)
+{
+    for (int i = 0; i < MAX_SHADER_PROGRAMS; i++)
+    {
+        if (shader_list[i] == program)
+            return i;
+    }
+    return -1;
+}
+
+static GLint GetCachedLocation(int idx, const char *name)
+{
+    if (idx < 0 || idx >= MAX_SHADER_PROGRAMS)
+    {
+        return -1;
+    }
+    const CachedUniformLocations *u = &uniform_loc[idx];
+
+    if (strcmp(name, "model") == 0)
+        return u->model;
+    if (strcmp(name, "view") == 0)
+        return u->view;
+    if (strcmp(name, "projection") == 0)
+        return u->projection;
+    if (strcmp(name, "mvp") == 0)
+        return u->mvp;
+    if (strcmp(name, "modelView") == 0)
+        return u->modelView;
+    if (strcmp(name, "viewProj") == 0)
+        return u->viewProj;
+    if (strcmp(name, "normalMatrix") == 0)
+        return u->normalMatrix;
+    if (strcmp(name, "viewNormalMatrix") == 0)
+        return u->viewNormalMatrix;
+    if (strcmp(name, "uColor") == 0)
+        return u->uColor;
+    if (strcmp(name, "renderNormals") == 0)
+        return u->renderNormals;
+    if (strcmp(name, "uNormalLength") == 0)
+        return u->uNormalLength;
+    if (strcmp(name, "uFog") == 0)
+        return u->uFog;
+    if (strcmp(name, "uFogColor") == 0)
+        return u->uFogColor;
+    if (strcmp(name, "disableLighting") == 0)
+        return u->disableLighting;
+
+    return glad_glGetUniformLocation(shader_list[idx], name);
+}
 
 const char *MikuPan_GetShaderName(int idx)
 {

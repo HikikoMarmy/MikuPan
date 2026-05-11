@@ -54,12 +54,6 @@ void MikuPan_FlushTextureCache()
     mikupan_render_texture_atlas.clear();
     mikupan_tex0_to_info_cache.clear();
 
-    // Cached static meshes hold a snapshot of their tex0 register; their VAOs
-    // also reference VBOs that don't depend on the texture cache, but to keep
-    // the user's "Clear Texture Cache" UI behaving as a true reset, flush them
-    // alongside.
-    MikuPan_FlushStaticMeshCache();
-
     request_texture_cache_flush = false;
 }
 

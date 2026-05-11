@@ -100,6 +100,7 @@ static char last_reload_error[1280] = {0};
 static int show_bounding_boxes = 0;
 static int show_mesh_0x82 = 1;
 static int show_mesh_0x32 = 1;
+static int show_mesh_0x10 = 1;
 static int show_mesh_0x12 = 1;
 static int show_mesh_0x2 = 1;
 static int disable_lighting = 0;
@@ -747,6 +748,7 @@ void MikuPan_UiMenuBar(void)
                 igCheckbox("Mesh 0x82", (bool *)&show_mesh_0x82);
                 igCheckbox("Mesh 0x32", (bool *)&show_mesh_0x32);
                 igCheckbox("Mesh 0x12", (bool *)&show_mesh_0x12);
+                igCheckbox("Mesh 0x10", (bool *)&show_mesh_0x10);
                 igCheckbox("Mesh 0x2",  (bool *)&show_mesh_0x2);
                 igEndMenu();
             }
@@ -820,6 +822,11 @@ int MikuPan_IsMesh0x32Rendering(void)
 int MikuPan_IsMesh0x12Rendering(void)
 {
     return show_mesh_0x12;
+}
+
+int MikuPan_IsMesh0x10Rendering(void)
+{
+    return show_mesh_0x10;
 }
 
 int MikuPan_IsMesh0x2Rendering(void)
