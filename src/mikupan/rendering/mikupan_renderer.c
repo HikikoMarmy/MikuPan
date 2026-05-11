@@ -1666,12 +1666,6 @@ void MikuPan_RenderMeshType0x32(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPU
         pVMCD = (_SGDVUMESHCOLORDATA *) MikuPan_GetNextUnpackAddr((u_int *) pVMCD);
         int vertex_count = pVMCD->VifUnpack.NUM;
 
-        if (sgdMeshData->astData[0].fS < 0.0f || sgdMeshData->astData[0].fS > 1.0f)
-        {
-            info_log("Mesh Type %d, %f", mesh_type, sgdMeshData->astData[0].fS);
-            //return;
-        }
-
         if (pPUHead->VUMeshDesc.MeshType.TEX == 1)
         {
             MikuPan_FixUV((float*)&sgdMeshData->astData, vertex_count);
