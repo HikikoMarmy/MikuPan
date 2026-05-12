@@ -57,6 +57,7 @@ uniform float     uShadowStrength;
 /// texture × vertex-color albedo. Fog is still applied so depth perception
 /// stays intact. Driven by the "Disable Lighting" UI checkbox.
 uniform int disableLighting;
+uniform int staticLighting;
 
 /// Fog uniforms (kept as regular uniforms)
 uniform vec4 uFog;      // x=min, y=max, z=base, w=scale
@@ -255,6 +256,12 @@ void main()
     //    FragColor = vec4(0.0f, 1.0f, 0.0f, 1.0f);
     //    return;
     //}
+
+    if (staticLighting == 1)
+    {
+        FragColor = vec4(oVertexColor.rgb, 1.0f);
+        return;
+    }
 
     if (disableLighting == 1)
     {

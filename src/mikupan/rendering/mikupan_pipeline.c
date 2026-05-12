@@ -333,7 +333,7 @@ void MikuPan_SetRenderState3D()
 
     glad_glDepthMask(GL_TRUE);
     glad_glEnable(GL_CULL_FACE);
-    glad_glCullFace(GL_BACK);
+    //glad_glCullFace(GL_BACK);
     glad_glEnable(GL_DEPTH_TEST);
     glad_glDepthFunc(GL_LEQUAL);
 }

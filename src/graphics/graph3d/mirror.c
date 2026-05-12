@@ -845,7 +845,6 @@ void CalcMirrorMatrix(SgCAMERA *camera)
     /// Flipping Z axis
     //tmpmat[2][2] = -1.0f;
     tmpmat[1][1] = -1.0f;
-    //tmpmat[0][0] = -1.0f;
 
     GetMatrixRotateAxis(quat, vaxis, qrot);
     _MulMatrix(tmpmat, tmpmat, quat);

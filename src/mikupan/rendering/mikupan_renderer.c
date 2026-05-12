@@ -8,7 +8,7 @@
 #include "mikupan/gs/mikupan_gs_c.h"
 #include "mikupan/gs/mikupan_texture_manager_c.h"
 #include "mikupan/mikupan_logging_c.h"
-#include "mikupan/ui/mikupan_ui_c.h"
+#include "mikupan/ui/mikupan_ui.h"
 #include "mikupan_profiler.h"
 #include "mikupan_shader.h"
 #include "SDL3/SDL_timer.h"
@@ -950,10 +950,12 @@ void MikuPan_RenderSetDebugValues()
     static int   last_render_normals   = -1;
     static float last_normal_length    = -1.0f;
     static int   last_disable_lighting = -1;
+    static int   last_static_lighting  = -1;
 
     int   render_normals   = MikuPan_IsNormalsRendering();
     float normal_length    = MikuPan_GetNormalLength();
     int   disable_lighting = MikuPan_IsLightingDisabled();
+    int   static_lighting  = MikuPan_ShowStaticLighting();
 
     if (render_normals != last_render_normals)
     {
@@ -971,6 +973,12 @@ void MikuPan_RenderSetDebugValues()
     {
         MikuPan_SetUniform1iToAllShaders(disable_lighting, "disableLighting");
         last_disable_lighting = disable_lighting;
+    }
+
+    if (static_lighting != last_static_lighting)
+    {
+        MikuPan_SetUniform1iToAllShaders(static_lighting, "staticLighting");
+        last_static_lighting = static_lighting;
     }
 }
 
@@ -1150,13 +1158,13 @@ void MikuPan_RenderBoundingBox(sceVu0FVECTOR *vertices)
 
     MikuPan_FlushTexturedSpriteBatch();
 
-    float bb_color[4] = {0.0f, 1.0f, 0.0f, 1.0f};
+    float bounding_box_color[4] = {0.0f, 1.0f, 0.0f, 1.0f};
 
     MikuPan_SetCurrentShaderProgram(BOUNDING_BOX_SHADER);
     MikuPan_PipelineInfo* pipeline = MikuPan_GetPipelineInfo(POSITION4);
     MikuPan_SetRenderState3D();
 
-    MikuPan_SetUniform4fvToCurrentShader(bb_color, "uColor");
+    MikuPan_SetUniform4fvToCurrentShader(bounding_box_color, "uColor");
 
     MikuPan_BindVAO(pipeline->vao);
     MikuPan_BindBufferCached(GL_ARRAY_BUFFER, pipeline->buffers[0].id);
@@ -1362,9 +1370,13 @@ static void MikuPan_RecomputeAndUploadDerived(void)
 
     // mv = view * model
     if (g_has_cached_model)
+    {
         glm_mat4_mul(WorldView, g_cached_model_matrix, mv);
+    }
     else
+    {
         glm_mat4_copy(WorldView, mv);
+    }
 
     // mvp = projection * mv
     glm_mat4_mul(projection, mv, mvp);
@@ -1564,7 +1576,6 @@ void MikuPan_SetupMirrorMtx(float* mtx)
     MikuPan_SetUniformMatrix4fvToAllShaders((float*)vp,                "viewProj");
     MikuPan_SetUniformMatrix3fvToAllShaders((float*)normalMatrix3,     "normalMatrix");
     MikuPan_SetUniformMatrix3fvToAllShaders((float*)viewNormalMatrix3, "viewNormalMatrix");
-
 }
 
 /// 0x10 -> Type0   -> [vertex.x, vertex.y, vertex.z, normal.x, normal.y, normal.z]

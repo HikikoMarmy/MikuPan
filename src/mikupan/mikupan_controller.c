@@ -579,6 +579,7 @@ static void MikuPan_ControllerDrawKeyboardBindingList(void)
         {
             igTextColored((ImVec4){1.0f, 0.7f, 0.2f, 1.0f}, "Press a key...");
             igSameLine(0.0f, -1.0f);
+
             if (igButton("Cancel", (ImVec2){0, 0}))
             {
                 remap_target = -1;
@@ -591,7 +592,9 @@ static void MikuPan_ControllerDrawKeyboardBindingList(void)
                 remap_target = i;
                 remap_target_kb = 1;
             }
+
             igSameLine(0.0f, -1.0f);
+
             if (igButton("Clear", (ImVec2){60, 0}))
             {
                 mikupan_keyboard_map[i] = 0;
@@ -604,11 +607,13 @@ static void MikuPan_ControllerDrawKeyboardBindingList(void)
     if (remap_target >= 0 && remap_target_kb == 1)
     {
         int sc = MikuPan_ControllerFindPressedScanCode();
+
         if (sc >= 0)
         {
             mikupan_keyboard_map[remap_target] = sc;
             remap_target = -1;
         }
+
         if (igIsKeyPressed_Bool(ImGuiKey_Escape, 0))
         {
             remap_target = -1;
@@ -647,7 +652,6 @@ void MikuPan_ControllerDrawRemapWindow(void)
 
     igSameLine(0.0f, -1.0f);
     igTextDisabled("(restores both gamepad and keyboard mappings)");
-
     igSpacing();
 
     if (igBeginTabBar("##remap_tabs", 0))

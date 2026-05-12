@@ -514,8 +514,12 @@ void MikuPan_SetUniform4fvToAllShaders(float *vector, char *name)
 void MikuPan_SetUniform4fvToCurrentShader(float *vector, char *name)
 {
     GLint loc = GetCachedLocation(FindShaderIndex(current_program), name);
+
     if (loc < 0)
+    {
         return;
+    }
+
     glad_glUniform4fv(loc, 1, vector);
 }
 
@@ -524,6 +528,7 @@ void MikuPan_SetUniform1iToAllShaders(int value, char *name)
     for (int i = 0; i < MAX_SHADER_PROGRAMS; i++)
     {
         GLint loc = GetCachedLocation(i, name);
+
         if (loc < 0)
         {
             continue;

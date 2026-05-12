@@ -21,7 +21,7 @@
 #include "iop/adpcm/iopadpcm.h"
 #include "iop/iopmain.h"
 #include "mikupan/gs/mikupan_texture_manager_c.h"
-#include "mikupan/ui/mikupan_ui_c.h"
+#include "mikupan/ui/mikupan_ui.h"
 #include "os/eeiop/se_cmd.h"
 
 #include <SDL3/SDL.h>
