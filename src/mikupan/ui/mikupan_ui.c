@@ -918,39 +918,50 @@ void MikuPan_UiMenuBar(void)
             MikuPan_RequestFlushTextureCache();
         }
 
-            igSliderInt("MSAA", &msaa_samples, 0, 5, "", 0);
-            igSameLine(0.0f, -1.0f);
-            igText("%dx", msaa_samples << 1);
+        char msaa_dropdown_list[32];
+        snprintf(msaa_dropdown_list, sizeof(msaa_dropdown_list), "%d", msaa_list[msaa_samples]);
 
-            // Resolution dropdown populated from the primary display's
-            // supported fullscreen modes (queried once in MikuPan_InitUi).
-            if (resolution_count > 0)
+        if (igBeginCombo("MSAA", msaa_dropdown_list, 0))
+        {
+            for (int i = 0; i < 6; i++)
             {
-                if (igCombo_Str_arr("Resolution", &resolution_selected,
-                                    resolution_label_ptrs, resolution_count, -1))
+                bool is_selected = (msaa_samples == i);
+                snprintf(msaa_dropdown_list, sizeof(msaa_dropdown_list), "%d", msaa_list[i]);
+
+                if (igSelectable_Bool(msaa_dropdown_list, is_selected, 0, (ImVec2){0,0}))
                 {
-                    render_resolution_width  = resolution_list[resolution_selected].w;
-                    render_resolution_height = resolution_list[resolution_selected].h;
+                    msaa_samples = i;
+                }
+
+                if (is_selected)
+                {
+                    igSetItemDefaultFocus();
                 }
             }
-            else
-            {
-                igTextDisabled("Resolution: no display modes available");
-            }
-
-            // Brightness / gamma — read by the renderer each frame and
-            // pushed as uniforms on POSTPROCESS_SHADER for the final
-            // scene-to-window blit (see MikuPan_GetBrightness/Gamma below
-            // and the EndFrame post-process bind in mikupan_renderer.c).
-            igSliderFloat("Brightness", &brightness,  0.0f, 2.0f, "%.2f", 0);
-            igSliderFloat("Gamma",      &gamma_value, 0.1f, 3.0f, "%.2f", 0);
-
-            igEndMenu();
         }
 
-        igCheckbox("Ingame Debug Menu", (bool *)&dbg_wrk.mode_on);
-        igCheckbox("Shader Reload",     (bool *)&show_shader_reload);
-        igCheckbox("Draw Call Inspector", (bool *)&show_draw_inspector);
+        // Resolution dropdown populated from the primary display's
+        // supported fullscreen modes (queried once in MikuPan_InitUi).
+        if (resolution_count > 0)
+        {
+            if (igCombo_Str_arr("Resolution", &resolution_selected,
+                                resolution_label_ptrs, resolution_count, -1))
+            {
+                render_resolution_width  = resolution_list[resolution_selected].w;
+                render_resolution_height = resolution_list[resolution_selected].h;
+            }
+        }
+        else
+        {
+            igTextDisabled("Resolution: no display modes available");
+        }
+
+        // Brightness / gamma — read by the renderer each frame and
+        // pushed as uniforms on POSTPROCESS_SHADER for the final
+        // scene-to-window blit (see MikuPan_GetBrightness/Gamma below
+        // and the EndFrame post-process bind in mikupan_renderer.c).
+        igSliderFloat("Brightness", &brightness,  0.0f, 2.0f, "%.2f", 0);
+        igSliderFloat("Gamma",      &gamma_value, 0.1f, 3.0f, "%.2f", 0);
 
         if (igMenuItem_Bool("Take Screenshot (F12)", NULL, false, true))
         {
