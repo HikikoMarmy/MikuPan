@@ -970,13 +970,13 @@ void MikuPan_InitUi(SDL_Window *window, SDL_GLContext renderer)
     msaa_samples = mikupan_configuration.renderer.msaa_index;
     brightness = mikupan_configuration.renderer.brightness;
     gamma_value = mikupan_configuration.renderer.gamma;
-
-    if (gamma_value < 0.0f)
+    
+    if (gamma_value < 0.0f || gamma_value > 3.0f)
     {
         gamma_value = 1.0f;
     }
 
-    if (brightness < 0.0f)
+    if (brightness < 0.0f || brightness > 2.0f)
     {
         brightness = 1.0f;
     }
