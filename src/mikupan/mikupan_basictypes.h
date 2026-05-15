@@ -65,6 +65,27 @@ typedef struct
     MikuPan_BufferObjectInfo* buffers;
 } MikuPan_PipelineInfo;
 
+typedef struct
+{
+    int width;
+    int height;
+} MikuPan_Resolution;
+
+typedef struct
+{
+    MikuPan_Resolution window;
+    MikuPan_Resolution render;
+    int msaa_index;
+    float brightness;
+    float gamma;
+} MikuPan_ConfigRenderer;
+
+typedef struct
+{
+    MikuPan_ConfigRenderer renderer;
+    int selected_theme;
+} MikuPan_Config;
+
 enum MikuPan_PipelineType
 {
     /// BOUNDING BOX SHADER

@@ -20,6 +20,9 @@
 #include "mikupan/rendering/mikupan_renderer.h"
 #include "mikupan/rendering/mikupan_shader.h"
 #include "mikupan/ui/mikupan_ui.h"
+
+#include "mikupan/mikupan_config.h"
+
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -79,228 +82,6 @@ int MikuPan_GsGetDownloadCount(void);
 int MikuPan_GsGetDownloadBytes(void);
 float MikuPan_GsGetDownloadMs(void);
 
-// -- Fatal Frame 1 inspired style --------------------------------------------
-// Palette evokes the PS2-era survival horror look: parchment-cream text on
-// near-black warm sepia backgrounds, deep blood-red borders/title bars, and
-// burnt-amber highlights (camera filament / lantern light). Squared corners
-// and visible borders give windows the etched, antique feeling of the
-// in-game journal pages and the Camera Obscura viewfinder.
-static void MikuPan_ApplyFatalFrameStyle(void)
-{
-    ImGuiStyle *s = igGetStyle();
-
-    s->Alpha             = 0.96f;
-    s->DisabledAlpha     = 0.45f;
-    s->WindowRounding    = 0.0f;
-    s->ChildRounding     = 0.0f;
-    s->PopupRounding     = 0.0f;
-    s->FrameRounding     = 0.0f;
-    s->ScrollbarRounding = 0.0f;
-    s->GrabRounding      = 0.0f;
-    s->TabRounding       = 0.0f;
-    s->WindowBorderSize  = 1.0f;
-    s->ChildBorderSize   = 1.0f;
-    s->PopupBorderSize   = 1.0f;
-    s->FrameBorderSize   = 1.0f;
-    s->TabBorderSize     = 1.0f;
-    s->WindowPadding     = (ImVec2){10.0f, 10.0f};
-    s->FramePadding      = (ImVec2){ 8.0f,  4.0f};
-    s->ItemSpacing       = (ImVec2){ 8.0f,  5.0f};
-    s->ItemInnerSpacing  = (ImVec2){ 6.0f,  4.0f};
-    s->IndentSpacing     = 18.0f;
-    s->ScrollbarSize     = 14.0f;
-    s->GrabMinSize       = 10.0f;
-
-    ImVec4 *c = s->Colors;
-    // Text: pale paper with a hint of purple-blue
-    c[ImGuiCol_Text]                  = (ImVec4){0.78f, 0.82f, 0.88f, 1.00f};
-    c[ImGuiCol_TextDisabled]          = (ImVec4){0.32f, 0.36f, 0.42f, 1.00f};
-
-    // Background: deep blue-black like moonlit mansion
-    c[ImGuiCol_WindowBg]              = (ImVec4){0.04f, 0.06f, 0.10f, 0.96f};
-    c[ImGuiCol_ChildBg]               = (ImVec4){0.06f, 0.08f, 0.12f, 0.85f};
-    c[ImGuiCol_PopupBg]               = (ImVec4){0.03f, 0.05f, 0.08f, 0.98f};
-
-    // Borders: slate with a cold purple lean
-    c[ImGuiCol_Border]                = (ImVec4){0.24f, 0.28f, 0.35f, 0.65f};
-    c[ImGuiCol_BorderShadow]          = (ImVec4){0, 0, 0, 0};
-
-    // Frames: cool gray-blue
-    c[ImGuiCol_FrameBg]               = (ImVec4){0.09f, 0.12f, 0.16f, 0.95f};
-    c[ImGuiCol_FrameBgHovered]        = (ImVec4){0.16f, 0.21f, 0.28f, 0.95f};
-    c[ImGuiCol_FrameBgActive]         = (ImVec4){0.23f, 0.30f, 0.40f, 1.00f};
-
-    // Title bars: dark with cold highlights
-    c[ImGuiCol_TitleBg]               = (ImVec4){0.05f, 0.07f, 0.10f, 1.00f};
-    c[ImGuiCol_TitleBgActive]         = (ImVec4){0.10f, 0.14f, 0.18f, 1.00f};
-    c[ImGuiCol_TitleBgCollapsed]      = (ImVec4){0.03f, 0.05f, 0.08f, 0.85f};
-
-    c[ImGuiCol_MenuBarBg]             = (ImVec4){0.07f, 0.09f, 0.12f, 1.00f};
-
-    // Scrollbars: soft azure
-    c[ImGuiCol_ScrollbarBg]           = (ImVec4){0.03f, 0.04f, 0.06f, 0.85f};
-    c[ImGuiCol_ScrollbarGrab]         = (ImVec4){0.18f, 0.24f, 0.30f, 1.00f};
-    c[ImGuiCol_ScrollbarGrabHovered]  = (ImVec4){0.26f, 0.34f, 0.42f, 1.00f};
-    c[ImGuiCol_ScrollbarGrabActive]   = (ImVec4){0.34f, 0.44f, 0.54f, 1.00f};
-
-    // Accent: ghost-light cyan / pale purple
-    c[ImGuiCol_CheckMark]             = (ImVec4){0.60f, 0.78f, 0.96f, 1.00f};
-    c[ImGuiCol_SliderGrab]            = (ImVec4){0.42f, 0.64f, 0.88f, 1.00f};
-    c[ImGuiCol_SliderGrabActive]      = (ImVec4){0.60f, 0.84f, 0.98f, 1.00f};
-
-    // Buttons: twilight blue-gray
-    c[ImGuiCol_Button]                = (ImVec4){0.08f, 0.10f, 0.14f, 0.95f};
-    c[ImGuiCol_ButtonHovered]         = (ImVec4){0.18f, 0.24f, 0.32f, 1.00f};
-    c[ImGuiCol_ButtonActive]          = (ImVec4){0.28f, 0.36f, 0.48f, 1.00f};
-
-    // Headers
-    c[ImGuiCol_Header]                = (ImVec4){0.12f, 0.16f, 0.22f, 0.85f};
-    c[ImGuiCol_HeaderHovered]         = (ImVec4){0.20f, 0.28f, 0.38f, 0.95f};
-    c[ImGuiCol_HeaderActive]          = (ImVec4){0.28f, 0.38f, 0.52f, 1.00f};
-
-    // Tabs
-    c[ImGuiCol_Tab]                   = (ImVec4){0.08f, 0.10f, 0.14f, 0.95f};
-    c[ImGuiCol_TabHovered]            = (ImVec4){0.20f, 0.28f, 0.38f, 0.95f};
-    c[ImGuiCol_TabSelected]           = (ImVec4){0.26f, 0.34f, 0.46f, 1.00f};
-    c[ImGuiCol_TabSelectedOverline]   = (ImVec4){0.60f, 0.78f, 0.96f, 1.00f};
-
-    // Misc accents (plots, nav, tables, etc.)
-    c[ImGuiCol_TextLink]              = (ImVec4){0.60f, 0.78f, 0.96f, 1.00f};
-    c[ImGuiCol_TextSelectedBg]        = (ImVec4){0.25f, 0.32f, 0.42f, 0.65f};
-    c[ImGuiCol_TableHeaderBg]         = (ImVec4){0.08f, 0.12f, 0.16f, 1.00f};
-    c[ImGuiCol_TableBorderStrong]     = (ImVec4){0.22f, 0.28f, 0.34f, 1.00f};
-    c[ImGuiCol_TableBorderLight]      = (ImVec4){0.14f, 0.18f, 0.24f, 1.00f};
-
-    /*
-    // Text: pale paper, slightly cold
-    c[ImGuiCol_Text]                  = (ImVec4){0.82f, 0.86f, 0.88f, 1.00f};
-    c[ImGuiCol_TextDisabled]          = (ImVec4){0.38f, 0.42f, 0.45f, 1.00f};
-
-    // Backgrounds: blue-black ink
-    c[ImGuiCol_WindowBg]              = (ImVec4){0.05f, 0.07f, 0.09f, 0.96f};
-    c[ImGuiCol_ChildBg]               = (ImVec4){0.07f, 0.09f, 0.11f, 0.85f};
-    c[ImGuiCol_PopupBg]               = (ImVec4){0.04f, 0.06f, 0.08f, 0.98f};
-
-    // Borders: cold slate
-    c[ImGuiCol_Border]                = (ImVec4){0.22f, 0.28f, 0.32f, 0.65f};
-    c[ImGuiCol_BorderShadow]          = (ImVec4){0,0,0,0};
-
-    // Frames: dusty wood in moonlight
-    c[ImGuiCol_FrameBg]               = (ImVec4){0.10f, 0.13f, 0.16f, 0.95f};
-    c[ImGuiCol_FrameBgHovered]        = (ImVec4){0.18f, 0.24f, 0.28f, 0.95f};
-    c[ImGuiCol_FrameBgActive]         = (ImVec4){0.26f, 0.34f, 0.40f, 1.00f};
-
-    // Titles: very dark blue-black
-    c[ImGuiCol_TitleBg]               = (ImVec4){0.06f, 0.08f, 0.10f, 1.00f};
-    c[ImGuiCol_TitleBgActive]         = (ImVec4){0.12f, 0.18f, 0.22f, 1.00f};
-    c[ImGuiCol_TitleBgCollapsed]      = (ImVec4){0.05f, 0.07f, 0.09f, 0.85f};
-
-    c[ImGuiCol_MenuBarBg]             = (ImVec4){0.08f, 0.10f, 0.12f, 1.00f};
-
-    // Scrollbar: faint blue steel
-    c[ImGuiCol_ScrollbarBg]           = (ImVec4){0.04f, 0.05f, 0.07f, 0.85f};
-    c[ImGuiCol_ScrollbarGrab]         = (ImVec4){0.22f, 0.30f, 0.36f, 1.00f};
-    c[ImGuiCol_ScrollbarGrabHovered]  = (ImVec4){0.30f, 0.40f, 0.46f, 1.00f};
-    c[ImGuiCol_ScrollbarGrabActive]   = (ImVec4){0.38f, 0.50f, 0.58f, 1.00f};
-
-    // Accent color: ghostly cyan (FF1 signature)
-    c[ImGuiCol_CheckMark]             = (ImVec4){0.60f, 0.85f, 0.90f, 1.00f};
-    c[ImGuiCol_SliderGrab]            = (ImVec4){0.50f, 0.78f, 0.84f, 1.00f};
-    c[ImGuiCol_SliderGrabActive]      = (ImVec4){0.70f, 0.92f, 0.98f, 1.00f};
-
-    // Buttons: foggy slate
-    c[ImGuiCol_Button]                = (ImVec4){0.12f, 0.16f, 0.20f, 0.95f};
-    c[ImGuiCol_ButtonHovered]         = (ImVec4){0.22f, 0.30f, 0.36f, 1.00f};
-    c[ImGuiCol_ButtonActive]          = (ImVec4){0.32f, 0.42f, 0.50f, 1.00f};
-
-    // Headers
-    c[ImGuiCol_Header]                = (ImVec4){0.14f, 0.20f, 0.24f, 0.85f};
-    c[ImGuiCol_HeaderHovered]         = (ImVec4){0.24f, 0.34f, 0.40f, 0.95f};
-    c[ImGuiCol_HeaderActive]          = (ImVec4){0.34f, 0.46f, 0.54f, 1.00f};
-
-    // Separators
-    c[ImGuiCol_Separator]             = (ImVec4){0.22f, 0.28f, 0.32f, 0.55f};
-    c[ImGuiCol_SeparatorHovered]      = (ImVec4){0.40f, 0.52f, 0.60f, 0.85f};
-    c[ImGuiCol_SeparatorActive]       = (ImVec4){0.55f, 0.70f, 0.80f, 1.00f};
-
-    // Tabs
-    c[ImGuiCol_Tab]                   = (ImVec4){0.10f, 0.14f, 0.18f, 0.95f};
-    c[ImGuiCol_TabHovered]            = (ImVec4){0.24f, 0.34f, 0.40f, 0.95f};
-    c[ImGuiCol_TabSelected]           = (ImVec4){0.30f, 0.42f, 0.50f, 1.00f};
-    c[ImGuiCol_TabSelectedOverline]   = (ImVec4){0.65f, 0.90f, 0.95f, 1.00f};
-
-    // Tables / misc accents
-    c[ImGuiCol_TableHeaderBg]         = (ImVec4){0.12f, 0.18f, 0.22f, 1.00f};
-    c[ImGuiCol_TableBorderStrong]     = (ImVec4){0.22f, 0.30f, 0.36f, 1.00f};
-    c[ImGuiCol_TableBorderLight]      = (ImVec4){0.16f, 0.22f, 0.26f, 1.00f};
-    c[ImGuiCol_TextLink]              = (ImVec4){0.65f, 0.90f, 0.95f, 1.00f};
-    c[ImGuiCol_TextSelectedBg]        = (ImVec4){0.30f, 0.42f, 0.50f, 0.65f};
-
-    // Nav / modal
-    c[ImGuiCol_NavCursor]             = (ImVec4){0.65f, 0.90f, 0.95f, 1.00f};
-    c[ImGuiCol_NavWindowingHighlight] = (ImVec4){0.65f, 0.90f, 0.95f, 0.70f};
-    c[ImGuiCol_NavWindowingDimBg]     = (ImVec4){0.04f, 0.05f, 0.07f, 0.50f};
-    c[ImGuiCol_ModalWindowDimBg]      = (ImVec4){0.04f, 0.05f, 0.07f, 0.65f};
-    */
-
-    //c[ImGuiCol_Text]                  = (ImVec4){0.86f, 0.78f, 0.62f, 1.00f};
-    //c[ImGuiCol_TextDisabled]          = (ImVec4){0.42f, 0.36f, 0.28f, 1.00f};
-    //c[ImGuiCol_WindowBg]              = (ImVec4){0.06f, 0.04f, 0.03f, 0.96f};
-    //c[ImGuiCol_ChildBg]               = (ImVec4){0.08f, 0.05f, 0.04f, 0.85f};
-    //c[ImGuiCol_PopupBg]               = (ImVec4){0.05f, 0.03f, 0.02f, 0.98f};
-    //c[ImGuiCol_Border]                = (ImVec4){0.40f, 0.10f, 0.08f, 0.65f};
-    //c[ImGuiCol_BorderShadow]          = (ImVec4){0.00f, 0.00f, 0.00f, 0.00f};
-    //c[ImGuiCol_FrameBg]               = (ImVec4){0.12f, 0.07f, 0.05f, 0.95f};
-    //c[ImGuiCol_FrameBgHovered]        = (ImVec4){0.32f, 0.10f, 0.08f, 0.85f};
-    //c[ImGuiCol_FrameBgActive]         = (ImVec4){0.52f, 0.12f, 0.10f, 0.95f};
-    //c[ImGuiCol_TitleBg]               = (ImVec4){0.08f, 0.04f, 0.03f, 1.00f};
-    //c[ImGuiCol_TitleBgActive]         = (ImVec4){0.35f, 0.05f, 0.05f, 1.00f};
-    //c[ImGuiCol_TitleBgCollapsed]      = (ImVec4){0.05f, 0.02f, 0.02f, 0.85f};
-    //c[ImGuiCol_MenuBarBg]             = (ImVec4){0.10f, 0.05f, 0.04f, 1.00f};
-    //c[ImGuiCol_ScrollbarBg]           = (ImVec4){0.04f, 0.02f, 0.02f, 0.85f};
-    //c[ImGuiCol_ScrollbarGrab]         = (ImVec4){0.28f, 0.16f, 0.10f, 1.00f};
-    //c[ImGuiCol_ScrollbarGrabHovered]  = (ImVec4){0.50f, 0.20f, 0.12f, 1.00f};
-    //c[ImGuiCol_ScrollbarGrabActive]   = (ImVec4){0.65f, 0.22f, 0.14f, 1.00f};
-    //c[ImGuiCol_CheckMark]             = (ImVec4){0.85f, 0.40f, 0.18f, 1.00f};
-    //c[ImGuiCol_SliderGrab]            = (ImVec4){0.60f, 0.20f, 0.14f, 1.00f};
-    //c[ImGuiCol_SliderGrabActive]      = (ImVec4){0.80f, 0.30f, 0.16f, 1.00f};
-    //c[ImGuiCol_Button]                = (ImVec4){0.18f, 0.08f, 0.06f, 0.95f};
-    //c[ImGuiCol_ButtonHovered]         = (ImVec4){0.45f, 0.12f, 0.10f, 1.00f};
-    //c[ImGuiCol_ButtonActive]          = (ImVec4){0.65f, 0.16f, 0.12f, 1.00f};
-    //c[ImGuiCol_Header]                = (ImVec4){0.22f, 0.08f, 0.06f, 0.85f};
-    //c[ImGuiCol_HeaderHovered]         = (ImVec4){0.45f, 0.12f, 0.10f, 0.95f};
-    //c[ImGuiCol_HeaderActive]          = (ImVec4){0.60f, 0.14f, 0.10f, 1.00f};
-    //c[ImGuiCol_Separator]             = (ImVec4){0.40f, 0.12f, 0.10f, 0.55f};
-    //c[ImGuiCol_SeparatorHovered]      = (ImVec4){0.65f, 0.18f, 0.12f, 0.85f};
-    //c[ImGuiCol_SeparatorActive]       = (ImVec4){0.85f, 0.24f, 0.14f, 1.00f};
-    //c[ImGuiCol_ResizeGrip]            = (ImVec4){0.28f, 0.12f, 0.08f, 0.50f};
-    //c[ImGuiCol_ResizeGripHovered]     = (ImVec4){0.55f, 0.16f, 0.10f, 0.85f};
-    //c[ImGuiCol_ResizeGripActive]      = (ImVec4){0.80f, 0.22f, 0.14f, 1.00f};
-    //c[ImGuiCol_Tab]                   = (ImVec4){0.14f, 0.06f, 0.04f, 0.95f};
-    //c[ImGuiCol_TabHovered]            = (ImVec4){0.45f, 0.12f, 0.10f, 0.95f};
-    //c[ImGuiCol_TabSelected]           = (ImVec4){0.55f, 0.14f, 0.10f, 1.00f};
-    //c[ImGuiCol_TabSelectedOverline]   = (ImVec4){0.85f, 0.25f, 0.14f, 1.00f};
-    //c[ImGuiCol_TabDimmed]             = (ImVec4){0.10f, 0.05f, 0.03f, 0.95f};
-    //c[ImGuiCol_TabDimmedSelected]     = (ImVec4){0.30f, 0.08f, 0.06f, 1.00f};
-    //c[ImGuiCol_TabDimmedSelectedOverline] = (ImVec4){0.55f, 0.14f, 0.10f, 1.00f};
-    //c[ImGuiCol_PlotLines]             = (ImVec4){0.85f, 0.50f, 0.18f, 1.00f};
-    //c[ImGuiCol_PlotLinesHovered]      = (ImVec4){1.00f, 0.55f, 0.20f, 1.00f};
-    //c[ImGuiCol_PlotHistogram]         = (ImVec4){0.65f, 0.20f, 0.14f, 1.00f};
-    //c[ImGuiCol_PlotHistogramHovered]  = (ImVec4){0.90f, 0.30f, 0.18f, 1.00f};
-    //c[ImGuiCol_TableHeaderBg]         = (ImVec4){0.18f, 0.08f, 0.06f, 1.00f};
-    //c[ImGuiCol_TableBorderStrong]     = (ImVec4){0.40f, 0.12f, 0.10f, 1.00f};
-    //c[ImGuiCol_TableBorderLight]      = (ImVec4){0.25f, 0.10f, 0.08f, 1.00f};
-    //c[ImGuiCol_TableRowBg]            = (ImVec4){0.00f, 0.00f, 0.00f, 0.00f};
-    //c[ImGuiCol_TableRowBgAlt]         = (ImVec4){0.95f, 0.50f, 0.18f, 0.04f};
-    //c[ImGuiCol_TextLink]              = (ImVec4){0.95f, 0.50f, 0.18f, 1.00f};
-    //c[ImGuiCol_TextSelectedBg]        = (ImVec4){0.55f, 0.14f, 0.10f, 0.65f};
-    //c[ImGuiCol_DragDropTarget]        = (ImVec4){0.95f, 0.50f, 0.18f, 0.90f};
-    //c[ImGuiCol_NavCursor]             = (ImVec4){0.85f, 0.25f, 0.14f, 1.00f};
-    //c[ImGuiCol_NavWindowingHighlight] = (ImVec4){0.95f, 0.50f, 0.18f, 0.70f};
-    //c[ImGuiCol_NavWindowingDimBg]     = (ImVec4){0.04f, 0.02f, 0.02f, 0.50f};
-    //c[ImGuiCol_ModalWindowDimBg]      = (ImVec4){0.04f, 0.02f, 0.02f, 0.65f};
-}
-
 // -- State -------------------------------------------------------------------
 const int msaa_list[] = {0, 2, 4, 8, 16, 32};
 int show_fps = 1;
@@ -318,12 +99,6 @@ static int render_resolution_width  = 1920;
 static int render_resolution_height = 1080;
 
 #define MIKUPAN_MAX_RESOLUTIONS 64
-
-typedef struct
-{
-    int w;
-    int h;
-} MikuPan_Resolution;
 
 static MikuPan_Resolution resolution_list[MIKUPAN_MAX_RESOLUTIONS];
 static char               resolution_labels[MIKUPAN_MAX_RESOLUTIONS][32];
@@ -854,8 +629,8 @@ static int CompareResolutionDesc(const void *a, const void *b)
 {
     const MikuPan_Resolution *ra = (const MikuPan_Resolution *)a;
     const MikuPan_Resolution *rb = (const MikuPan_Resolution *)b;
-    int area_a = ra->w * ra->h;
-    int area_b = rb->w * rb->h;
+    int area_a = ra->width * ra->height;
+    int area_b = rb->width * rb->height;
     return area_b - area_a;
 }
 
@@ -865,29 +640,45 @@ static void MikuPan_PopulateResolutionList(SDL_DisplayID display, const SDL_Disp
 
     int n = 0;
     SDL_DisplayMode **modes = SDL_GetFullscreenDisplayModes(display, &n);
+
     if (modes != NULL)
     {
         for (int i = 0; i < n && resolution_count < MIKUPAN_MAX_RESOLUTIONS; i++)
         {
             int w = modes[i]->w;
             int h = modes[i]->h;
-            if (w <= 0 || h <= 0) continue;
+
+            if (w <= 0 || h <= 0)
+            {
+                continue;
+            }
 
             int dup = 0;
+
             for (int j = 0; j < resolution_count; j++)
             {
-                if (resolution_list[j].w == w && resolution_list[j].h == h)
+                if (resolution_list[j].width == w && resolution_list[j].height == h)
                 {
                     dup = 1;
                     break;
                 }
             }
-            if (dup) continue;
 
-            resolution_list[resolution_count].w = w;
-            resolution_list[resolution_count].h = h;
+            if (dup)
+            {
+                continue;
+            }
+
+            resolution_list[resolution_count].width = w;
+            resolution_list[resolution_count].height = h;
             resolution_count++;
         }
+
+        /// Add the normal render resolution of the game
+        resolution_list[resolution_count].width = 640;
+        resolution_list[resolution_count].height = 448;
+        resolution_count++;
+
         SDL_free(modes);
     }
 
@@ -898,8 +689,8 @@ static void MikuPan_PopulateResolutionList(SDL_DisplayID display, const SDL_Disp
         int present = 0;
         for (int i = 0; i < resolution_count; i++)
         {
-            if (resolution_list[i].w == current_mode->w &&
-                resolution_list[i].h == current_mode->h)
+            if (resolution_list[i].width == current_mode->w &&
+                resolution_list[i].height == current_mode->h)
             {
                 present = 1;
                 break;
@@ -907,8 +698,8 @@ static void MikuPan_PopulateResolutionList(SDL_DisplayID display, const SDL_Disp
         }
         if (!present && resolution_count < MIKUPAN_MAX_RESOLUTIONS)
         {
-            resolution_list[resolution_count].w = current_mode->w;
-            resolution_list[resolution_count].h = current_mode->h;
+            resolution_list[resolution_count].width = current_mode->w;
+            resolution_list[resolution_count].height = current_mode->h;
             resolution_count++;
         }
     }
@@ -918,13 +709,243 @@ static void MikuPan_PopulateResolutionList(SDL_DisplayID display, const SDL_Disp
     for (int i = 0; i < resolution_count; i++)
     {
         snprintf(resolution_labels[i], sizeof(resolution_labels[i]),
-                 "%d x %d", resolution_list[i].w, resolution_list[i].h);
+                 "%d x %d", resolution_list[i].width, resolution_list[i].height);
+
         resolution_label_ptrs[i] = resolution_labels[i];
-        if (resolution_list[i].w == render_resolution_width &&
-            resolution_list[i].h == render_resolution_height)
+
+        if (resolution_list[i].width == render_resolution_width &&
+            resolution_list[i].height == render_resolution_height)
         {
             resolution_selected = i;
         }
+    }
+}
+
+// -- Fatal Frame 1 inspired style --------------------------------------------
+// Palette evokes the PS2-era survival horror look: parchment-cream text on
+// near-black warm sepia backgrounds, deep blood-red borders/title bars, and
+// burnt-amber highlights (camera filament / lantern light). Squared corners
+// and visible borders give windows the etched, antique feeling of the
+// in-game journal pages and the Camera Obscura viewfinder.
+static void MikuPan_ApplyFatalFrameStyle(int theme)
+{
+    ImGuiStyle *s = igGetStyle();
+    ImVec4 *c = s->Colors;
+
+    s->Alpha             = 0.96f;
+    s->DisabledAlpha     = 0.45f;
+    s->WindowRounding    = 0.0f;
+    s->ChildRounding     = 0.0f;
+    s->PopupRounding     = 0.0f;
+    s->FrameRounding     = 0.0f;
+    s->ScrollbarRounding = 0.0f;
+    s->GrabRounding      = 0.0f;
+    s->TabRounding       = 0.0f;
+    s->WindowBorderSize  = 1.0f;
+    s->ChildBorderSize   = 1.0f;
+    s->PopupBorderSize   = 1.0f;
+    s->FrameBorderSize   = 1.0f;
+    s->TabBorderSize     = 1.0f;
+    s->WindowPadding     = (ImVec2){10.0f, 10.0f};
+    s->FramePadding      = (ImVec2){ 8.0f,  4.0f};
+    s->ItemSpacing       = (ImVec2){ 8.0f,  5.0f};
+    s->ItemInnerSpacing  = (ImVec2){ 6.0f,  4.0f};
+    s->IndentSpacing     = 18.0f;
+    s->ScrollbarSize     = 14.0f;
+    s->GrabMinSize       = 10.0f;
+
+    switch (theme)
+    {
+        default:
+        case 0:
+            // Text: pale paper with a hint of purple-blue
+            c[ImGuiCol_Text]                  = (ImVec4){0.78f, 0.82f, 0.88f, 1.00f};
+            c[ImGuiCol_TextDisabled]          = (ImVec4){0.32f, 0.36f, 0.42f, 1.00f};
+
+            // Background: deep blue-black like moonlit mansion
+            c[ImGuiCol_WindowBg]              = (ImVec4){0.04f, 0.06f, 0.10f, 0.96f};
+            c[ImGuiCol_ChildBg]               = (ImVec4){0.06f, 0.08f, 0.12f, 0.85f};
+            c[ImGuiCol_PopupBg]               = (ImVec4){0.03f, 0.05f, 0.08f, 0.98f};
+
+            // Borders: slate with a cold purple lean
+            c[ImGuiCol_Border]                = (ImVec4){0.24f, 0.28f, 0.35f, 0.65f};
+            c[ImGuiCol_BorderShadow]          = (ImVec4){0, 0, 0, 0};
+
+            // Frames: cool gray-blue
+            c[ImGuiCol_FrameBg]               = (ImVec4){0.09f, 0.12f, 0.16f, 0.95f};
+            c[ImGuiCol_FrameBgHovered]        = (ImVec4){0.16f, 0.21f, 0.28f, 0.95f};
+            c[ImGuiCol_FrameBgActive]         = (ImVec4){0.23f, 0.30f, 0.40f, 1.00f};
+
+            // Title bars: dark with cold highlights
+            c[ImGuiCol_TitleBg]               = (ImVec4){0.05f, 0.07f, 0.10f, 1.00f};
+            c[ImGuiCol_TitleBgActive]         = (ImVec4){0.10f, 0.14f, 0.18f, 1.00f};
+            c[ImGuiCol_TitleBgCollapsed]      = (ImVec4){0.03f, 0.05f, 0.08f, 0.85f};
+
+            c[ImGuiCol_MenuBarBg]             = (ImVec4){0.07f, 0.09f, 0.12f, 1.00f};
+
+            // Scrollbars: soft azure
+            c[ImGuiCol_ScrollbarBg]           = (ImVec4){0.03f, 0.04f, 0.06f, 0.85f};
+            c[ImGuiCol_ScrollbarGrab]         = (ImVec4){0.18f, 0.24f, 0.30f, 1.00f};
+            c[ImGuiCol_ScrollbarGrabHovered]  = (ImVec4){0.26f, 0.34f, 0.42f, 1.00f};
+            c[ImGuiCol_ScrollbarGrabActive]   = (ImVec4){0.34f, 0.44f, 0.54f, 1.00f};
+
+            // Accent: ghost-light cyan / pale purple
+            c[ImGuiCol_CheckMark]             = (ImVec4){0.60f, 0.78f, 0.96f, 1.00f};
+            c[ImGuiCol_SliderGrab]            = (ImVec4){0.42f, 0.64f, 0.88f, 1.00f};
+            c[ImGuiCol_SliderGrabActive]      = (ImVec4){0.60f, 0.84f, 0.98f, 1.00f};
+
+            // Buttons: twilight blue-gray
+            c[ImGuiCol_Button]                = (ImVec4){0.08f, 0.10f, 0.14f, 0.95f};
+            c[ImGuiCol_ButtonHovered]         = (ImVec4){0.18f, 0.24f, 0.32f, 1.00f};
+            c[ImGuiCol_ButtonActive]          = (ImVec4){0.28f, 0.36f, 0.48f, 1.00f};
+
+            // Headers
+            c[ImGuiCol_Header]                = (ImVec4){0.12f, 0.16f, 0.22f, 0.85f};
+            c[ImGuiCol_HeaderHovered]         = (ImVec4){0.20f, 0.28f, 0.38f, 0.95f};
+            c[ImGuiCol_HeaderActive]          = (ImVec4){0.28f, 0.38f, 0.52f, 1.00f};
+
+            // Tabs
+            c[ImGuiCol_Tab]                   = (ImVec4){0.08f, 0.10f, 0.14f, 0.95f};
+            c[ImGuiCol_TabHovered]            = (ImVec4){0.20f, 0.28f, 0.38f, 0.95f};
+            c[ImGuiCol_TabSelected]           = (ImVec4){0.26f, 0.34f, 0.46f, 1.00f};
+            c[ImGuiCol_TabSelectedOverline]   = (ImVec4){0.60f, 0.78f, 0.96f, 1.00f};
+
+            // Misc accents (plots, nav, tables, etc.)
+            c[ImGuiCol_TextLink]              = (ImVec4){0.60f, 0.78f, 0.96f, 1.00f};
+            c[ImGuiCol_TextSelectedBg]        = (ImVec4){0.25f, 0.32f, 0.42f, 0.65f};
+            c[ImGuiCol_TableHeaderBg]         = (ImVec4){0.08f, 0.12f, 0.16f, 1.00f};
+            c[ImGuiCol_TableBorderStrong]     = (ImVec4){0.22f, 0.28f, 0.34f, 1.00f};
+            c[ImGuiCol_TableBorderLight]      = (ImVec4){0.14f, 0.18f, 0.24f, 1.00f};
+            break;
+        case 1:
+            // Text: pale paper, slightly cold
+            c[ImGuiCol_Text]                  = (ImVec4){0.82f, 0.86f, 0.88f, 1.00f};
+            c[ImGuiCol_TextDisabled]          = (ImVec4){0.38f, 0.42f, 0.45f, 1.00f};
+
+            // Backgrounds: blue-black ink
+            c[ImGuiCol_WindowBg]              = (ImVec4){0.05f, 0.07f, 0.09f, 0.96f};
+            c[ImGuiCol_ChildBg]               = (ImVec4){0.07f, 0.09f, 0.11f, 0.85f};
+            c[ImGuiCol_PopupBg]               = (ImVec4){0.04f, 0.06f, 0.08f, 0.98f};
+
+            // Borders: cold slate
+            c[ImGuiCol_Border]                = (ImVec4){0.22f, 0.28f, 0.32f, 0.65f};
+            c[ImGuiCol_BorderShadow]          = (ImVec4){0,0,0,0};
+
+            // Frames: dusty wood in moonlight
+            c[ImGuiCol_FrameBg]               = (ImVec4){0.10f, 0.13f, 0.16f, 0.95f};
+            c[ImGuiCol_FrameBgHovered]        = (ImVec4){0.18f, 0.24f, 0.28f, 0.95f};
+            c[ImGuiCol_FrameBgActive]         = (ImVec4){0.26f, 0.34f, 0.40f, 1.00f};
+
+            // Titles: very dark blue-black
+            c[ImGuiCol_TitleBg]               = (ImVec4){0.06f, 0.08f, 0.10f, 1.00f};
+            c[ImGuiCol_TitleBgActive]         = (ImVec4){0.12f, 0.18f, 0.22f, 1.00f};
+            c[ImGuiCol_TitleBgCollapsed]      = (ImVec4){0.05f, 0.07f, 0.09f, 0.85f};
+
+            c[ImGuiCol_MenuBarBg]             = (ImVec4){0.08f, 0.10f, 0.12f, 1.00f};
+
+            // Scrollbar: faint blue steel
+            c[ImGuiCol_ScrollbarBg]           = (ImVec4){0.04f, 0.05f, 0.07f, 0.85f};
+            c[ImGuiCol_ScrollbarGrab]         = (ImVec4){0.22f, 0.30f, 0.36f, 1.00f};
+            c[ImGuiCol_ScrollbarGrabHovered]  = (ImVec4){0.30f, 0.40f, 0.46f, 1.00f};
+            c[ImGuiCol_ScrollbarGrabActive]   = (ImVec4){0.38f, 0.50f, 0.58f, 1.00f};
+
+            // Accent color: ghostly cyan (FF1 signature)
+            c[ImGuiCol_CheckMark]             = (ImVec4){0.60f, 0.85f, 0.90f, 1.00f};
+            c[ImGuiCol_SliderGrab]            = (ImVec4){0.50f, 0.78f, 0.84f, 1.00f};
+            c[ImGuiCol_SliderGrabActive]      = (ImVec4){0.70f, 0.92f, 0.98f, 1.00f};
+
+            // Buttons: foggy slate
+            c[ImGuiCol_Button]                = (ImVec4){0.12f, 0.16f, 0.20f, 0.95f};
+            c[ImGuiCol_ButtonHovered]         = (ImVec4){0.22f, 0.30f, 0.36f, 1.00f};
+            c[ImGuiCol_ButtonActive]          = (ImVec4){0.32f, 0.42f, 0.50f, 1.00f};
+
+            // Headers
+            c[ImGuiCol_Header]                = (ImVec4){0.14f, 0.20f, 0.24f, 0.85f};
+            c[ImGuiCol_HeaderHovered]         = (ImVec4){0.24f, 0.34f, 0.40f, 0.95f};
+            c[ImGuiCol_HeaderActive]          = (ImVec4){0.34f, 0.46f, 0.54f, 1.00f};
+
+            // Separators
+            c[ImGuiCol_Separator]             = (ImVec4){0.22f, 0.28f, 0.32f, 0.55f};
+            c[ImGuiCol_SeparatorHovered]      = (ImVec4){0.40f, 0.52f, 0.60f, 0.85f};
+            c[ImGuiCol_SeparatorActive]       = (ImVec4){0.55f, 0.70f, 0.80f, 1.00f};
+
+            // Tabs
+            c[ImGuiCol_Tab]                   = (ImVec4){0.10f, 0.14f, 0.18f, 0.95f};
+            c[ImGuiCol_TabHovered]            = (ImVec4){0.24f, 0.34f, 0.40f, 0.95f};
+            c[ImGuiCol_TabSelected]           = (ImVec4){0.30f, 0.42f, 0.50f, 1.00f};
+            c[ImGuiCol_TabSelectedOverline]   = (ImVec4){0.65f, 0.90f, 0.95f, 1.00f};
+
+            // Tables / misc accents
+            c[ImGuiCol_TableHeaderBg]         = (ImVec4){0.12f, 0.18f, 0.22f, 1.00f};
+            c[ImGuiCol_TableBorderStrong]     = (ImVec4){0.22f, 0.30f, 0.36f, 1.00f};
+            c[ImGuiCol_TableBorderLight]      = (ImVec4){0.16f, 0.22f, 0.26f, 1.00f};
+            c[ImGuiCol_TextLink]              = (ImVec4){0.65f, 0.90f, 0.95f, 1.00f};
+            c[ImGuiCol_TextSelectedBg]        = (ImVec4){0.30f, 0.42f, 0.50f, 0.65f};
+
+            // Nav / modal
+            c[ImGuiCol_NavCursor]             = (ImVec4){0.65f, 0.90f, 0.95f, 1.00f};
+            c[ImGuiCol_NavWindowingHighlight] = (ImVec4){0.65f, 0.90f, 0.95f, 0.70f};
+            c[ImGuiCol_NavWindowingDimBg]     = (ImVec4){0.04f, 0.05f, 0.07f, 0.50f};
+            c[ImGuiCol_ModalWindowDimBg]      = (ImVec4){0.04f, 0.05f, 0.07f, 0.65f};
+            break;
+        case 2:
+            c[ImGuiCol_Text]                  = (ImVec4){0.86f, 0.78f, 0.62f, 1.00f};
+            c[ImGuiCol_TextDisabled]          = (ImVec4){0.42f, 0.36f, 0.28f, 1.00f};
+            c[ImGuiCol_WindowBg]              = (ImVec4){0.06f, 0.04f, 0.03f, 0.96f};
+            c[ImGuiCol_ChildBg]               = (ImVec4){0.08f, 0.05f, 0.04f, 0.85f};
+            c[ImGuiCol_PopupBg]               = (ImVec4){0.05f, 0.03f, 0.02f, 0.98f};
+            c[ImGuiCol_Border]                = (ImVec4){0.40f, 0.10f, 0.08f, 0.65f};
+            c[ImGuiCol_BorderShadow]          = (ImVec4){0.00f, 0.00f, 0.00f, 0.00f};
+            c[ImGuiCol_FrameBg]               = (ImVec4){0.12f, 0.07f, 0.05f, 0.95f};
+            c[ImGuiCol_FrameBgHovered]        = (ImVec4){0.32f, 0.10f, 0.08f, 0.85f};
+            c[ImGuiCol_FrameBgActive]         = (ImVec4){0.52f, 0.12f, 0.10f, 0.95f};
+            c[ImGuiCol_TitleBg]               = (ImVec4){0.08f, 0.04f, 0.03f, 1.00f};
+            c[ImGuiCol_TitleBgActive]         = (ImVec4){0.35f, 0.05f, 0.05f, 1.00f};
+            c[ImGuiCol_TitleBgCollapsed]      = (ImVec4){0.05f, 0.02f, 0.02f, 0.85f};
+            c[ImGuiCol_MenuBarBg]             = (ImVec4){0.10f, 0.05f, 0.04f, 1.00f};
+            c[ImGuiCol_ScrollbarBg]           = (ImVec4){0.04f, 0.02f, 0.02f, 0.85f};
+            c[ImGuiCol_ScrollbarGrab]         = (ImVec4){0.28f, 0.16f, 0.10f, 1.00f};
+            c[ImGuiCol_ScrollbarGrabHovered]  = (ImVec4){0.50f, 0.20f, 0.12f, 1.00f};
+            c[ImGuiCol_ScrollbarGrabActive]   = (ImVec4){0.65f, 0.22f, 0.14f, 1.00f};
+            c[ImGuiCol_CheckMark]             = (ImVec4){0.85f, 0.40f, 0.18f, 1.00f};
+            c[ImGuiCol_SliderGrab]            = (ImVec4){0.60f, 0.20f, 0.14f, 1.00f};
+            c[ImGuiCol_SliderGrabActive]      = (ImVec4){0.80f, 0.30f, 0.16f, 1.00f};
+            c[ImGuiCol_Button]                = (ImVec4){0.18f, 0.08f, 0.06f, 0.95f};
+            c[ImGuiCol_ButtonHovered]         = (ImVec4){0.45f, 0.12f, 0.10f, 1.00f};
+            c[ImGuiCol_ButtonActive]          = (ImVec4){0.65f, 0.16f, 0.12f, 1.00f};
+            c[ImGuiCol_Header]                = (ImVec4){0.22f, 0.08f, 0.06f, 0.85f};
+            c[ImGuiCol_HeaderHovered]         = (ImVec4){0.45f, 0.12f, 0.10f, 0.95f};
+            c[ImGuiCol_HeaderActive]          = (ImVec4){0.60f, 0.14f, 0.10f, 1.00f};
+            c[ImGuiCol_Separator]             = (ImVec4){0.40f, 0.12f, 0.10f, 0.55f};
+            c[ImGuiCol_SeparatorHovered]      = (ImVec4){0.65f, 0.18f, 0.12f, 0.85f};
+            c[ImGuiCol_SeparatorActive]       = (ImVec4){0.85f, 0.24f, 0.14f, 1.00f};
+            c[ImGuiCol_ResizeGrip]            = (ImVec4){0.28f, 0.12f, 0.08f, 0.50f};
+            c[ImGuiCol_ResizeGripHovered]     = (ImVec4){0.55f, 0.16f, 0.10f, 0.85f};
+            c[ImGuiCol_ResizeGripActive]      = (ImVec4){0.80f, 0.22f, 0.14f, 1.00f};
+            c[ImGuiCol_Tab]                   = (ImVec4){0.14f, 0.06f, 0.04f, 0.95f};
+            c[ImGuiCol_TabHovered]            = (ImVec4){0.45f, 0.12f, 0.10f, 0.95f};
+            c[ImGuiCol_TabSelected]           = (ImVec4){0.55f, 0.14f, 0.10f, 1.00f};
+            c[ImGuiCol_TabSelectedOverline]   = (ImVec4){0.85f, 0.25f, 0.14f, 1.00f};
+            c[ImGuiCol_TabDimmed]             = (ImVec4){0.10f, 0.05f, 0.03f, 0.95f};
+            c[ImGuiCol_TabDimmedSelected]     = (ImVec4){0.30f, 0.08f, 0.06f, 1.00f};
+            c[ImGuiCol_TabDimmedSelectedOverline] = (ImVec4){0.55f, 0.14f, 0.10f, 1.00f};
+            c[ImGuiCol_PlotLines]             = (ImVec4){0.85f, 0.50f, 0.18f, 1.00f};
+            c[ImGuiCol_PlotLinesHovered]      = (ImVec4){1.00f, 0.55f, 0.20f, 1.00f};
+            c[ImGuiCol_PlotHistogram]         = (ImVec4){0.65f, 0.20f, 0.14f, 1.00f};
+            c[ImGuiCol_PlotHistogramHovered]  = (ImVec4){0.90f, 0.30f, 0.18f, 1.00f};
+            c[ImGuiCol_TableHeaderBg]         = (ImVec4){0.18f, 0.08f, 0.06f, 1.00f};
+            c[ImGuiCol_TableBorderStrong]     = (ImVec4){0.40f, 0.12f, 0.10f, 1.00f};
+            c[ImGuiCol_TableBorderLight]      = (ImVec4){0.25f, 0.10f, 0.08f, 1.00f};
+            c[ImGuiCol_TableRowBg]            = (ImVec4){0.00f, 0.00f, 0.00f, 0.00f};
+            c[ImGuiCol_TableRowBgAlt]         = (ImVec4){0.95f, 0.50f, 0.18f, 0.04f};
+            c[ImGuiCol_TextLink]              = (ImVec4){0.95f, 0.50f, 0.18f, 1.00f};
+            c[ImGuiCol_TextSelectedBg]        = (ImVec4){0.55f, 0.14f, 0.10f, 0.65f};
+            c[ImGuiCol_DragDropTarget]        = (ImVec4){0.95f, 0.50f, 0.18f, 0.90f};
+            c[ImGuiCol_NavCursor]             = (ImVec4){0.85f, 0.25f, 0.14f, 1.00f};
+            c[ImGuiCol_NavWindowingHighlight] = (ImVec4){0.95f, 0.50f, 0.18f, 0.70f};
+            c[ImGuiCol_NavWindowingDimBg]     = (ImVec4){0.04f, 0.02f, 0.02f, 0.50f};
+            c[ImGuiCol_ModalWindowDimBg]      = (ImVec4){0.04f, 0.02f, 0.02f, 0.65f};
+            break;
     }
 }
 
@@ -934,19 +955,30 @@ void MikuPan_InitUi(SDL_Window *window, SDL_GLContext renderer)
     ImGuiIO *io = igGetIO_Nil();
     io->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
-    MikuPan_ApplyFatalFrameStyle();
+    MikuPan_ApplyFatalFrameStyle(mikupan_configuration.selected_theme);
 
     SDL_DisplayID primary = SDL_GetPrimaryDisplay();
     if (primary != 0)
     {
         const SDL_DisplayMode *mode = SDL_GetCurrentDisplayMode(primary);
-        if (mode != NULL && mode->w > 0 && mode->h > 0)
-        {
-            render_resolution_width  = mode->w;
-            render_resolution_height = mode->h;
-        }
+        render_resolution_width = mikupan_configuration.renderer.render.width;
+        render_resolution_height = mikupan_configuration.renderer.render.height;
 
         MikuPan_PopulateResolutionList(primary, mode);
+    }
+
+    msaa_samples = mikupan_configuration.renderer.msaa_index;
+    brightness = mikupan_configuration.renderer.brightness;
+    gamma_value = mikupan_configuration.renderer.gamma;
+
+    if (gamma_value < 0.0f)
+    {
+        gamma_value = 1.0f;
+    }
+
+    if (brightness < 0.0f)
+    {
+        brightness = 1.0f;
     }
 
     MikuPan_ImGui_ImplInit(window, renderer);
@@ -1172,8 +1204,8 @@ void MikuPan_UiMenuBar(void)
             if (igCombo_Str_arr("Resolution", &resolution_selected,
                                 resolution_label_ptrs, resolution_count, -1))
             {
-                render_resolution_width  = resolution_list[resolution_selected].w;
-                render_resolution_height = resolution_list[resolution_selected].h;
+                render_resolution_width  = resolution_list[resolution_selected].width;
+                render_resolution_height = resolution_list[resolution_selected].height;
             }
         }
         else

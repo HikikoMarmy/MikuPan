@@ -19,8 +19,10 @@
 #define GLAD_GL_IMPLEMENTATION
 #include "graphics/graph3d/sglib.h"
 #include "main/glob.h"
+#include "mikupan/mikupan_config.h"
 #include "mikupan/mikupan_utils.h"
 #include "mikupan_pipeline.h"
+
 #include <glad/gl.h>
 
 #define TEXTURED_SPRITE_BATCH_MAX 4096
@@ -140,8 +142,7 @@ SDL_AppResult MikuPan_Init()
 
     info_log("Initializing SDL");
 
-    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_JOYSTICK
-                  | SDL_INIT_HAPTIC))
+    if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD | SDL_INIT_JOYSTICK | SDL_INIT_HAPTIC))
     {
         info_log("Couldn't initialize SDL: %s", SDL_GetError());
         return SDL_APP_FAILURE;
@@ -163,8 +164,27 @@ SDL_AppResult MikuPan_Init()
     SDL_DisplayID primary = SDL_GetPrimaryDisplay();
     const SDL_DisplayMode *mode = SDL_GetCurrentDisplayMode(primary);
 
-    mikupan_render.window = SDL_CreateWindow("MikuPan", 1920, 1080,
-                              SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL);
+    int desired_window_width = mikupan_configuration.renderer.window.width;
+    int desired_window_height = mikupan_configuration.renderer.window.height;
+
+    if (desired_window_width <= 0 || desired_window_width > mode->w)
+    {
+        desired_window_width = mode->w;
+        mikupan_configuration.renderer.window.width = desired_window_width;
+    }
+
+    if (desired_window_height <= 0 || desired_window_height > mode->h)
+    {
+        desired_window_height = mode->h;
+        mikupan_configuration.renderer.window.height = desired_window_height;
+    }
+
+    mikupan_render.window = SDL_CreateWindow(
+        "MikuPan",
+        desired_window_width,
+        desired_window_height,
+        SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL
+        );
 
     if (mikupan_render.window == NULL)
     {
@@ -196,8 +216,32 @@ SDL_AppResult MikuPan_Init()
 
     info_log("GLad version loaded %d", gladLoadGLLoader((void*)SDL_GL_GetProcAddress));
 
+    int desired_render_width = mikupan_configuration.renderer.render.width;
+    int desired_render_height = mikupan_configuration.renderer.render.height;
+    int desired_msaa = mikupan_configuration.renderer.msaa_index;
+
+    const int msaa_list[] = {0, 2, 4, 8, 16, 32};
+
+    if (desired_msaa < 0 || desired_msaa > 5)
+    {
+        desired_msaa = 4;
+        mikupan_configuration.renderer.msaa_index = desired_msaa;
+    }
+
+    if (desired_render_width <= 0 || desired_render_width > mode->w)
+    {
+        desired_render_width = mode->w;
+        mikupan_configuration.renderer.render.width = desired_render_width;
+    }
+
+    if (desired_render_height <= 0 || desired_render_height > mode->h)
+    {
+        desired_render_height = mode->h;
+        mikupan_configuration.renderer.render.height = desired_render_height;
+    }
+
     MikuPan_InitUi(mikupan_render.window, gl_context);
-    MikuPan_CreateInternalBuffer(mode->w, mode->h, 0);
+    MikuPan_CreateInternalBuffer(desired_render_width, desired_render_height, msaa_list[desired_msaa]);
     MikuPan_InitShaders();
     MikuPan_InitPipeline();
 
