@@ -1,6 +1,7 @@
 #include "common.h"
 #include "typedefs.h"
 #include "takep_pe.h"
+#include "mikupan/mikupan_rng.h"
 
 #include <stdlib.h>
 
@@ -131,31 +132,31 @@ int SetPEObjPos(PARTICLE_EFF_OBJ *obj)
 
 void MakeRandomVec(float *output, int m)
 {
-    if (rand() > RAND_MAX / 2)
+    if (MikuPan_Rand() > RAND_MAX / 2)
     {
-        output[0] = rand() % m;
+        output[0] = MikuPan_Rand() % m;
     }
     else
     {
-        output[0] = -rand() % m;
+        output[0] = -MikuPan_Rand() % m;
     }
 
-    if (rand() > RAND_MAX / 2)
+    if (MikuPan_Rand() > RAND_MAX / 2)
     {
-        output[1] = rand() % m;
+        output[1] = MikuPan_Rand() % m;
     }
     else
     {
-        output[1] = -rand() % m;
+        output[1] = -MikuPan_Rand() % m;
     }
 
-    if (rand() > RAND_MAX / 2)
+    if (MikuPan_Rand() > RAND_MAX / 2)
     {
-        output[2] = rand() % m;
+        output[2] = MikuPan_Rand() % m;
     }
     else
     {
-        output[2] = -rand() % m;
+        output[2] = -MikuPan_Rand() % m;
     }
 }
 
@@ -198,7 +199,7 @@ void InitPEObj(PARTICLE_EFF_OBJ *obj, sceVu0FVECTOR ov, sceVu0FVECTOR sv, sceVu0
 
     tempkk = -(obj->c2olen * 0.2f);
 
-    randrate = rand() / (float)RAND_MAX;
+    randrate = MikuPan_Rand() / (float)RAND_MAX;
     randrate = -(obj->c2olen * 0.5f * randrate);
 
     tempkk += randrate;
@@ -206,7 +207,7 @@ void InitPEObj(PARTICLE_EFF_OBJ *obj, sceVu0FVECTOR ov, sceVu0FVECTOR sv, sceVu0
     obj->ka = (obj->c2slen * obj->c2olen + tempkk * (hhh - obj->c2slen)) / tempkk / obj->c2olen / (obj->c2olen - tempkk);
     obj->kb = -(obj->ka * (tempkk + obj->c2olen));
 
-    temptime = rand() % 0x28 + 0x28;
+    temptime = MikuPan_Rand() % 0x28 + 0x28;
     obj->m_time = temptime;
 
     if (obj->c2olen < 1000.0f)

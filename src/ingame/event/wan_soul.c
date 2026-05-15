@@ -2,6 +2,7 @@
 #include "typedefs.h"
 #include "enums.h"
 #include "wan_soul.h"
+#include "mikupan/mikupan_rng.h"
 
 // #include <cstdlib.h>
 // RAND_MAX = (2**31-1)
@@ -325,12 +326,12 @@ void SetSoulNewMove(WANDER_SOUL_WRK *wswrk)
     }
     else if (dist <= 750.0f)
     {
-        wswrk->dist = (rand() / (float)RAND_MAX * 0.5f + 1.0f) * 250.0f;
+        wswrk->dist = (MikuPan_Rand() / (float)RAND_MAX * 0.5f + 1.0f) * 250.0f;
         wswrk->count = wswrk->dist / 10.5f;
     }
     else
     {
-        wswrk->dist = rand() * 500.0f / (float)RAND_MAX;
+        wswrk->dist = MikuPan_Rand() * 500.0f / (float)RAND_MAX;
         wswrk->count = wswrk->dist / 10.5f;
     }
 }

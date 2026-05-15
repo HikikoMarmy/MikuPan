@@ -1,6 +1,7 @@
 #include "common.h"
 #include "typedefs.h"
 #include "unit_ctl.h"
+#include "mikupan/mikupan_rng.h"
 
 // #include <cstdlib.h>
 // RAND_MAX = (2**31-1)
@@ -97,7 +98,7 @@ int GetRndSP(u_int min, u_int lng)
 
     if (lng != 0)
     {
-        result = (int)(min + (long)((lng * (long)rand()) / (float)RAND_MAX));
+        result = (int)(min + (long)((lng * (long)MikuPan_Rand()) / (float)RAND_MAX));
     }
     else
     {

@@ -1,6 +1,7 @@
 #include "common.h"
 #include "typedefs.h"
 #include "fsla_main.h"
+#include "mikupan/mikupan_rng.h"
 
 // #include <cstdlib.h>
 // RAND_MAX = (2**31-1)
@@ -39,7 +40,7 @@ FSPE_LIGHT_ANM* SetRandLightAnimEach(FSPE_LIGHT_ANM **ap)
         num++;
     }
 
-    i = (rand() / (float)RAND_MAX) * num;
+    i = (MikuPan_Rand() / (float)RAND_MAX) * num;
 
     return ap[i];
 }
@@ -60,7 +61,7 @@ void SetRandLightAnim(FSPE_LIGHT_WRK *lw)
         num++;
     }
 
-    num = (rand() / (float)RAND_MAX) * num;
+    num = (MikuPan_Rand() / (float)RAND_MAX) * num;
 
     lw->ap_in = (FSPE_LIGHT_ANM *)save[num];
 }

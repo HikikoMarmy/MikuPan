@@ -2,6 +2,7 @@
 #include "typedefs.h"
 #include "accessory.h"
 #include "enums.h"
+#include "mikupan/mikupan_rng.h"
 
 #include "sce/libvu0.h"
 
@@ -422,9 +423,9 @@ void acsCalcCoordinate(SgCOORDUNIT* cp, u_int block_num, FURN_WRK* f_wrk, ROPE_C
 
 void acsSetMoveDir(float *dir)
 {
-    dir[0] = (float)(rand() - (int)(RAND_MAX / 2)) / (float)RAND_MAX;
-    dir[1] = (float)(rand() - (int)(RAND_MAX / 2)) / (float)RAND_MAX;
-    dir[2] = (float)(rand() - (int)(RAND_MAX / 2)) / (float)RAND_MAX;
+    dir[0] = (float)(MikuPan_Rand() - (int)(RAND_MAX / 2)) / (float)RAND_MAX;
+    dir[1] = (float)(MikuPan_Rand() - (int)(RAND_MAX / 2)) / (float)RAND_MAX;
+    dir[2] = (float)(MikuPan_Rand() - (int)(RAND_MAX / 2)) / (float)RAND_MAX;
     dir[3] = 0.0f;
 
     sceVu0Normalize(dir, dir);

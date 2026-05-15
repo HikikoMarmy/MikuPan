@@ -4,6 +4,7 @@
 #include "furn_spe.h"
 #include "ingame/map/furn_eff.h"
 #include "sce/libvu0.h"
+#include "mikupan/mikupan_rng.h"
 
 // #include <cstdlib.h>
 // RAND_MAX = (2**31-1)
@@ -1545,7 +1546,7 @@ int ChkANDCondition(FURN_ACT_WRK *fawp, u_char **cpp, u_char count)
 
             if (j == 0)
             {
-                i = (rand() / (float)RAND_MAX) * 100.0f;
+                i = (MikuPan_Rand() / (float)RAND_MAX) * 100.0f;
 
                 if ((*cpp)[1] < i)
                 {
@@ -2180,7 +2181,7 @@ float GetRandVal(float min, float max)
 
     width = max - min;
 
-    return min + (rand() / (float)RAND_MAX) * width;
+    return min + (MikuPan_Rand() / (float)RAND_MAX) * width;
 }
 
 void StopTrembleH(FURN_ACT_WRK *fawp, signed char num)
@@ -2368,7 +2369,7 @@ void CallThunderLight(float x, float y, float z, u_char delay, sceVu0FVECTOR *po
     thunder_pos_p = pos;
     thunder_room = room_no;
 
-    if (rand() < RAND_MAX / 2)
+    if (MikuPan_Rand() < RAND_MAX / 2)
     {
         thunder_sound_no = 0;
     }

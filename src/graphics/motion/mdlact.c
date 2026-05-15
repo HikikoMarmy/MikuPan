@@ -2,6 +2,7 @@
 #include "typedefs.h"
 #include "mdlact.h"
 #include "enums.h"
+#include "mikupan/mikupan_rng.h"
 
 #include "sce/libvu0.h"
 
@@ -547,7 +548,7 @@ char QuakeCamera()
 
 float motGetRandom(float upper, float lower)
 {
-    return (rand() / (float)RAND_MAX) * (upper - lower) + lower;
+    return (MikuPan_Rand() / (float)RAND_MAX) * (upper - lower) + lower;
 }
 
 float motLinearSupValue(float moto, float saki, u_char mode, u_int cnt, u_int all_cnt)

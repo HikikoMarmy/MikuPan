@@ -1,6 +1,7 @@
 #include "common.h"
 #include "typedefs.h"
 #include "g2d_main.h"
+#include "mikupan/mikupan_rng.h"
 
 #include <stdlib.h>
 
@@ -114,7 +115,7 @@ static void gra2dSubLAST()
 
 void gra2dDraw(int fl)
 {
-    SetVURand(rand() / (float)RAND_MAX);
+    SetVURand(MikuPan_Rand() / (float)RAND_MAX);
 
     switch (fl)
     {
