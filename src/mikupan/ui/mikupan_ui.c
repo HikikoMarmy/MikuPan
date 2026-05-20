@@ -11,6 +11,7 @@
 #include "mikupan/rendering/mikupan_shader.h"
 #include "mikupan/rendering/mikupan_profiler.h"
 #include "mikupan/rendering/mikupan_renderer.h"
+#include "mikupan/rendering/mikupan_meshcache.h"
 #include "glad/gl.h"
 #include "graphics/graph2d/g2d_debug.h"
 #include "graphics/graph2d/message.h"
@@ -1172,6 +1173,17 @@ void MikuPan_UiMenuBar(void)
         if (igButton("Clear Texture Cache", (ImVec2) {0.0f, 0.0f}))
         {
             MikuPan_RequestFlushTextureCache();
+        }
+
+        int mesh_cache_on = MikuPan_MeshCache_IsEnabled();
+        if (igCheckbox("Mesh Cache", (bool *) &mesh_cache_on))
+        {
+            MikuPan_MeshCache_SetEnabled(mesh_cache_on);
+        }
+
+        if (igButton("Clear Mesh Cache", (ImVec2) {0.0f, 0.0f}))
+        {
+            MikuPan_MeshCache_Flush();
         }
 
         char msaa_dropdown_list[32];

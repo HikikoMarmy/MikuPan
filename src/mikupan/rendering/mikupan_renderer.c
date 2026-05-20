@@ -21,6 +21,7 @@
 #include "main/glob.h"
 #include "mikupan/mikupan_config.h"
 #include "mikupan/mikupan_utils.h"
+#include "mikupan_meshcache.h"
 #include "mikupan_pipeline.h"
 
 #include <glad/gl.h>
@@ -222,6 +223,7 @@ SDL_AppResult MikuPan_Init()
     MikuPan_CreateInternalBuffer(desired_render_width, desired_render_height, msaa_list[desired_msaa]);
     MikuPan_InitShaders();
     MikuPan_InitPipeline();
+    MikuPan_MeshCache_Init();
 
     for (int i = 0; i < MAX_SHADER_PROGRAMS; i++)
     {
@@ -1660,14 +1662,13 @@ void MikuPan_RenderMeshType0x32(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPU
 
     MikuPan_FlushTexturedSpriteBatch();
 
+    /// Per-frame state setup. Shader/texture/render-state can change between
+    /// frames even when the underlying geometry doesn't, so they stay outside
+    /// the mesh-buffer cache and run on every draw.
     Uint64 _sc_t0 = SDL_GetPerformanceCounter();
     Uint64 _t = MikuPan_PerfBegin();
     MikuPan_SetCurrentShaderProgram(MESH_0x12_SHADER);
     MikuPan_PerfEnd(PERF_SECT_SC_SHADER, _t);
-
-    _t = MikuPan_PerfBegin();
-    MikuPan_BindVAO(pipeline->vao);
-    MikuPan_PerfEnd(PERF_SECT_SC_VAO, _t);
 
     if ((int64_t)mesh_tex_reg < (int64_t)pVMCD)
     {
@@ -1681,6 +1682,52 @@ void MikuPan_RenderMeshType0x32(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPU
     MikuPan_PerfEnd(PERF_SECT_SC_RS3D, _t);
     MikuPan_PerfEnd(PERF_SECT_STATE_CHANGE, _sc_t0);
 
+    /// ── Cache fast path ──
+    /// Static furniture / map geometry: the SGD bytes don't change between
+    /// frames, so on every draw after the first we just bind the cached VAO
+    /// (which already has all attribute pointers + IBO baked in) and issue
+    /// the draw. No CPU staging, no buffer uploads.
+    const int cache_on = MikuPan_MeshCache_IsEnabled();
+    MikuPan_MeshCacheEntry *cache_entry = NULL;
+
+    if (cache_on)
+    {
+        cache_entry = MikuPan_MeshCache_Lookup(pPUHead);
+        if (cache_entry != NULL && cache_entry->sgd_top == sgd_top_addr)
+        {
+            _t = MikuPan_PerfBegin();
+            MikuPan_BindVAO(cache_entry->vao);
+            MikuPan_PerfEnd(PERF_SECT_SC_VAO, _t);
+
+            MikuPan_PerfDrawCall();
+            MikuPan_TimedDrawElements(MikuPan_GetMeshRenderMode(),
+                                      cache_entry->index_count, GL_UNSIGNED_INT, (void *)0);
+
+            if (MikuPan_IsNormalsRendering())
+            {
+                MikuPan_SetCurrentShaderProgram(NORMALS_0x12_SHADER);
+                MikuPan_TimedDrawElements(GL_TRIANGLES, cache_entry->index_count,
+                                          GL_UNSIGNED_INT, (void *)0);
+            }
+
+            MikuPan_PerfMeshCacheHit();
+            return;
+        }
+
+        /// Miss — allocate a per-mesh entry now and target its static buffers
+        /// instead of the shared streaming buffers during the upload phase.
+        MikuPan_PerfMeshCacheMissNew();
+        cache_entry = MikuPan_MeshCache_Insert(pPUHead, sgd_top_addr, desired_pipeline);
+    }
+    else
+    {
+        /// Cache disabled — use the shared streaming VAO so the upload phase
+        /// targets the per-frame DYNAMIC buffers (the A/B-comparison baseline).
+        _t = MikuPan_PerfBegin();
+        MikuPan_BindVAO(pipeline->vao);
+        MikuPan_PerfEnd(PERF_SECT_SC_VAO, _t);
+    }
+
     // ── Vertex source ──
     GLfloat *vertices = NULL;
     if (mesh_type == 0x32)
@@ -1691,8 +1738,11 @@ void MikuPan_RenderMeshType0x32(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPU
     else /* 0x12 / 0x10 */
     {
         vertices = (float *)&(((int *)pVUVN)[14]);
-        size_t byte_size = pVUVN->VUVNDesc.sNumVertex * pipeline->buffers[0].attributes[0].stride;
-        MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[0].id, (GLsizeiptr)byte_size, vertices);
+        if (!cache_on)
+        {
+            size_t byte_size = pVUVN->VUVNDesc.sNumVertex * pipeline->buffers[0].attributes[0].stride;
+            MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[0].id, (GLsizeiptr)byte_size, vertices);
+        }
     }
 
     // ── Build CPU staging buffers (UVs, colors, normals (SoA), indices) ──
@@ -1745,26 +1795,49 @@ void MikuPan_RenderMeshType0x32(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPU
     }
 
     const int N = vertex_offset;
-    if (desired_pipeline == POSITION3_NORMAL3_UV2_SOA)
+    const int pos_stride = pipeline->buffers[0].attributes[0].stride;
+    if (cache_on)
     {
-        MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[0].id, (GLsizeiptr)(N * pipeline->buffers[0].attributes[0].stride), g_mesh_buffers_0x32.positions);
-        MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[1].id,
-            (GLsizeiptr)(N * pipeline->buffers[1].attributes[0].stride),
-            g_mesh_buffers_0x32.normals);
-        MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[2].id,
-            (GLsizeiptr)(N * pipeline->buffers[2].attributes[0].stride),
-            g_mesh_buffers_0x32.uvs);
-        MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[3].id,
-            (GLsizeiptr)(N * pipeline->buffers[3].attributes[0].stride),
-            g_mesh_buffers_0x32.colors);
+        if (desired_pipeline == POSITION3_NORMAL3_UV2_SOA)
+        {
+            MikuPan_MeshCache_UploadVbo(cache_entry, 0, (long)(N * pos_stride), g_mesh_buffers_0x32.positions);
+            MikuPan_MeshCache_UploadVbo(cache_entry, 1, (long)(N * pipeline->buffers[1].attributes[0].stride), g_mesh_buffers_0x32.normals);
+            MikuPan_MeshCache_UploadVbo(cache_entry, 2, (long)(N * pipeline->buffers[2].attributes[0].stride), g_mesh_buffers_0x32.uvs);
+            MikuPan_MeshCache_UploadVbo(cache_entry, 3, (long)(N * pipeline->buffers[3].attributes[0].stride), g_mesh_buffers_0x32.colors);
+        }
+        else
+        {
+            /// 0x12 / 0x10: pos+norm AoS in buffer 0, UVs in 1, colors in 2.
+            MikuPan_MeshCache_UploadVbo(cache_entry, 0, (long)(pVUVN->VUVNDesc.sNumVertex * pos_stride), vertices);
+            MikuPan_MeshCache_UploadVbo(cache_entry, 1, (long)(N * uv_stride),    g_mesh_buffers_0x32.uvs);
+            MikuPan_MeshCache_UploadVbo(cache_entry, 2, (long)(N * color_stride), g_mesh_buffers_0x32.colors);
+        }
+        MikuPan_MeshCache_UploadIbo(cache_entry, (long)(index_write_offset * (int)sizeof(u_int)), g_mesh_buffers_0x32.indices);
+
+        cache_entry->index_count = index_write_offset;
+
+        /// Bind the freshly-populated VAO. The bind-cache shadow was reset by
+        /// MeshCache_Insert, so this issues a real glBindVertexArray.
+        _t = MikuPan_PerfBegin();
+        MikuPan_BindVAO(cache_entry->vao);
+        MikuPan_PerfEnd(PERF_SECT_SC_VAO, _t);
     }
     else
     {
-        MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[1].id, (GLsizeiptr)(N * uv_stride), g_mesh_buffers_0x32.uvs);
-        MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[2].id, (GLsizeiptr)(N * color_stride), g_mesh_buffers_0x32.colors);
+        if (desired_pipeline == POSITION3_NORMAL3_UV2_SOA)
+        {
+            MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[0].id, (GLsizeiptr)(N * pos_stride), g_mesh_buffers_0x32.positions);
+            MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[1].id, (GLsizeiptr)(N * pipeline->buffers[1].attributes[0].stride), g_mesh_buffers_0x32.normals);
+            MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[2].id, (GLsizeiptr)(N * pipeline->buffers[2].attributes[0].stride), g_mesh_buffers_0x32.uvs);
+            MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[3].id, (GLsizeiptr)(N * pipeline->buffers[3].attributes[0].stride), g_mesh_buffers_0x32.colors);
+        }
+        else
+        {
+            MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[1].id, (GLsizeiptr)(N * uv_stride),    g_mesh_buffers_0x32.uvs);
+            MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[2].id, (GLsizeiptr)(N * color_stride), g_mesh_buffers_0x32.colors);
+        }
+        MikuPan_StreamUploadFull(GL_ELEMENT_ARRAY_BUFFER, pipeline->ibo, (GLsizeiptr)(index_write_offset * (int)sizeof(u_int)), g_mesh_buffers_0x32.indices);
     }
-
-    MikuPan_StreamUploadFull(GL_ELEMENT_ARRAY_BUFFER, pipeline->ibo, (GLsizeiptr)(index_write_offset * (int)sizeof(u_int)), g_mesh_buffers_0x32.indices);
 
     MikuPan_PerfDrawCall();
     MikuPan_TimedDrawElements(MikuPan_GetMeshRenderMode(), index_write_offset, GL_UNSIGNED_INT, (void *)0);
@@ -1805,10 +1878,6 @@ void MikuPan_RenderMeshType0x82(unsigned int *pVUVN, unsigned int *pPUHead)
     MikuPan_PerfEnd(PERF_SECT_SC_SHADER, _t);
 
     _t = MikuPan_PerfBegin();
-    MikuPan_BindVAO(pipeline->vao);
-    MikuPan_PerfEnd(PERF_SECT_SC_VAO, _t);
-
-    _t = MikuPan_PerfBegin();
     MikuPan_SetTexture(mesh_tex_reg);
     MikuPan_PerfEnd(PERF_SECT_SC_TEXTURE, _t);
 
@@ -1817,10 +1886,43 @@ void MikuPan_RenderMeshType0x82(unsigned int *pVUVN, unsigned int *pPUHead)
     MikuPan_PerfEnd(PERF_SECT_SC_RS3D, _t);
     MikuPan_PerfEnd(PERF_SECT_STATE_CHANGE, _sc_t0);
 
-    // ── Pos+norm AoS uploaded directly from the source ──
-    MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[0].id,
-        (GLsizeiptr)(v->vnum * pipeline->buffers[0].attributes[0].stride),
-        pVUVNData->avt2);
+    /// ── Cache fast path ──
+    const int cache_on = MikuPan_MeshCache_IsEnabled();
+    MikuPan_MeshCacheEntry *cache_entry = NULL;
+
+    if (cache_on)
+    {
+        cache_entry = MikuPan_MeshCache_Lookup(pPUHead);
+        if (cache_entry != NULL && cache_entry->sgd_top == sgd_top_addr)
+        {
+            _t = MikuPan_PerfBegin();
+            MikuPan_BindVAO(cache_entry->vao);
+            MikuPan_PerfEnd(PERF_SECT_SC_VAO, _t);
+
+            MikuPan_PerfDrawCall();
+            MikuPan_TimedDrawElements(MikuPan_GetMeshRenderMode(),
+                                      cache_entry->index_count, GL_UNSIGNED_INT, (void *)0);
+
+            if (MikuPan_IsNormalsRendering())
+            {
+                MikuPan_SetCurrentShaderProgram(NORMALS_0x12_SHADER);
+                MikuPan_TimedDrawElements(GL_TRIANGLES, cache_entry->index_count,
+                                          GL_UNSIGNED_INT, (void *)0);
+            }
+
+            MikuPan_PerfMeshCacheHit();
+            return;
+        }
+
+        MikuPan_PerfMeshCacheMissNew();
+        cache_entry = MikuPan_MeshCache_Insert(pPUHead, sgd_top_addr, POSITION3_NORMAL3_UV2);
+    }
+    else
+    {
+        _t = MikuPan_PerfBegin();
+        MikuPan_BindVAO(pipeline->vao);
+        MikuPan_PerfEnd(PERF_SECT_SC_VAO, _t);
+    }
 
     // ── Build UV / color (zeros for NVL) / index staging ──
     int vertex_offset = 0;
@@ -1846,17 +1948,44 @@ void MikuPan_RenderMeshType0x82(unsigned int *pVUVN, unsigned int *pPUHead)
         vertex_offset += vertex_count;
     }
 
-    // ── Upload UV + color + indices ──
+    // ── Upload pos+norm + UV + color + indices ──
     const int N = vertex_offset;
-    MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[1].id,
-        (GLsizeiptr)(N * pipeline->buffers[1].attributes[0].stride),
-        g_mesh_buffers_0x82.uvs);
-    MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[2].id,
-        (GLsizeiptr)(N * pipeline->buffers[2].attributes[0].stride),
-        g_mesh_buffers_0x82.colors);
-    MikuPan_StreamUploadFull(GL_ELEMENT_ARRAY_BUFFER, pipeline->ibo,
-        (GLsizeiptr)(index_write_offset * (int)sizeof(u_int)),
-        g_mesh_buffers_0x82.indices);
+    if (cache_on)
+    {
+        MikuPan_MeshCache_UploadVbo(cache_entry, 0,
+            (long)(v->vnum * pipeline->buffers[0].attributes[0].stride),
+            pVUVNData->avt2);
+        MikuPan_MeshCache_UploadVbo(cache_entry, 1,
+            (long)(N * pipeline->buffers[1].attributes[0].stride),
+            g_mesh_buffers_0x82.uvs);
+        MikuPan_MeshCache_UploadVbo(cache_entry, 2,
+            (long)(N * pipeline->buffers[2].attributes[0].stride),
+            g_mesh_buffers_0x82.colors);
+        MikuPan_MeshCache_UploadIbo(cache_entry,
+            (long)(index_write_offset * (int)sizeof(u_int)),
+            g_mesh_buffers_0x82.indices);
+
+        cache_entry->index_count = index_write_offset;
+
+        _t = MikuPan_PerfBegin();
+        MikuPan_BindVAO(cache_entry->vao);
+        MikuPan_PerfEnd(PERF_SECT_SC_VAO, _t);
+    }
+    else
+    {
+        MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[0].id,
+            (GLsizeiptr)(v->vnum * pipeline->buffers[0].attributes[0].stride),
+            pVUVNData->avt2);
+        MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[1].id,
+            (GLsizeiptr)(N * pipeline->buffers[1].attributes[0].stride),
+            g_mesh_buffers_0x82.uvs);
+        MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[2].id,
+            (GLsizeiptr)(N * pipeline->buffers[2].attributes[0].stride),
+            g_mesh_buffers_0x82.colors);
+        MikuPan_StreamUploadFull(GL_ELEMENT_ARRAY_BUFFER, pipeline->ibo,
+            (GLsizeiptr)(index_write_offset * (int)sizeof(u_int)),
+            g_mesh_buffers_0x82.indices);
+    }
 
     // ── Draw ──
     MikuPan_PerfDrawCall();
@@ -1901,16 +2030,12 @@ void MikuPan_RenderMeshType0x2(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPUH
 
     MikuPan_PipelineInfo *pipeline = MikuPan_GetPipelineInfo(POSITION4_NORMAL4_UV2);
 
-    // ── State setup ──
+    // ── State setup (per-frame, always) ──
     MikuPan_FlushTexturedSpriteBatch();
     Uint64 _sc_t0 = SDL_GetPerformanceCounter();
     Uint64 _t = MikuPan_PerfBegin();
     MikuPan_SetCurrentShaderProgram(shader);
     MikuPan_PerfEnd(PERF_SECT_SC_SHADER, _t);
-
-    _t = MikuPan_PerfBegin();
-    MikuPan_BindVAO(pipeline->vao);
-    MikuPan_PerfEnd(PERF_SECT_SC_VAO, _t);
 
     _t = MikuPan_PerfBegin();
     MikuPan_SetTexture(mesh_tex_reg);
@@ -1921,52 +2046,124 @@ void MikuPan_RenderMeshType0x2(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPUH
     MikuPan_PerfEnd(PERF_SECT_SC_RS3D, _t);
     MikuPan_PerfEnd(PERF_SECT_STATE_CHANGE, _sc_t0);
 
-    // ── Pos+norm AoS uploaded directly from caller's `vertices` (CPU-skinned) ──
-    MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[0].id,
-        (GLsizeiptr)(v->vnum * pipeline->buffers[0].attributes[0].stride),
-        vertices);
+    /// ── Partial cache ──
+    /// 0x2/0xA meshes are CPU-skinned: positions+normals change every frame,
+    /// but the triangle topology and UVs are immutable. Cache the static
+    /// streams (UV VBO + IBO) and the VAO; stream only pos+norm.
+    const int cache_on = MikuPan_MeshCache_IsEnabled();
+    MikuPan_MeshCacheEntry *cache_entry = NULL;
+    int need_static_upload = 0;
 
-    // ── Build UV + index staging (POSITION4_NORMAL4_UV2 has no color stream) ──
-    int vertex_offset = 0;
-    int index_write_offset = 0;
-    for (int i = 0; i < GET_NUM_MESH(pPUHead); i++)
+    if (cache_on)
     {
-        int vertex_count = pMeshInfo[i].uiPointNum;
-
-        if (pPUHead->VUMeshDesc.MeshType.TEX == 1)
+        cache_entry = MikuPan_MeshCache_Lookup(pPUHead);
+        if (cache_entry == NULL || cache_entry->sgd_top != sgd_top_addr)
         {
-            MikuPan_FixUV((float*)&sgdMeshData->astData, vertex_count);
+            cache_entry = MikuPan_MeshCache_Insert(pPUHead, sgd_top_addr, POSITION4_NORMAL4_UV2);
+            need_static_upload = 1;
+            MikuPan_PerfMeshCacheMissNew();
+        }
+        else
+        {
+            MikuPan_PerfMeshCacheHit();
         }
 
-        index_write_offset += MikuPan_SetTriangleIndex(
-            g_mesh_buffers_0x2.indices, vertex_count, vertex_offset, index_write_offset);
-
-        memcpy((char *)g_mesh_buffers_0x2.uvs + vertex_offset * pipeline->buffers[1].attributes[0].stride,
-               sgdMeshData->astData,
-               (size_t)vertex_count * pipeline->buffers[1].attributes[0].stride);
-
-        sgdMeshData = (SGDVUMESHSTDATA *) &sgdMeshData->astData[vertex_count];
-        vertex_offset += vertex_count;
+        _t = MikuPan_PerfBegin();
+        MikuPan_BindVAO(cache_entry->vao);
+        MikuPan_PerfEnd(PERF_SECT_SC_VAO, _t);
+    }
+    else
+    {
+        _t = MikuPan_PerfBegin();
+        MikuPan_BindVAO(pipeline->vao);
+        MikuPan_PerfEnd(PERF_SECT_SC_VAO, _t);
     }
 
-    // ── Upload UV + indices ──
-    const int N = vertex_offset;
-    MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[1].id,
-        (GLsizeiptr)(N * pipeline->buffers[1].attributes[0].stride),
-        g_mesh_buffers_0x2.uvs);
-    MikuPan_StreamUploadFull(GL_ELEMENT_ARRAY_BUFFER, pipeline->ibo,
-        (GLsizeiptr)(index_write_offset * (int)sizeof(u_int)),
-        g_mesh_buffers_0x2.indices);
+    // ── Pos+norm AoS streamed every frame (CPU-skinned) ──
+    if (cache_on)
+    {
+        MikuPan_MeshCache_StreamVbo(cache_entry, 0,
+            (long)(v->vnum * pipeline->buffers[0].attributes[0].stride),
+            vertices);
+    }
+    else
+    {
+        MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[0].id,
+            (GLsizeiptr)(v->vnum * pipeline->buffers[0].attributes[0].stride),
+            vertices);
+    }
+
+    /// ── Static streams (UV + indices) — only built on cache miss, OR every
+    /// frame when the cache is disabled. With caching on, the steady-state
+    /// hot path skips the entire per-submesh loop, the UV memcpys, and the
+    /// FixUV / SetTriangleIndex calls.
+    int index_count;
+    if (need_static_upload || !cache_on)
+    {
+        int vertex_offset = 0;
+        int index_write_offset = 0;
+        for (int i = 0; i < GET_NUM_MESH(pPUHead); i++)
+        {
+            int vertex_count = pMeshInfo[i].uiPointNum;
+
+            if (pPUHead->VUMeshDesc.MeshType.TEX == 1)
+            {
+                MikuPan_FixUV((float*)&sgdMeshData->astData, vertex_count);
+            }
+
+            index_write_offset += MikuPan_SetTriangleIndex(
+                g_mesh_buffers_0x2.indices, vertex_count, vertex_offset, index_write_offset);
+
+            memcpy((char *)g_mesh_buffers_0x2.uvs + vertex_offset * pipeline->buffers[1].attributes[0].stride,
+                   sgdMeshData->astData,
+                   (size_t)vertex_count * pipeline->buffers[1].attributes[0].stride);
+
+            sgdMeshData = (SGDVUMESHSTDATA *) &sgdMeshData->astData[vertex_count];
+            vertex_offset += vertex_count;
+        }
+
+        const int N = vertex_offset;
+        if (cache_on)
+        {
+            MikuPan_MeshCache_UploadVbo(cache_entry, 1,
+                (long)(N * pipeline->buffers[1].attributes[0].stride),
+                g_mesh_buffers_0x2.uvs);
+            MikuPan_MeshCache_UploadIbo(cache_entry,
+                (long)(index_write_offset * (int)sizeof(u_int)),
+                g_mesh_buffers_0x2.indices);
+            cache_entry->index_count = index_write_offset;
+
+            /// MeshCache_Insert unbound the VAO and reset the bind cache, so
+            /// rebind to capture the streamed pos+norm + freshly-uploaded UV
+            /// bindings into the next draw.
+            MikuPan_BindVAO(cache_entry->vao);
+        }
+        else
+        {
+            MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[1].id,
+                (GLsizeiptr)(N * pipeline->buffers[1].attributes[0].stride),
+                g_mesh_buffers_0x2.uvs);
+            MikuPan_StreamUploadFull(GL_ELEMENT_ARRAY_BUFFER, pipeline->ibo,
+                (GLsizeiptr)(index_write_offset * (int)sizeof(u_int)),
+                g_mesh_buffers_0x2.indices);
+        }
+
+        index_count = index_write_offset;
+    }
+    else
+    {
+        index_count = cache_entry->index_count;
+    }
 
     // ── Draw ──
     MikuPan_PerfDrawCall();
     MikuPan_TimedDrawElements(MikuPan_GetMeshRenderMode(),
-                              index_write_offset, GL_UNSIGNED_INT, (void *)0);
+                              index_count, GL_UNSIGNED_INT, (void *)0);
 
     if (MikuPan_IsNormalsRendering())
     {
         MikuPan_SetCurrentShaderProgram(NORMALS_0x2_SHADER);
         MikuPan_TimedDrawElements(GL_TRIANGLES,
-                                  index_write_offset, GL_UNSIGNED_INT, (void *)0);
+                                  index_count, GL_UNSIGNED_INT, (void *)0);
     }
 }
