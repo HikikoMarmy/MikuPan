@@ -31,10 +31,6 @@
 #include <stdlib.h>
 #include <string.h>
 
-// #include <cstdlib.h>
-// RAND_MAX = (2**31-1)
-#define RAND_MAX 2147483647
-
 #define PI 3.1415927f
 #define PI2 6.2831855f
 
@@ -423,9 +419,9 @@ void acsCalcCoordinate(SgCOORDUNIT* cp, u_int block_num, FURN_WRK* f_wrk, ROPE_C
 
 void acsSetMoveDir(float *dir)
 {
-    dir[0] = (float)(MikuPan_Rand() - (int)(RAND_MAX / 2)) / (float)RAND_MAX;
-    dir[1] = (float)(MikuPan_Rand() - (int)(RAND_MAX / 2)) / (float)RAND_MAX;
-    dir[2] = (float)(MikuPan_Rand() - (int)(RAND_MAX / 2)) / (float)RAND_MAX;
+    dir[0] = (float)(MikuPan_Rand() - (int)(MikuPan_RAND_MAX / 2)) / (float)MikuPan_RAND_MAX;
+    dir[1] = (float)(MikuPan_Rand() - (int)(MikuPan_RAND_MAX / 2)) / (float)MikuPan_RAND_MAX;
+    dir[2] = (float)(MikuPan_Rand() - (int)(MikuPan_RAND_MAX / 2)) / (float)MikuPan_RAND_MAX;
     dir[3] = 0.0f;
 
     sceVu0Normalize(dir, dir);

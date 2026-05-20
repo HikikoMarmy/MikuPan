@@ -1,14 +1,7 @@
 #ifndef MIKUPAN_RNG_H
 #define MIKUPAN_RNG_H
 
-#ifdef __cplusplus
-extern "C" {
-#endif
-
+#define MikuPan_RAND_MAX 2147483647
 int MikuPan_Rand(void);
-
-#ifdef __cplusplus
-}
-#endif
 
 #endif // MIKUPAN_RNG_H

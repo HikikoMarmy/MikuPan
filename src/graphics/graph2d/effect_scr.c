@@ -4,8 +4,6 @@
 #include "effect_scr.h"
 
 // #include <cstdlib.h>
-// RAND_MAX = (2**31-1)
-#define RAND_MAX 2147483647
 
 #include <math.h>
 #include <stdlib.h>
@@ -27,6 +25,7 @@
 #include "graphics/graph3d/libsg.h"
 #include "graphics/graph3d/sglib.h"
 #include "main/glob.h"
+#include "mikupan/mikupan_rng.h"
 #include "mikupan/rendering/mikupan_renderer.h"
 #include "os/eeiop/cdvd/eecdvd.h"
 #include "outgame/btl_mode/btl_mode.h"
@@ -3502,7 +3501,7 @@ u_char SubNowLoading(/* a0 4 */ int fl, /* 0x3440(sp) */ int num, /* f12 50 */ f
     
     if (fl != 0)
     {
-        SetVURand(0.5712309f); // Line 4729
+        SetVURand(MikuPan_Rand() / (float)MikuPan_RAND_MAX);
         
         for (j = 0; j < 2; j++)
         {

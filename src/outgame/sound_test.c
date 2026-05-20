@@ -3,11 +3,6 @@
 #include "enums.h"
 #include "sound_test.h"
 #include "mikupan/mikupan_rng.h"
-
-// #include <cstdlib.h>
-// RAND_MAX = (2**31-1)
-#define RAND_MAX 2147483647
-
 #include "graphics/graph2d/tim2.h"
 #include "graphics/graph3d/sglib.h"
 #include "ingame/info/inf_disp.h"
@@ -782,7 +777,7 @@ void ShockWave(u_char bgm_no, u_char alp)
     {
         if (bb.tmr % bd[bgm_no].beat == 0)
         {
-            bb.lvl_bak = ((bd[bgm_no].max - 7) * (MikuPan_Rand() / (float)RAND_MAX) * 6.0f);
+            bb.lvl_bak = ((bd[bgm_no].max - 7) * (MikuPan_Rand() / (float)MikuPan_RAND_MAX) * 6.0f);
 
             if (bb.lvl_bak > bb.lvl_now)
             {

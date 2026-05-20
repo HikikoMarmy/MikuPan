@@ -25,31 +25,6 @@
 
 #include <glad/gl.h>
 
-#define TEXTURED_SPRITE_BATCH_MAX 4096
-#define MIKUPAN_MESH_BUFFER_CAPACITY (1024 * 1024)
-
-typedef struct
-{
-    int   indices  [MIKUPAN_MESH_BUFFER_CAPACITY];
-    float positions[MIKUPAN_MESH_BUFFER_CAPACITY]; ///< SoA positions (0x32 only)
-    float normals  [MIKUPAN_MESH_BUFFER_CAPACITY]; ///< SoA normals (0x32 only)
-    float uvs      [MIKUPAN_MESH_BUFFER_CAPACITY];
-    float colors   [MIKUPAN_MESH_BUFFER_CAPACITY];
-} MikuPan_MeshBuffers0x32;
-
-typedef struct
-{
-    int   indices[MIKUPAN_MESH_BUFFER_CAPACITY];
-    float uvs    [MIKUPAN_MESH_BUFFER_CAPACITY];
-    float colors [MIKUPAN_MESH_BUFFER_CAPACITY];
-} MikuPan_MeshBuffers0x82;
-
-typedef struct
-{
-    int   indices[MIKUPAN_MESH_BUFFER_CAPACITY];
-    float uvs    [MIKUPAN_MESH_BUFFER_CAPACITY];
-} MikuPan_MeshBuffers0x2;
-
 typedef struct
 {
     int active;
@@ -100,6 +75,7 @@ MikuPan_MaterialData mikupan_material_data = {
     {1.0f, 1.0f, 1.0f, 1.0f}, // Specular (.w used as shininess in the shader)
     {0.0f, 0.0f, 0.0f, 0.0f}, // Emission
 };
+
 static int mikupan_material_dirty = 1;
 
 int MikuPan_IsShadowPassActive(void)
@@ -119,8 +95,7 @@ static inline void MikuPan_StreamUploadFull(GLenum target, GLuint buffer,
 
     MikuPan_BindBufferCached(target, buffer);
 
-    void *ptr = glad_glMapBufferRange(target, 0, size,
-        GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
+    void *ptr = glad_glMapBufferRange(target, 0, size, GL_MAP_WRITE_BIT | GL_MAP_INVALIDATE_BUFFER_BIT);
 
     if (ptr != NULL)
     {
@@ -154,7 +129,7 @@ SDL_AppResult MikuPan_Init()
 
     info_log("Loading SDL_GameControllerDB");
 
-    if (!SDL_AddGamepadMappingsFromFile("resources/gamecontrollerdb.txt"))
+    if (!SDL_AddGamepadMappingsFromFile("./resources/gamecontrollerdb.txt"))
     {
         info_log("Error adding the controller mapping, bindings might be wrong %s", SDL_GetError());
     }
@@ -200,7 +175,10 @@ SDL_AppResult MikuPan_Init()
         info_log("Error creating the icon %s", SDL_GetError());
     }
 
-    SDL_DestroySurface(iconSurface);
+    if (iconSurface != NULL)
+    {
+        SDL_DestroySurface(iconSurface);
+    }
 
     info_log("Creating OpenGL Context");
 
@@ -302,7 +280,10 @@ void MikuPan_DestroyInternalBuffer()
 
 static void MikuPan_EnsureShadowFbo(void)
 {
-    if (g_shadow_init) return;
+    if (g_shadow_init)
+    {
+        return;
+    }
 
     glad_glGenTextures(1, &g_shadow_tex);
     MikuPan_BindTexture2DCached(g_shadow_tex);
@@ -311,8 +292,6 @@ static void MikuPan_EnsureShadowFbo(void)
                       GL_RED, GL_UNSIGNED_BYTE, NULL);
     glad_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glad_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    // CLAMP_TO_BORDER with a zero border keeps the receiver-side sample
-    // outside the shadow frustum from accidentally reading wraparound darkness.
     glad_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_BORDER);
     glad_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_BORDER);
     float border[4] = {0.0f, 0.0f, 0.0f, 0.0f};

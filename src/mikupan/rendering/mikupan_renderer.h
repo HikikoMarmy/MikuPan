@@ -8,6 +8,9 @@
 #include "mikupan/mikupan_basictypes.h"
 #include "mikupan/mikupan_types.h"
 
+#define TEXTURED_SPRITE_BATCH_MAX 4096
+#define MIKUPAN_MESH_BUFFER_CAPACITY (1024 * 1024)
+
 typedef struct {
     sceVu0FVECTOR p;
     sceVu0FVECTOR i;
@@ -39,6 +42,30 @@ typedef struct
     int width;
     int height;
 } MikuPan_RenderWindow;
+
+typedef struct
+{
+    int   indices  [MIKUPAN_MESH_BUFFER_CAPACITY];
+    float positions[MIKUPAN_MESH_BUFFER_CAPACITY]; ///< SoA positions (0x32 only)
+    float normals  [MIKUPAN_MESH_BUFFER_CAPACITY]; ///< SoA normals (0x32 only)
+    float uvs      [MIKUPAN_MESH_BUFFER_CAPACITY];
+    float colors   [MIKUPAN_MESH_BUFFER_CAPACITY];
+} MikuPan_MeshBuffers0x32;
+
+typedef struct
+{
+    int   indices[MIKUPAN_MESH_BUFFER_CAPACITY];
+    float uvs    [MIKUPAN_MESH_BUFFER_CAPACITY];
+    float colors [MIKUPAN_MESH_BUFFER_CAPACITY];
+} MikuPan_MeshBuffers0x82;
+
+typedef struct
+{
+    int   indices[MIKUPAN_MESH_BUFFER_CAPACITY];
+    float uvs    [MIKUPAN_MESH_BUFFER_CAPACITY];
+} MikuPan_MeshBuffers0x2;
+
+
 
 SDL_AppResult MikuPan_Init();
 void MikuPan_SetupOpenGLContext();

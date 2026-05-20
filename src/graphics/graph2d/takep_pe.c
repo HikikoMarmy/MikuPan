@@ -25,10 +25,6 @@ static int rem_pe_ix;
 static int pe_callflg = 0;
 u_char eye_light_flg = 0;
 
-// #include <cstdlib.h>
-// RAND_MAX = (2**31-1)
-#define RAND_MAX 2147483647
-
 void GetBetweenABVecUnitLen(sceVu0FVECTOR out_a2bv, sceVu0FVECTOR out_unit_a2bv, float *out_len, sceVu0FVECTOR in_av, sceVu0FVECTOR in_bv)
 {
     sceVu0FVECTOR temp;
@@ -132,7 +128,7 @@ int SetPEObjPos(PARTICLE_EFF_OBJ *obj)
 
 void MakeRandomVec(float *output, int m)
 {
-    if (MikuPan_Rand() > RAND_MAX / 2)
+    if (MikuPan_Rand() > MikuPan_RAND_MAX / 2)
     {
         output[0] = MikuPan_Rand() % m;
     }
@@ -141,7 +137,7 @@ void MakeRandomVec(float *output, int m)
         output[0] = -MikuPan_Rand() % m;
     }
 
-    if (MikuPan_Rand() > RAND_MAX / 2)
+    if (MikuPan_Rand() > MikuPan_RAND_MAX / 2)
     {
         output[1] = MikuPan_Rand() % m;
     }
@@ -150,7 +146,7 @@ void MakeRandomVec(float *output, int m)
         output[1] = -MikuPan_Rand() % m;
     }
 
-    if (MikuPan_Rand() > RAND_MAX / 2)
+    if (MikuPan_Rand() > MikuPan_RAND_MAX / 2)
     {
         output[2] = MikuPan_Rand() % m;
     }

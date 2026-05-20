@@ -2,13 +2,7 @@
 #include "typedefs.h"
 #include "unit_ctl.h"
 #include "mikupan/mikupan_rng.h"
-
-// #include <cstdlib.h>
-// RAND_MAX = (2**31-1)
-#define RAND_MAX 2147483647
-
 #include "sce/libvu0.h"
-
 #include "common/ul_math.h"
 #include "main/glob.h"
 #include "ingame/ig_glob.h"
@@ -16,7 +10,6 @@
 #include "ingame/map/map_htck.h"
 #include "ingame/plyr/unit_ctl.h"
 #include "graphics/graph3d/sglib.h"
-
 #include <stdlib.h>
 
 #define PI 3.1415927f
@@ -98,7 +91,7 @@ int GetRndSP(u_int min, u_int lng)
 
     if (lng != 0)
     {
-        result = (int)(min + (long)((lng * (long)MikuPan_Rand()) / (float)RAND_MAX));
+        result = (int)(min + (long)((lng * (long)MikuPan_Rand()) / (float)MikuPan_RAND_MAX));
     }
     else
     {

@@ -2,13 +2,7 @@
 #include "typedefs.h"
 #include "fsla_main.h"
 #include "mikupan/mikupan_rng.h"
-
-// #include <cstdlib.h>
-// RAND_MAX = (2**31-1)
-#define RAND_MAX 2147483647
-
 #include "sce/libvu0.h"
-
 #include "common/ul_math.h"
 #include "graphics/graph3d/sglib.h"
 #include "ingame/map/furn_spe/fsla_dat.h"
@@ -40,7 +34,7 @@ FSPE_LIGHT_ANM* SetRandLightAnimEach(FSPE_LIGHT_ANM **ap)
         num++;
     }
 
-    i = (MikuPan_Rand() / (float)RAND_MAX) * num;
+    i = (MikuPan_Rand() / (float)MikuPan_RAND_MAX) * num;
 
     return ap[i];
 }
@@ -61,7 +55,7 @@ void SetRandLightAnim(FSPE_LIGHT_WRK *lw)
         num++;
     }
 
-    num = (MikuPan_Rand() / (float)RAND_MAX) * num;
+    num = (MikuPan_Rand() / (float)MikuPan_RAND_MAX) * num;
 
     lw->ap_in = (FSPE_LIGHT_ANM *)save[num];
 }

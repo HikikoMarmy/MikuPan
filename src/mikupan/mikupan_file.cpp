@@ -21,9 +21,9 @@ void MikuPan_LoadImgHdFile()
 
 void MikuPan_ReadFullFile(const char *filename, char *buffer)
 {
-    const std::filesystem::path a(filename);
+    const std::filesystem::path path_filename(filename);
 
-    if (!std::filesystem::exists(a))
+    if (!std::filesystem::exists(path_filename))
     {
         return;
     }
@@ -33,9 +33,9 @@ void MikuPan_ReadFullFile(const char *filename, char *buffer)
         return;
     }
 
-    auto fileSize = std::filesystem::file_size(a);
-    std::ifstream infile(a, std::ios::binary);
-    infile.read(buffer, fileSize);
+    auto file_size = std::filesystem::file_size(path_filename);
+    std::ifstream infile(path_filename, std::ios::binary);
+    infile.read(buffer, file_size);
     infile.close();
 }
 

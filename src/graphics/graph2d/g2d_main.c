@@ -27,8 +27,6 @@
 #endif
 
 // #include <cstdlib.h>
-// RAND_MAX = (2**31-1)
-#define RAND_MAX 2147483647
 
 G2D_LOAD_FLG g2d_load_flg = {0};
 
@@ -115,7 +113,7 @@ static void gra2dSubLAST()
 
 void gra2dDraw(int fl)
 {
-    SetVURand(MikuPan_Rand() / (float)RAND_MAX);
+    SetVURand(MikuPan_Rand() / (float)MikuPan_RAND_MAX);
 
     switch (fl)
     {

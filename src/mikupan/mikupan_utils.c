@@ -290,25 +290,6 @@ void MikuPan_ConvertPs2GSCoordToNDC(float *out,
                                     float window_width, float window_height,
                                     float gs_x, float gs_y)
 {
-    // PS2 GS framebuffer pixels → NDC, with letterboxing so the PS2 image
-    // keeps its intended display position at any render-target resolution.
-    //
-    // The GS framebuffer is conceptually 4096×4096 with the origin at
-    // (2048, 2048). The visible viewport is 640×224 (one NTSC field, per
-    // SCR_WIDTH/SCR_HEIGHT in sdk/ee/eestruct.h):
-    //   visible X: [2048 - 320 .. 2048 + 320] = [1728 .. 2368]
-    //   visible Y: [2048 - 112 .. 2048 + 112] = [1936 .. 2160]
-    //
-    // Step 1: translate from GS coords to top-left PS2 screen pixels.
-    // Step 2: stretch field-Y (0..224) to frame-Y (0..448). PS2 hardware
-    //         scans the 224-line field as 448 visual lines; the shared
-    //         aspect-correct mapper expects the established 640×448
-    //         convention, so the field→frame stretch lands GS coords in the
-    //         same input space the rest of the codebase uses.
-    // Step 3: forward to MikuPan_ConvertPs2ScreenCoordToNDCMaintainAspectRatio
-    //         which letterboxes the PS2 image inside the render target. The
-    //         on-screen position is therefore identical regardless of the
-    //         buffer or window size.
     float screen_x       = gs_x - (2048.0f - PS2_CENTER_X);            // gs_x - 1728
     float screen_y_field = gs_y - (2048.0f - PS2_CENTER_Y * 0.5f);     // gs_y - 1936
     float screen_y_frame = screen_y_field * (PS2_RESOLUTION_Y_FLOAT / PS2_CENTER_Y); // ×2
