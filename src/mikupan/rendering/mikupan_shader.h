@@ -40,6 +40,7 @@ void MikuPan_SetUniform1iToCurrentShader(int value, char* name);
 void MikuPan_SetUniform1fToAllShaders(float value, char* name);
 void MikuPan_SetUniform1fToCurrentShader(float value, char* name);
 void MikuPan_ResetShaderCache(void);
+unsigned int MikuPan_GetShaderGeneration(void);
 
 /// Per-pass shader override — when set to a valid index, every call to
 /// MikuPan_SetCurrentShaderProgram routes through this shader instead. Used

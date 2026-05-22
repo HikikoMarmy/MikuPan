@@ -126,6 +126,7 @@ static int show_mesh_0x12 = 1;
 static int show_mesh_0x2 = 1;
 static int disable_lighting = 0;
 static int show_static_lighting = 0;
+static int mesh_lighting_mode = 1; // 0 = per-fragment, 1 = per-vertex
 static float normal_length = 10.0f;
 
 // Post-process tone controls — applied by the POSTPROCESS_SHADER on the
@@ -1143,13 +1144,19 @@ void MikuPan_UiMenuBar(void)
         igCheckbox("Wireframe", (bool *) &render_wireframe);
         igCheckbox("Disable Lighting", (bool *) &disable_lighting);
         igCheckbox("Static Lighting", (bool *) &show_static_lighting);
-        igCheckbox("Normals", (bool *) &render_normals);
-        igCheckbox("GS Uploads", (bool *) &disable_gs_uploads);
+        {
+            const char *lighting_modes[] = {"Per-Fragment", "Per-Vertex"};
+            igCombo_Str_arr("Lighting Mode", &mesh_lighting_mode,
+                            lighting_modes, 2, -1);
+        }
 
+        igCheckbox("Normals", (bool *) &render_normals);
         if (render_normals)
         {
             igSliderFloat("Normal Length", &normal_length, 0.1f, 100.0f, "%.1f", 0);
         }
+
+        igCheckbox("GS Uploads", (bool *) &disable_gs_uploads);
 
         igEndGroup();
 
@@ -1305,6 +1312,11 @@ int MikuPan_IsGsUploadsDisabled(void)
 int MikuPan_ShowStaticLighting(void)
 {
     return show_static_lighting;
+}
+
+int MikuPan_GetMeshLightingMode(void)
+{
+    return mesh_lighting_mode;
 }
 
 float MikuPan_GetNormalLength(void)

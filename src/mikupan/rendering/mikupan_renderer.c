@@ -141,7 +141,7 @@ SDL_AppResult MikuPan_Init()
     info_log("GLad version loaded %d", gladLoadGLLoader((void*)SDL_GL_GetProcAddress));
 
     /* Disable vsync */
-    if (!SDL_GL_SetSwapInterval(0))
+    if (!SDL_GL_SetSwapInterval(1))
     {
         info_log("Failed to disable GL vsync: %s", SDL_GetError());
     }
@@ -590,11 +590,25 @@ void MikuPan_RenderSetDebugValues()
     static float last_normal_length    = -1.0f;
     static int   last_disable_lighting = -1;
     static int   last_static_lighting  = -1;
+    static int   last_mesh_lighting_mode = -1;
+    static unsigned int last_shader_generation = 0;
 
     int   render_normals   = MikuPan_IsNormalsRendering();
     float normal_length    = MikuPan_GetNormalLength();
     int   disable_lighting = MikuPan_IsLightingDisabled();
     int   static_lighting  = MikuPan_ShowStaticLighting();
+    int   mesh_lighting_mode = MikuPan_GetMeshLightingMode();
+    unsigned int shader_generation = MikuPan_GetShaderGeneration();
+
+    if (shader_generation != last_shader_generation)
+    {
+        last_render_normals = -1;
+        last_normal_length = -1.0f;
+        last_disable_lighting = -1;
+        last_static_lighting = -1;
+        last_mesh_lighting_mode = -1;
+        last_shader_generation = shader_generation;
+    }
 
     if (render_normals != last_render_normals)
     {
@@ -618,6 +632,12 @@ void MikuPan_RenderSetDebugValues()
     {
         MikuPan_SetUniform1iToAllShaders(static_lighting, "staticLighting");
         last_static_lighting = static_lighting;
+    }
+
+    if (mesh_lighting_mode != last_mesh_lighting_mode)
+    {
+        MikuPan_SetUniform1iToAllShaders(mesh_lighting_mode, "uMeshLightingMode");
+        last_mesh_lighting_mode = mesh_lighting_mode;
     }
 }
 

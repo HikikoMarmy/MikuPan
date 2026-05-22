@@ -9,6 +9,7 @@
 GLuint current_program = 0;
 GLuint backup_current_program = 0;
 u_int shader_list[MAX_SHADER_PROGRAMS] = {0};
+static unsigned int g_shader_generation = 0;
 
 /// Per-pass shader override. When >= 0, MikuPan_SetCurrentShaderProgram
 /// substitutes this index for whatever the caller asked for. The shadow
@@ -37,6 +38,7 @@ typedef struct
     GLint uNormalLength;  ///< normals_debug.geom
     GLint uFog;           ///< textured_mesh_lighted.frag
     GLint uFogColor;      ///< textured_mesh_lighted.frag
+    GLint uMeshLightingMode;///< textured_mesh_lighted.* per-fragment/per-vertex toggle
     GLint disableLighting;///< textured_mesh_lighted.frag — UI debug toggle
 } CachedUniformLocations;
 
@@ -135,6 +137,8 @@ static GLint GetCachedLocation(int idx, const char *name)
         return u->uFogColor;
     if (strcmp(name, "disableLighting") == 0)
         return u->disableLighting;
+    if (strcmp(name, "uMeshLightingMode") == 0)
+        return u->uMeshLightingMode;
 
     return glad_glGetUniformLocation(shader_list[idx], name);
 }
@@ -195,6 +199,7 @@ static void CacheUniformLocations(int idx, GLuint program)
     uniform_loc[idx].uFog =                 glad_glGetUniformLocation(program, "uFog");
     uniform_loc[idx].uFogColor =            glad_glGetUniformLocation(program, "uFogColor");
     uniform_loc[idx].disableLighting =      glad_glGetUniformLocation(program, "disableLighting");
+    uniform_loc[idx].uMeshLightingMode =    glad_glGetUniformLocation(program, "uMeshLightingMode");
 }
 
 static GLuint CompileStageFromFile(GLenum stage, const char *path,
@@ -338,6 +343,7 @@ int MikuPan_InitShaders()
     }
 
     glad_glUseProgram(current_program);
+    g_shader_generation++;
 
     return 0;
 }
@@ -380,6 +386,8 @@ int MikuPan_ReloadShader(int idx, char *err_buf, int err_buf_size)
     {
         err_buf[0] = '\0';
     }
+
+    g_shader_generation++;
 
     return 0;
 }
@@ -579,4 +587,9 @@ void MikuPan_SetUniform1fToCurrentShader(float value, char *name)
 void MikuPan_ResetShaderCache(void)
 {
     current_program = 0;
+}
+
+unsigned int MikuPan_GetShaderGeneration(void)
+{
+    return g_shader_generation;
 }

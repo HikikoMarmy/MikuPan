@@ -45,6 +45,7 @@ uniform float     uShadowStrength;
 /// stays intact. Driven by the "Disable Lighting" UI checkbox.
 uniform int disableLighting;
 uniform int staticLighting;
+uniform int uMeshLightingMode; // 0 = per-fragment, 1 = per-vertex
 
 /// Fog uniforms (kept as regular uniforms)
 uniform vec4 uFog;      // x=min, y=max, z=base, w=scale
@@ -56,6 +57,7 @@ in vec4 vNormal;
 in vec4 oViewPosition;
 in vec4 oWorldPosition;
 in vec3 oVertexColor;
+noperspective in vec3 oLitVertexColor;
 
 out vec4 FragColor;
 
@@ -117,7 +119,7 @@ float GetMaterialAlpha()
 //      as the specular factor. This produces a hot-spot near the light along
 //      the diffuse axis rather than a viewer-dependent highlight. Only
 //      PARALLEL lights use the halfway-vector NdotH model.
-vec3 ApplyPS2Lights(vec4 normal, vec4 viewPos, vec3 vertexColor, vec3 textureColor)
+vec3 CalcPS2LitColor(vec4 normal, vec4 viewPos, vec3 vertexColor)
 {
     vec3 N = normalize(normal.xyz);
 
@@ -206,7 +208,7 @@ vec3 ApplyPS2Lights(vec4 normal, vec4 viewPos, vec3 vertexColor, vec3 textureCol
         vc += uSpotSpecular[i].rgb * spec * gate;
     }
 
-    return ApplyGsModulate(textureColor, vc);
+    return vc;
 }
 
 void main()
@@ -240,11 +242,14 @@ void main()
     color.a *= materialAlpha;
 
     // Lighting (or skip when toggled off via the UI checkbox).
-    // ApplyPS2Lights now matches the VU1 vf18 model: it takes the per-vertex
+    // This matches the VU1 vf18 model: it takes the per-vertex
     // colour and the texture colour separately, accumulates lighting onto the
     // vertex colour additively (matching `MADDA` chains in CalcIntens), and
     // performs the GS modulate (vertex_color × texture) at the end.
-    color.rgb = ApplyPS2Lights(vNormal, oViewPosition, oVertexColor, color.rgb);
+    vec3 ps2LightColor = uMeshLightingMode == 1
+        ? oLitVertexColor
+        : CalcPS2LitColor(vNormal, oViewPosition, oVertexColor);
+    color.rgb = ApplyGsModulate(color.rgb, ps2LightColor);
 
     // Fog after lighting
     float fogFactor = uFog.w * (1.0 / -oViewPosition.z) + uFog.z;
