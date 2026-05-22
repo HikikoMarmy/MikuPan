@@ -486,11 +486,12 @@ void SetEffSQTex(int n, float *v, int tp, float w, float h, u_char r, u_char g, 
     float* buf = (float*)&pbuf[ndpkt];
     const float win_w = (float)MikuPan_GetWindowWidth();
     const float win_h = (float)MikuPan_GetWindowHeight();
+    float stq[2] = {0.01f, 0.99f};
 
     for (i = 0; i < 4; i++)
     {
-        pbuf[ndpkt].fl32[0] = (float)(i % 2 ? tw - 8 : 8) / tw;
-        pbuf[ndpkt].fl32[1] = (float)(i / 2 ? th - 8 : 8) / th;
+        pbuf[ndpkt].fl32[0] = stq[i % 2];
+        pbuf[ndpkt].fl32[1] = stq[i / 2];
         pbuf[ndpkt].fl32[2] = 0;
         pbuf[ndpkt++].fl32[3] = 0;
 
@@ -504,7 +505,6 @@ void SetEffSQTex(int n, float *v, int tp, float w, float h, u_char r, u_char g, 
         pbuf[ndpkt].fl32[0] = ndc[0];
         pbuf[ndpkt].fl32[1] = ndc[1];
         pbuf[ndpkt].fl32[2] = 0.0f;
-        //pbuf[ndpkt].fl32[2] = (float)(v[2] - 2048.0f) / 2048.0f;
         pbuf[ndpkt++].fl32[3] = 1.0f;
     }
 
@@ -841,6 +841,8 @@ void SubFire1(EFFECT_CONT *ec)
         }
     }
 
+    w = MikuPan_IsVisibleOnScreen(fvec);
+
     if (w == 0)
     {
         ipos[0] = (ivec[0][0] + ivec[3][0]) / 2;
@@ -850,7 +852,7 @@ void SubFire1(EFFECT_CONT *ec)
 
         fpos[0] = (fvec[0][0] + fvec[3][0]) / 2;
         fpos[1] = (fvec[0][1] - fvec[3][1]) * 0.3f + fvec[3][1];
-        fpos[2] = fvec[0][2];
+        fpos[2] = fvec[3][2];
         fpos[3] = 0;
 
         f = (((ivec[3][1] - ivec[0][1]) / 2) < ((ivec[3][0] - ivec[0][0]) / 2) ? ((ivec[3][0] - ivec[0][0]) / 2) : ((ivec[3][1] - ivec[0][1]) / 2)) * 0.0625f;
@@ -916,7 +918,7 @@ void SubFire1(EFFECT_CONT *ec)
 
             pbuf[ndpkt].fl32[0] = fvec[i][0];
             pbuf[ndpkt].fl32[1] = fvec[i][1];
-            pbuf[ndpkt].fl32[2] = fvec[i][2];
+            pbuf[ndpkt].fl32[2] = fvec[0][2];
             pbuf[ndpkt++].fl32[3] = 1.0f;
         }
 
@@ -4432,7 +4434,7 @@ void RunLeafSub(EFF_LEAF *lep)
             }
         }
 
-        disp[i] = !w;
+        disp[i] = !MikuPan_IsVisibleOnScreen(ivec[i]);
     }
 
     j = 0;
@@ -4511,7 +4513,7 @@ void RunLeafSub(EFF_LEAF *lep)
         {
             k = so[j];
 
-            //if (disp[k] != 0)
+            if (disp[k] != 0)
             {
                 pbuf[ndpkt].ul64[0] = SCE_GIF_SET_TAG(4, SCE_GS_TRUE, SCE_GS_TRUE, SCE_GS_SET_PRIM(SCE_GS_PRIM_TRISTRIP, 1, 1, 0, 1, 0, 1, 0, 0), SCE_GIF_PACKED, 3);
                 pbuf[ndpkt++].ul64[1] = 0 \
@@ -4540,9 +4542,9 @@ void RunLeafSub(EFF_LEAF *lep)
                     pbuf[ndpkt].fl32[2] = 0;
                     pbuf[ndpkt++].fl32[3] = 1.0f;
 
-                    pbuf[ndpkt].fl32[0] = MikuPan_ConvertScaleColor(rr);
-                    pbuf[ndpkt].fl32[1] = MikuPan_ConvertScaleColor(bb);
-                    pbuf[ndpkt].fl32[2] = MikuPan_ConvertScaleColor(gg);
+                    pbuf[ndpkt].fl32[0] = MikuPan_ConvertColorFloat(rr);
+                    pbuf[ndpkt].fl32[1] = MikuPan_ConvertColorFloat(bb);
+                    pbuf[ndpkt].fl32[2] = MikuPan_ConvertColorFloat(gg);
                     pbuf[ndpkt++].fl32[3] = MikuPan_ConvertScaleColor(elo[k].a);
 
                     pbuf[ndpkt].fl32[0] = ivec[k][i][0];

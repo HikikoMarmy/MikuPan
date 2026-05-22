@@ -213,32 +213,11 @@ void main()
 {
     vec4 color = texture(uTexture, vUV);
 
-    //if (vUV.x > 1.0f || vUV.x < 0.0f)
-    //{
-    //    FragColor = vec4(0.0f, vUV.x, 0.0f, 1.0f);
-    //    return;
-    //}
-    //if (vUV.y > 1.0f || vUV.y < 0.0f)
-    //{
-    //    FragColor = vec4(vUV.y, 0.0f, 0.0f, 1.0f);
-    //    return;
-    //}
-
-    //if (color.a == 0.0f)
-    //{
-    //    FragColor = vec4(0.0f, 1.0f, 0.0f, 1.0f);
-    //    return;
-    //}
-
-    float materialAlpha = GetMaterialAlpha();
-
     if (renderNormals == 1)
     {
         FragColor = vNormal; //vec4(oVertexColor, 1.0f);
         return;
     }
-
-    color.a *= materialAlpha;
 
     if (color.a == 0.0f)
     {
@@ -257,9 +236,8 @@ void main()
         return;
     }
 
-    // Fog
-    float fogFactor = uFog.w * (1.0 / -oViewPosition.z) + uFog.z;
-    fogFactor = clamp(fogFactor, uFog.x, uFog.y);
+    float materialAlpha = GetMaterialAlpha();
+    color.a *= materialAlpha;
 
     // Lighting (or skip when toggled off via the UI checkbox).
     // ApplyPS2Lights now matches the VU1 vf18 model: it takes the per-vertex
@@ -269,10 +247,9 @@ void main()
     color.rgb = ApplyPS2Lights(vNormal, oViewPosition, oVertexColor, color.rgb);
 
     // Fog after lighting
-    if (oVertexColor.rgb == vec3(0.0f, 0.0f, 0.0f))
-    {
-        color.rgb = mix(uFogColor.rgb, color.rgb, fogFactor);
-    }
+    float fogFactor = uFog.w * (1.0 / -oViewPosition.z) + uFog.z;
+    fogFactor = clamp(fogFactor, uFog.x, uFog.y);
+    color.rgb = mix(uFogColor.rgb, color.rgb, fogFactor);
 
     // PS2-style projector shadow — sample the silhouette texture using the
     // shadow camera's world-clip-view. Anything outside the [0,1] square of

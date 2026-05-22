@@ -475,4 +475,29 @@ void MikuPan_GetTextureGsRegion(sceGsTex0 *tex0, int *out_addr, int *out_size)
     *out_size = width * height;
 }
 
+void MikuPan_GsStore(sceGsStoreImage *sp, unsigned char *out)
+{
+    const int sbp  = static_cast<int>(sp->bitbltbuf.SBP);
+    const int sbw  = static_cast<int>(sp->bitbltbuf.SBW);
+    const int spsm = static_cast<int>(sp->bitbltbuf.SPSM);
+
+    const int x = static_cast<int>(sp->trxpos.SSAX);
+    const int y = static_cast<int>(sp->trxpos.SSAY);
+    const int w = static_cast<int>(sp->trxreg.RRW);
+    const int h = static_cast<int>(sp->trxreg.RRH);
+
+    switch (static_cast<PixelStorageFormat>(spsm))
+    {
+        case PSMZ32:
+        case PSMCT32:
+            gsHelper.DownloadPSMCT32(out, sbp, sbw, x, y, w, h);
+            break;
+
+        default:
+            spdlog::warn("Unsupported sceGsExecStoreImage SPSM: {:#x}", spsm);
+            memset(out, 0, w * h * 4);
+            break;
+    }
+}
+
 }

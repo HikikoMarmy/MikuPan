@@ -241,7 +241,7 @@ void MikuPan_SetupAmbientLighting(const LIGHT_PACK *lp, float *eyevec)
     for (int i = 0; i < pointCount; i++)
     {
         vec4 posWS = {lp->point[i].pos[0], lp->point[i].pos[1],
-                      lp->point[i].pos[2], lp->point[i].pos[3]};
+                      lp->point[i].pos[2], 1.0f};
         vec4 posVS;
         glm_mat4_mulv(WorldView, posWS, posVS);
 
@@ -273,7 +273,7 @@ void MikuPan_SetupAmbientLighting(const LIGHT_PACK *lp, float *eyevec)
     for (int i = 0; i < spotCount; i++)
     {
         vec4 posWS = {lp->spot[i].pos[0], lp->spot[i].pos[1],
-                      lp->spot[i].pos[2], lp->spot[i].pos[3]};
+                      lp->spot[i].pos[2], 1.0f};
         vec4 posVS;
         glm_mat4_mulv(WorldView, posWS, posVS);
 

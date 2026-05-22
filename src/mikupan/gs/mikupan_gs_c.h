@@ -19,6 +19,7 @@ float MikuPan_GsGetUploadMs(void);
 int   MikuPan_GsGetDownloadCount(void);
 int   MikuPan_GsGetDownloadBytes(void);
 float MikuPan_GsGetDownloadMs(void);
+void MikuPan_GsStore(sceGsStoreImage *sp, unsigned char *out);
 
 /// Selective L1-invalidation API. Each MikuPan_GsUpload pushes its affected
 /// GS-memory region onto a pending list. The texture L1 drains the list on

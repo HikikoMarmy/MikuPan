@@ -411,6 +411,10 @@ void MikuPan_BindVAO(GLuint vao)
     {
         glad_glBindVertexArray(vao);
         g_bound_vao = vao;
+
+        /// GL_ELEMENT_ARRAY_BUFFER is VAO state. A different VAO may carry a
+        /// different IBO even if our global shadow still names the old buffer.
+        g_bound_element_buffer = 0;
     }
 }
 

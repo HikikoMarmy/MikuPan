@@ -119,14 +119,17 @@ void MikuPan_MeshCache_UploadVbo(MikuPan_MeshCacheEntry *entry,
     if (entry == NULL || idx < 0 || idx >= entry->num_vbos || size <= 0) return;
     glad_glBindBuffer(GL_ARRAY_BUFFER, entry->vbo[idx]);
     glad_glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)size, data, GL_STATIC_DRAW);
+    MikuPan_ResetGLBindCache();
 }
 
 void MikuPan_MeshCache_UploadIbo(MikuPan_MeshCacheEntry *entry,
                                  long size, const void *data)
 {
     if (entry == NULL || size <= 0) return;
+    glad_glBindVertexArray(entry->vao);
     glad_glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, entry->ibo);
     glad_glBufferData(GL_ELEMENT_ARRAY_BUFFER, (GLsizeiptr)size, data, GL_STATIC_DRAW);
+    MikuPan_ResetGLBindCache();
 }
 
 void MikuPan_MeshCache_StreamVbo(MikuPan_MeshCacheEntry *entry,
@@ -151,6 +154,8 @@ void MikuPan_MeshCache_StreamVbo(MikuPan_MeshCacheEntry *entry,
         /// uploads, then future frames hit the map path.
         glad_glBufferData(GL_ARRAY_BUFFER, (GLsizeiptr)size, data, GL_DYNAMIC_DRAW);
     }
+
+    MikuPan_ResetGLBindCache();
 }
 
 void MikuPan_MeshCache_InvalidateSgd(void *sgd_top)
