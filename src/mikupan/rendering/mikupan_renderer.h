@@ -1,15 +1,11 @@
 #ifndef MIKUPAN_SDL_RENDERER_H
 #define MIKUPAN_SDL_RENDERER_H
 #include "SDL3/SDL_init.h"
-#include "SDL3/SDL_video.h"
 #include "ee/eestruct.h"
 #include "graphics/graph2d/sprt.h"
 #include "graphics/graph3d/light_types.h"
 #include "mikupan/mikupan_basictypes.h"
 #include "mikupan/mikupan_types.h"
-
-#define TEXTURED_SPRITE_BATCH_MAX 4096
-#define MIKUPAN_MESH_BUFFER_CAPACITY (1024 * 1024)
 
 typedef struct {
     sceVu0FVECTOR p;
@@ -36,37 +32,6 @@ typedef struct {
     sceVu0FVECTOR yd;
 } MikuPan_Camera;
 
-typedef struct
-{
-    SDL_Window *window;
-    int width;
-    int height;
-} MikuPan_RenderWindow;
-
-typedef struct
-{
-    int   indices  [MIKUPAN_MESH_BUFFER_CAPACITY];
-    float positions[MIKUPAN_MESH_BUFFER_CAPACITY]; ///< SoA positions (0x32 only)
-    float normals  [MIKUPAN_MESH_BUFFER_CAPACITY]; ///< SoA normals (0x32 only)
-    float uvs      [MIKUPAN_MESH_BUFFER_CAPACITY];
-    float colors   [MIKUPAN_MESH_BUFFER_CAPACITY];
-} MikuPan_MeshBuffers0x32;
-
-typedef struct
-{
-    int   indices[MIKUPAN_MESH_BUFFER_CAPACITY];
-    float uvs    [MIKUPAN_MESH_BUFFER_CAPACITY];
-    float colors [MIKUPAN_MESH_BUFFER_CAPACITY];
-} MikuPan_MeshBuffers0x82;
-
-typedef struct
-{
-    int   indices[MIKUPAN_MESH_BUFFER_CAPACITY];
-    float uvs    [MIKUPAN_MESH_BUFFER_CAPACITY];
-} MikuPan_MeshBuffers0x2;
-
-
-
 SDL_AppResult MikuPan_Init();
 void MikuPan_SetupOpenGLContext();
 void MikuPan_Clear();
@@ -89,6 +54,22 @@ void MikuPan_SetWorldClipView();
 float* MikuPan_GetWorldClipView();
 float* MikuPan_GetWorldClip();
 void MikuPan_SetupAmbientLighting(const LIGHT_PACK* lp, float *eyevec);
+void MikuPan_SetBakedLighting(int parallel_count,
+                              const sceVu0FVECTOR parallel_ambient,
+                              const float (*parallel_dcolor)[4],
+                              const float (*parallel_scolor)[4],
+                              int point_group_count,
+                              const int point_lnum[3],
+                              const float (*point_dcolor)[4],
+                              const float (*point_scolor)[4],
+                              const sceVu0FVECTOR point_btimes,
+                              int spot_group_count,
+                              const int spot_lnum[3],
+                              const float (*spot_dcolor)[4],
+                              const float (*spot_scolor)[4],
+                              const sceVu0FVECTOR spot_btimes,
+                              const sceVu0FVECTOR spot_intens,
+                              const sceVu0FVECTOR spot_intens_b);
 void MikuPan_SetMaterial(const sceVu0FVECTOR* ambient,
                          const sceVu0FVECTOR* diffuse,
                          const sceVu0FVECTOR* specular,
@@ -147,10 +128,5 @@ unsigned int MikuPan_GetShadowTexture(void);
 float       *MikuPan_GetShadowMatrix(void);
 int          MikuPan_IsShadowEnabled(void);
 void         MikuPan_SetShadowEnabled(int enabled);
-
-/// 1 while the shadow caster pass is iterating prims. The mesh-type
-/// renderers consult this to skip user-facing visibility toggles and the
-/// per-mesh state setup that the silhouette shader doesn't need.
-int  MikuPan_IsShadowPassActive(void);
 
 #endif //MIKUPAN_SDL_RENDERER_H

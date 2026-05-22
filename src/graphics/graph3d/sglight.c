@@ -321,6 +321,90 @@ void ClearMaterialCache(HeaderSection *hs)
     }
 }
 
+static void MikuPan_UploadMaterialLighting(SgMaterialC *pmatC,
+                                           SgVULightParallel *parallelp,
+                                           SgVULightPoint *pointp,
+                                           int point_group_count,
+                                           const int point_lnum[3],
+                                           SgVULightSpot *spotp,
+                                           int spot_group_count,
+                                           const int spot_lnum[3])
+{
+    const float *spot_intens = NULL;
+    const float *spot_intens_b = NULL;
+
+    if (pmatC == NULL || parallelp == NULL)
+    {
+        return;
+    }
+
+    if (SgLightCoordp != NULL)
+    {
+        spot_intens = SgLightCoordp->Spot_intens;
+        spot_intens_b = SgLightCoordp->Spot_intens_b;
+    }
+
+    MikuPan_SetMaterial(&pmatC->Ambient,
+                        &pmatC->Diffuse,
+                        &pmatC->Specular,
+                        &pmatC->Emission);
+
+    MikuPan_SetBakedLighting(SgInfiniteNum,
+                             parallelp->Parallel_Ambient,
+                             parallelp->Parallel_DColor,
+                             parallelp->Parallel_SColor,
+                             point_group_count,
+                             point_group_count != 0 ? point_lnum : NULL,
+                             pointp != NULL ? pointp->Point_DColor : NULL,
+                             pointp != NULL ? pointp->Point_SColor : NULL,
+                             pointp != NULL ? pointp->Point_btimes : NULL,
+                             spot_group_count,
+                             spot_group_count != 0 ? spot_lnum : NULL,
+                             spotp != NULL ? spotp->Spot_DColor : NULL,
+                             spotp != NULL ? spotp->Spot_SColor : NULL,
+                             spotp != NULL ? spotp->Spot_btimes : NULL,
+                             spot_intens,
+                             spot_intens_b);
+}
+
+static void MikuPan_UploadCachedMaterialLighting(SgMaterialC *pmatC)
+{
+    qword *base;
+    SgVULightSpot *spotp = NULL;
+    SgVULightPoint *pointp = NULL;
+    SgVULightParallel *parallelp;
+
+    if (pmatC == NULL)
+    {
+        return;
+    }
+
+    base = (qword *) MikuPan_GetHostPointer(pmatC->tagd_addr);
+
+    if (pmatC->Spot.num != 0)
+    {
+        spotp = (SgVULightSpot *) base;
+        base += 8;
+    }
+
+    if (pmatC->Point.num != 0)
+    {
+        pointp = (SgVULightPoint *) base;
+        base += 8;
+    }
+
+    parallelp = (SgVULightParallel *) base;
+
+    MikuPan_UploadMaterialLighting(pmatC,
+                                   parallelp,
+                                   pointp,
+                                   pmatC->Point.num,
+                                   pmatC->Point.lnum,
+                                   spotp,
+                                   pmatC->Spot.num,
+                                   pmatC->Spot.lnum);
+}
+
 void SetMaterialDataVU(u_int *prim)
 {
     static int old_tag_buf = -1;
@@ -367,10 +451,13 @@ void SetMaterialDataVU(u_int *prim)
 
             if (pmatC == old_pmatC)
             {
+                MikuPan_UploadCachedMaterialLighting(pmatC);
                 return;
             }
 
             old_pmatC = pmatC;
+
+            MikuPan_UploadCachedMaterialLighting(pmatC);
 
             AppendDmaTag(pmatC->tagd_addr, pmatC->qwc);
             FlushModel(0);
@@ -483,15 +570,6 @@ void SetMaterialData(u_int *prim)
     pmatC = (SgMaterialC *) MikuPan_GetHostAddress(prim[2]);
     pmatC->cache_on = 1;
 
-    // Mirror the four material colour vectors into our MaterialBlock UBO so
-    // the fragment shader can apply them — this is the OpenGL equivalent of
-    // the per-material baking that follows below into Parallel_Ambient /
-    // Parallel_DColor / Parallel_SColor.
-    MikuPan_SetMaterial(&pmatC->Ambient,
-                        &pmatC->Diffuse,
-                        &pmatC->Specular,
-                        &pmatC->Emission);
-
     if (pmatC->primtype != 0)
     {
         TAmbient[3] = 128.0f;
@@ -564,6 +642,8 @@ void SetMaterialData(u_int *prim)
         }
     }
 
+    pmatC->Spot.num = SgSpotGroupNum;
+
     for (i = 0; i < SgSpotGroupNum; i++)
     {
         SgSPOTGROUP *spg = &SgSpotGroup[i];
@@ -585,6 +665,15 @@ void SetMaterialData(u_int *prim)
             pmatC->Spot.lnum[j] = spg->lnum[j];
         }
     }
+
+    MikuPan_UploadMaterialLighting(pmatC,
+                                   SgLightParallelp,
+                                   SgLightPointp,
+                                   SgPointGroupNum,
+                                   SgPointGroup[0].lnum,
+                                    SgLightSpotp,
+                                   SgSpotGroupNum,
+                                   SgSpotGroup[0].lnum);
 }
 
 static void _SetDLight(sceVu0FMATRIX m0)
@@ -1422,17 +1511,13 @@ inline static void Vu0LoadVectorRegisterVF18(sceVu0FVECTOR first)
 
 inline static void Vu0ClampColors(sceVu0FVECTOR pcol)
 {
-    if (MikuPan_IsMesh0x10Rendering())
-    {
-        pcol[0] = __work_vf18[0] = MIN(__work_vf18[0], __work_vf19[3]);
-        pcol[1] = __work_vf18[1] = MIN(__work_vf18[1], __work_vf19[3]);
-        pcol[2] = __work_vf18[2] = MIN(__work_vf18[2], __work_vf19[3]);
-        pcol[3] = __work_vf18[3] = MIN(__work_vf18[3], __work_vf19[3]);
-        pcol[0] /= 255.0f;
-        pcol[1] /= 255.0f;
-        pcol[2] /= 255.0f;
-    }
-
+    pcol[0] = __work_vf18[0] = MIN(__work_vf18[0], __work_vf19[3]);
+    pcol[1] = __work_vf18[1] = MIN(__work_vf18[1], __work_vf19[3]);
+    pcol[2] = __work_vf18[2] = MIN(__work_vf18[2], __work_vf19[3]);
+    pcol[3] = __work_vf18[3] = MIN(__work_vf18[3], __work_vf19[3]);
+    pcol[0] /= 255.0f;
+    pcol[1] /= 255.0f;
+    pcol[2] /= 255.0f;
 }
 
 void SetPreRenderTYPE0(int gloops, u_int *prim)

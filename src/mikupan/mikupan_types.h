@@ -41,6 +41,7 @@ typedef struct __attribute__((packed))
                                 ///< .y = intens_b = 1/(1-intens), reciprocal used by the
                                 ///<      shader to ramp the cone gate over (intens..1) per
                                 ///< asm_CalcSpotLight (sglight.c:1125-1127).
+    float uMaterialAlpha[4];   ///< .x = SgMaterial.Diffuse[3] in normalized GS alpha units.
 
 } MikuPan_LightData;
 

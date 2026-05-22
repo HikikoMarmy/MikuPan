@@ -26,7 +26,7 @@ void main()
     //vec3 normalVS = normalize(normalMat * vec3(aNormal));
     //vNormal = vec4(normalVS, 1.0f);
 
-    vec3 normalVS = normalize(viewNormalMatrix * vec3(aNormal));
+    vec3 normalVS = normalize(mat3(view) * vec3(aNormal));
     vNormal = vec4(normalVS, 1.0f);
 
     vec4 a = view * aPos;

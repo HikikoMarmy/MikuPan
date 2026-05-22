@@ -237,8 +237,14 @@ set(MIKUPAN_SOURCES
         src/mikupan/ui/mikupan_ui.cpp
         src/mikupan/ui/mikupan_ui.c
         src/mikupan/rendering/mikupan_profiler.c
+        src/mikupan/rendering/mikupan_camera.c
+        src/mikupan/rendering/mikupan_lighting.c
+        src/mikupan/rendering/mikupan_mesh_render.c
         src/mikupan/rendering/mikupan_renderer.c
+        src/mikupan/rendering/mikupan_shadow.c
         src/mikupan/rendering/mikupan_shader.c
+        src/mikupan/rendering/mikupan_sprite.c
+        src/mikupan/rendering/mikupan_texture.c
         src/mikupan/gs/mikupan_gs.cpp
         src/mikupan/gs/mikupan_texture_manager.cpp
         src/mikupan/mikupan_logging.cpp

@@ -23,20 +23,7 @@ layout(std140) uniform LightBlock
     vec4 uSpotSpecular[3];
     vec4 uSpotPower[3];
     vec4 uSpotIntens[3];
-};
-
-// Per-material colours (Ambient/Diffuse/Specular/Emission). Pushed by
-// MikuPan_SetMaterial when sglight.c:SetMaterialData fires for a new material,
-// mirroring the vectors that the original PS2 path bakes into Parallel_Ambient,
-// Parallel_DColor and Parallel_SColor. .w of uMatSpecular is reused as a
-// shininess factor (1..255 → 4..256 exponent), preserving alpha for material
-// magnitude tracking via .w of the diffuse on the original side.
-layout(std140) uniform MaterialBlock
-{
-    vec4 uMatAmbient;
-    vec4 uMatDiffuse;
-    vec4 uMatSpecular;
-    vec4 uMatEmission;
+    vec4 uMaterialAlpha;
 };
 
 /// Texture Uniforms
@@ -72,6 +59,22 @@ in vec3 oVertexColor;
 
 out vec4 FragColor;
 
+const float kGsModulateScale = 255.0 / 128.0;
+
+vec3 ApplyGsModulate(vec3 textureColor, vec3 ps2Color255)
+{
+    // GS TFX=MODULATE uses (texture * vertex_color) >> 7. In normalized GL
+    // terms the VU/GS color bus is clamped to 0..255, but 128 is neutral.
+    return clamp(clamp(ps2Color255, vec3(0.0), vec3(1.0))
+                 * textureColor * kGsModulateScale,
+                 vec3(0.0), vec3(1.0));
+}
+
+float GetMaterialAlpha()
+{
+    return clamp(uMaterialAlpha.x, 0.0, 1.0);
+}
+
 // PS2 lighting model — matches the VU1 microcode in vu1/sgsuv/sgexlit.vsm
 // and the C reference impls in graphics/graph3d/sglight.c (CalcIntens for
 // parallel lights, _CalcPointA/B for points, asm_CalcSpotLight for spots).
@@ -87,16 +90,16 @@ out vec4 FragColor;
 //       vf18 += SColorMtx[i] × NdotH^n                   // Blinn-Phong specular (n≈4)
 //
 //   for each POINT light i:                              // _CalcPointA/B (sglight.c:1024)
-//       L_to_v   = vert - lightPos                       //   light → vertex
-//       inv_d2   = 1 / |L_to_v|²
-//       NdotL_b  = max(rotated_lDir · L_to_v, 0) × btimes  // btimes = power×max_color
+//       L        = lightPos - vert                       //   vertex to light
+//       inv_d2   = 1 / |L|^2
+//       NdotL_b  = max(rotated_lDir · L, 0) × btimes     // btimes = power×max_color
 //       I        = min(NdotL_b × inv_d2, 1)              //   diffuse intensity, clamped
 //       vf18 += DColor[i] × I                            // diffuse
 //       vf18 += SColor[i] × I^8                          // FAKE-PHONG specular: pow8 of
 //                                                        // diffuse intensity, NOT NdotH.
 //
 //   for each SPOT light i:                               // asm_CalcSpotLight (sglight.c:1079)
-//       cosθ²  = (WDLightMtx · L_to_v)² × inv_d2         //   cone-axis alignment
+//       cosθ²  = (WDLightMtx · L)² × inv_d2              //   cone-axis alignment
 //       gate   = max(cosθ² - intens, 0) × intens_b       //   smooth ramp 0..1 across
 //                                                        //   the intens..1 window
 //       I      = min(NdotL_b × inv_d2, 1)
@@ -117,56 +120,31 @@ out vec4 FragColor;
 vec3 ApplyPS2Lights(vec4 normal, vec4 viewPos, vec3 vertexColor, vec3 textureColor)
 {
     vec3 N = normalize(normal.xyz);
-    vec3 V = normalize(-viewPos.xyz); // camera at origin in view space
 
     // Parallel-light specular exponent matches CalcIntens (sgexlit.vsm). The
-    // VU squares NdotH once and the auxiliary intensity once more, ≈ NdotH^4.
+    // VU squares NdotH once and the auxiliary intensity once more, approx NdotH^4.
     const float parallel_shininess = 4.0;
 
-    // Ambient term — sglight.c:505-508 bakes Parallel_Ambient as
-    //     (TAmbient.xyz * matAmbient + matEmission) * TAmbient[3]   (=255 for primtype 0)
-    // and then the GS combiner does `pixel = (Cv * Ct) >> 7` — that >> 7 (not
-    // >> 8) is the implicit MODULATE-2× that lifts the ambient term so it
-    // roughly matches the texture brightness in shadow. With diffuse/specular,
-    // the contributions are usually large enough that the saturate clamp
-    // masks the missing 2×, but ambient-only fragments end up half as bright
-    // as the PS2 reference. Apply the same 2× pairing here so the GS-side
-    // arithmetic is reproduced — this is the scaling the user sees baked into
-    // graph3d (TAmbient[3] = 255) once you account for the >>7 modulate.
-    vec3 ambient_term = (uAmbient.rgb * uMatAmbient.rgb + uMatEmission.rgb) * 2.0;
-    vec3 vc = vertexColor + ambient_term;
+    // Material terms are already baked by sglight.c:SetMaterialData into
+    // Parallel_Ambient, DColor, SColor, and point/spot btimes.
+    vec3 vc = vertexColor + uAmbient.rgb;
 
-    // Directional (parallel) lights — directions and halfway vectors are both
+    // Directional (parallel) lights: directions and halfway vectors are both
     // pre-rotated to view space by the renderer (mikupan_renderer.c:929-981).
     for (int i = 0; i < uParCount.x; i++)
     {
         float NdotL = max(dot(N, uParDir[i].xyz), 0.0);
         float NdotH = max(dot(N, uParHalfway[i].xyz), 0.0);
 
-        // Diffuse: DColorMtx[i] × NdotL = (lightDiffuse × matDiffuse) × NdotL
-        vc += uParDiffuse[i].rgb * uMatDiffuse.rgb * NdotL;
-        // Specular: SColorMtx[i] × NdotH^n = (lightSpec × matSpec) × NdotH^n
-        vc += uParSpecular[i].rgb * uMatSpecular.rgb * pow(NdotH, parallel_shininess);
+        // Diffuse: baked DColorMtx[i] * NdotL.
+        vc += uParDiffuse[i].rgb * NdotL;
+        // Specular: baked SColorMtx[i] * NdotH^n.
+        vc += uParSpecular[i].rgb * pow(NdotH, parallel_shininess);
     }
 
-    // Point lights — _CalcPointA/B (sglight.c:1024-1049).
-    //
-    // Linear `power / dist` attenuation. The PS2 VU computes `1/dist²` paired
-    // with normalisation factors (`max_color`, `DColorMtx[0][3]`, GS 8-bit
-    // saturation) we don't model in this normalised-[0,1] pipeline; raw
-    // `power / dist²` collapses contributions to invisibility at scene-typical
-    // distances. Linear atten with the VU's `min(intensity, 1.0)` saturation
-    // cap matches the visible falloff curve of the LIGHT_PACK values that
-    // gra3d.c hands us.
-    //
-    // Known limitation: lights authored with tiny per-channel diffuse and
-    // very large `power` (the player flashlight at diffuse≈0.00022 and
-    // power=7e6 is the only one in this engine) can't reach a visible
-    // contribution through this path because the final `diffuse × intensity`
-    // multiply caps at the diffuse magnitude. Those lights are visible in
-    // scenes via SgPreRender's per-vertex bake (gra3d.c, scene.c) and
-    // currently fall through to nothing in gameplay; fixing it requires the
-    // PS2's max_color normalisation upstream of this shader.
+    // Point lights: the VU dots the normal with an unnormalized light vector,
+    // then multiplies by 1/dist^2, so the normalized shader equivalent is
+    // NdotL * baked_btimes / dist.
     for (int i = 0; i < uPointCount.x; i++)
     {
         vec3 L = uPointPos[i].xyz - viewPos.xyz;
@@ -178,21 +156,20 @@ vec3 ApplyPS2Lights(vec4 normal, vec4 viewPos, vec3 vertexColor, vec3 textureCol
 
         float intensity = min(NdotL * uPointPower[i].x * inv_dist, 1.0);
 
-        vc += uPointDiffuse[i].rgb * uMatDiffuse.rgb * intensity;
+        vc += uPointDiffuse[i].rgb * intensity;
 
         // Fake-Phong specular: intensity^8 (3 squarings in _CalcPointB chain).
         float spec = intensity * intensity;   // ^2
         spec *= spec;                         // ^4
         spec *= spec;                         // ^8
-        vc += uPointSpecular[i].rgb * uMatSpecular.rgb * spec;
+        vc += uPointSpecular[i].rgb * spec;
     }
 
-    // Spot lights — asm_CalcSpotLight (sglight.c:1079-1158).
-    // Smooth cone gate via intens_b ramp, the same linear attenuation as
-    // points, and the same fake-Phong specular.
+    // Spot lights: asm_CalcSpotLight, with the same baked btimes / dist
+    // intensity as points plus the VU cone gate.
     for (int i = 0; i < uSpotCount.x; i++)
     {
-        vec3 L = uSpotPos[i].xyz - viewPos.xyz;       // vert → light (= -L_to_v)
+        vec3 L = uSpotPos[i].xyz - viewPos.xyz;       // vertex to light
         float dist2 = dot(L, L);
         if (dist2 <= 0.0)
         {
@@ -205,7 +182,7 @@ vec3 ApplyPS2Lights(vec4 normal, vec4 viewPos, vec3 vertexColor, vec3 textureCol
         // Cone gate. uSpotDir is (pos - target), the cone-axis direction
         // pointing OUT of the cone. dot(Ldir, Z) where Ldir points to the
         // light is +1 on the cone axis at the light, falling off toward the
-        // edge. cos²θ ∈ [intens..1]; map it through intens_b to a 0..1 ramp.
+        // edge. cos^2(theta) in [intens..1] maps through intens_b to a ramp.
         // intens_b = 1/(1-intens) is uploaded in uSpotIntens.y.
         vec3 Z = normalize(uSpotDir[i].xyz);
         float cd = max(dot(Ldir, Z), 0.0);
@@ -220,20 +197,16 @@ vec3 ApplyPS2Lights(vec4 normal, vec4 viewPos, vec3 vertexColor, vec3 textureCol
 
         float NdotL = max(dot(N, Ldir), 0.0);
         float intensity = min(NdotL * uSpotPower[i].x * inv_dist, 1.0);
-        float len = uSpotPower[i].x / sqrt(dist2) * 0.25f;
 
-        vc += uSpotDiffuse[i].rgb * len * uMatDiffuse.rgb * intensity * gate;
+        vc += uSpotDiffuse[i].rgb * intensity * gate;
 
         float spec = intensity * intensity;   // ^2
         spec *= spec;                         // ^4
         spec *= spec;                         // ^8
-        vc += uSpotSpecular[i].rgb * uMatSpecular.rgb * spec * gate;
+        vc += uSpotSpecular[i].rgb * spec * gate;
     }
 
-    // GS MODULATE: pixel = texture × vertex_color (clipped to [0,1]).
-    // vertex_color may exceed 1.0 (lighting can saturate); clamp before mod
-    // mirrors the GS clamp on its 8-bit colour bus.
-    return clamp(vc, vec3(0.0), vec3(1.0)) * textureColor;
+    return ApplyGsModulate(textureColor, vc);
 }
 
 void main()
@@ -257,17 +230,7 @@ void main()
     //    return;
     //}
 
-    if (staticLighting == 1)
-    {
-        FragColor = vec4(oVertexColor.rgb, 1.0f);
-        return;
-    }
-
-    if (disableLighting == 1)
-    {
-        FragColor = color;
-        return;
-    }
+    float materialAlpha = GetMaterialAlpha();
 
     if (renderNormals == 1)
     {
@@ -275,9 +238,23 @@ void main()
         return;
     }
 
+    color.a *= materialAlpha;
+
     if (color.a == 0.0f)
     {
         discard;
+    }
+
+    if (staticLighting == 1)
+    {
+        FragColor = vec4(oVertexColor, 1.0f);
+        return;
+    }
+
+    if (disableLighting == 1)
+    {
+        FragColor = color;
+        return;
     }
 
     // Fog
@@ -294,7 +271,7 @@ void main()
     // Fog after lighting
     if (oVertexColor.rgb == vec3(0.0f, 0.0f, 0.0f))
     {
-        color = mix(uFogColor, color, fogFactor);
+        color.rgb = mix(uFogColor.rgb, color.rgb, fogFactor);
     }
 
     // PS2-style projector shadow — sample the silhouette texture using the
