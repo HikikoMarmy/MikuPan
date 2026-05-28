@@ -42,6 +42,7 @@
 #include <ctype.h>
 #include <stdbool.h>
 #include <stdio.h>
+#include <stdint.h>
 #include <string.h>
 
 #include <glad/gl.h>
@@ -69,9 +70,6 @@
 #include "graphics/scene/scene.h"
 #include "graphics/scene/scene_dat.h"
 #include "ingame/map/map_area.h"
-
-extern MikuPan_RenderWindow mikupan_render;
-extern SDL_GLContext gl_context;
 
 #ifdef BUILD_EU_VERSION
 char *mpegName[][40] = {
@@ -229,6 +227,11 @@ typedef struct AudioState
 
 //static int readMpeg(VideoDec *vd, ReadBuf *rb, StrFile *file);
 static int readMpeg(VideoDecoder *vd, ReadBuffer *rb);
+static int beginMovPlayback(char *name);
+static int stepMovPlayback(void);
+static void endMovPlayback(void);
+static void restoreAfterMovPlayback(void);
+static double now_sec();
 static int isAudioOK();
 static void termMov();
 static void usage();
@@ -247,6 +250,18 @@ static int cpy2area(u_char *pd0, int d0, u_char *pd1, int d1, u_char *ps0,
 static VideoDecoder g_vd = {0};
 static ReadBuffer g_rb = {0};
 static AudioState g_audio_state = {0};
+
+typedef struct {
+    int active;
+    int draining_audio;
+    int drain_safety;
+    int have_any_frame;
+    double frame_duration;
+    double start_time;
+    unsigned long long tick;
+} MoviePlaybackState;
+
+static MoviePlaybackState g_movie_playback = {0};
 
 #define IOP_BUFF_SIZE (12288 * 2)
 #define STACK_SIZE (16 * 1024)
@@ -268,6 +283,7 @@ int PlayMpegEvent()
 {
     int i;
     int ret;
+    int started;
 
     play_mov_no = 0;
 
@@ -307,69 +323,33 @@ int PlayMpegEvent()
             //ClearDispRoom(1);
 
 #ifdef BUILD_EU_VERSION
-            movie(mpegName[sys_wrk.pal_disp_mode][play_mov_no]);
+            started = beginMovPlayback(mpegName[sys_wrk.pal_disp_mode][play_mov_no]);
 #else
-            movie(mpegName[play_mov_no]);
+            started = beginMovPlayback(mpegName[play_mov_no]);
 #endif
-            SetIopCmdSm(IC_SE_INIT, 1, 0, 0);
-            SeSetMVol(opt_wrk.bgm_vol);
-            SeSetSteMono(opt_wrk.sound_mode);
+            movie_wrk.play_event_sta = started ? 4 : 5;
+            ret = 1;
+            break;
 
-            movie_wrk.play_event_sta = 4;
         case 4:
-#ifdef BUILD_EU_VERSION
-            sceGsResetGraph(1, SCE_GS_INTERLACE,
-                            sys_wrk.pal_disp_mode == 0 ? SCE_GS_PAL
-                                                       : SCE_GS_NTSC,
-                            SCE_GS_FRAME);
-#else
-            sceGsResetGraph(1, SCE_GS_INTERLACE, SCE_GS_NTSC, SCE_GS_FRAME);
-#endif
-            sceGsSetDefDBuff(&g_db, 0, 0x280, 0xe0, 2, 0x31, 1);
-
-            pdrawenv = &g_db.draw0;
-
-#ifdef BUILD_EU_VERSION
-            if (sys_wrk.pal_disp_mode == 0)
+            if (stepMovPlayback())
             {
-                g_db.disp[1].display.DX = 656;
-                g_db.disp[0].display.DX = 656;
-                g_db.disp[1].display.DY = 104;
-                g_db.disp[0].display.DY = 104;
-            }
-            else
-            {
-                g_db.disp[1].display.DX = 636;
-                g_db.disp[0].display.DX = 636;
-                g_db.disp[1].display.DY = 50;
-                g_db.disp[0].display.DY = 50;
-            }
-#endif
-
-            sceGsSyncPath(0, 0);
-            SgInit3D();
-            sceGsSyncPath(0, 0);
-
-            vfunc();
-
-            if (scene_bg_color == 0)
-            {
-                SetSysBackColor(0, 0, 0);
-                clearGsMem(0, 0, 0, 0x280, 0x1c0);
-            }
-            else
-            {
-                SetSysBackColor(0xff, 0xff, 0xff);
-                clearGsMem(0xff, 0xff, 0xff, 0x280, 0x1c0);
+                ret = 1;
+                break;
             }
 
-            AdpcmReturnFromMovie();
-            EiMain();
+            endMovPlayback();
+            movie_wrk.play_event_sta = 5;
+            ret = 1;
+            break;
 
-            //*(int *)REG_DMAC_CTRL &= ~D_CTRL_RELE_M; // yeah ...
-
+        case 5:
+            restoreAfterMovPlayback();
             MovieInitWrk();
-
+            ret = 0;
+            break;
+        default:
+            MovieInitWrk();
             ret = 0;
             break;
     }
@@ -377,11 +357,80 @@ int PlayMpegEvent()
     return ret;
 }
 
+static void restoreAfterMovPlayback(void)
+{
+    SetIopCmdSm(IC_SE_INIT, 1, 0, 0);
+    SeSetMVol(opt_wrk.bgm_vol);
+    SeSetSteMono(opt_wrk.sound_mode);
+
+#ifdef BUILD_EU_VERSION
+    sceGsResetGraph(1, SCE_GS_INTERLACE,
+                    sys_wrk.pal_disp_mode == 0 ? SCE_GS_PAL
+                                               : SCE_GS_NTSC,
+                    SCE_GS_FRAME);
+#else
+    sceGsResetGraph(1, SCE_GS_INTERLACE, SCE_GS_NTSC, SCE_GS_FRAME);
+#endif
+    sceGsSetDefDBuff(&g_db, 0, 0x280, 0xe0, 2, 0x31, 1);
+
+    pdrawenv = &g_db.draw0;
+
+#ifdef BUILD_EU_VERSION
+    if (sys_wrk.pal_disp_mode == 0)
+    {
+        g_db.disp[1].display.DX = 656;
+        g_db.disp[0].display.DX = 656;
+        g_db.disp[1].display.DY = 104;
+        g_db.disp[0].display.DY = 104;
+    }
+    else
+    {
+        g_db.disp[1].display.DX = 636;
+        g_db.disp[0].display.DX = 636;
+        g_db.disp[1].display.DY = 50;
+        g_db.disp[0].display.DY = 50;
+    }
+#endif
+
+    sceGsSyncPath(0, 0);
+    SgInit3D();
+    sceGsSyncPath(0, 0);
+
+    vfunc();
+
+    if (scene_bg_color == 0)
+    {
+        SetSysBackColor(0, 0, 0);
+        clearGsMem(0, 0, 0, 0x280, 0x1c0);
+    }
+    else
+    {
+        SetSysBackColor(0xff, 0xff, 0xff);
+        clearGsMem(0xff, 0xff, 0xff, 0x280, 0x1c0);
+    }
+
+    AdpcmReturnFromMovie();
+    EiMain();
+
+    //*(int *)REG_DMAC_CTRL &= ~D_CTRL_RELE_M; // yeah ...
+}
+
 u_int movie(char *name)
+{
+    beginMovPlayback(name);
+    return controller_val;
+}
+
+static int beginMovPlayback(char *name)
 {
     if (MOVIE_EARLY_RETURN_MOVIE)
     {
-        return controller_val;
+        return 0;
+    }
+
+    if (g_movie_playback.active)
+    {
+        return 1;
     }
 
     sceGsSyncPath(0, 0);
@@ -429,11 +478,28 @@ u_int movie(char *name)
     ChangeThreadPriority(thread_id, 1);
 
     initMov(name);
-    playMovLoop();
-    termMov();
+    if (!g_vd.mov)
+    {
+        ChangeThreadPriority(GetThreadId(), thread_id);
+        memset(&g_movie_playback, 0, sizeof(g_movie_playback));
+        return 0;
+    }
 
-    ChangeThreadPriority(GetThreadId(), thread_id);
-    return controller_val;
+    double fps = g_vd.fps;
+    if (fps < 1.0 || fps > 120.0)
+    {
+        fps = 30.0;
+    }
+
+    g_movie_playback.active = 1;
+    g_movie_playback.draining_audio = 0;
+    g_movie_playback.drain_safety = 100;
+    g_movie_playback.have_any_frame = 0;
+    g_movie_playback.frame_duration = 1.0 / fps;
+    g_movie_playback.start_time = now_sec();
+    g_movie_playback.tick = 0;
+
+    return 1;
 }
 
 static double now_sec()
@@ -452,24 +518,27 @@ static size_t audioQueuedBytes()
     return SDL_GetAudioStreamQueued(g_audio_state.stream);
 }
 
-static size_t audioLowWater()
+static size_t audioBytesForMs(int ms)
 {
-    if (g_audio_state.rate <= 0)
+    if (g_audio_state.rate <= 0 || g_audio_state.channels <= 0)
     {
         return 0;
     }
 
-    return (g_audio_state.rate * 250) / 1000;
+    return ((size_t) g_audio_state.rate
+            * (size_t) g_audio_state.channels
+            * sizeof(int16_t)
+            * (size_t) ms) / 1000;
+}
+
+static size_t audioLowWater()
+{
+    return audioBytesForMs(250);
 }
 
 static size_t audioHighWater()
 {
-    if (g_audio_state.rate <= 0)
-    {
-        return 0;
-    }
-
-    return (g_audio_state.rate * 750) / 1000;
+    return audioBytesForMs(750);
 }
 
 static void feedAudio()
@@ -487,6 +556,11 @@ static void feedAudio()
         return;
     }
 
+    if (g_audio_state.eof)
+    {
+        return;
+    }
+
     size_t to_feed = high_water - queued;
     if (to_feed < 4096)
     {
@@ -498,13 +572,9 @@ static void feedAudio()
         to_feed = sizeof(g_audio_state.audio_buffer);
     }
 
-    if (g_audio_state.eof)
-    {
-        return;
-    }
-
     if (!mikupan_decoder_pump(g_audio_state.decoder, to_feed))
     {
+        g_audio_state.eof = 1;
         return;
     }
 
@@ -517,6 +587,10 @@ static void feedAudio()
         SDL_PutAudioStreamData(g_audio_state.stream, g_audio_state.audio_buffer,
                                (int) n);
     }
+    else
+    {
+        g_audio_state.eof = 1;
+    }
 }
 
 void renderMovFrame(const MikuPan_TextureInfo *ti)
@@ -525,8 +599,6 @@ void renderMovFrame(const MikuPan_TextureInfo *ti)
     {
         return;
     }
-
-    MikuPan_Clear();
 
     MikuPan_Rect src = {0};
     src.x = 0.0f;
@@ -542,111 +614,116 @@ void renderMovFrame(const MikuPan_TextureInfo *ti)
 
     MikuPan_RenderSprite(src, dst, 255, 255, 255, 255,
                          (MikuPan_TextureInfo *) ti);
+    MikuPan_FlushTexturedSpriteBatch();
 }
 
-void playMovLoop()
+static int stepMovPlayback(void)
 {
-    double fps = g_vd.fps;
-    if (fps < 1.0 || fps > 120.0)
+    if (!g_movie_playback.active)
     {
-        fps = 30.0;
+        return 0;
     }
 
-    const double frameDur = 1.0 / fps;
+    movVblankPad();
+    feedAudio();
 
-    double startT = now_sec();
-    unsigned long long tick = 0;
-
-    int haveAnyFrame = 0;
-
-    for (;;)
+    if (START_PRESSED() != 0
+        //&& g_movie_playback.tick >= 31
+        //&& movie_wrk.play_event_sta != 7
+        )
     {
-        double t = now_sec();
-        double targetT = startT + (double) tick * frameDur;
-        double wait = targetT - t;
+        return 0;
+    }
 
-        if (wait > 0.5)
+    if (g_movie_playback.draining_audio)
+    {
+        if (g_movie_playback.have_any_frame)
         {
-            startT = t;
-            tick = 0;
-            continue;
+            renderMovFrame(g_vd.ti);
         }
 
-        feedAudio();
-
-        size_t queued = audioQueuedBytes();
-        size_t low_water = audioLowWater();
-
-        if (queued < low_water && !g_audio_state.eof)
+        if (g_audio_state.stream
+            && SDL_GetAudioStreamQueued(g_audio_state.stream) > 0
+            && g_movie_playback.drain_safety-- > 0)
         {
-            if (wait > 0.010)
-            {
-                SDL_Delay(1);
-            }
-
-            SDL_PumpEvents();
-            continue;
+            return 1;
         }
 
-        if (wait > 0.0)
-        {
-            SDL_PumpEvents();
+        return 0;
+    }
 
-            if (wait > 0.010)
-            {
-                SDL_Delay(1);
-            }
+    double t = now_sec();
+    double target_time =
+        g_movie_playback.start_time
+        + (double)g_movie_playback.tick * g_movie_playback.frame_duration;
+    double wait = target_time - t;
 
-            continue;
-        }
+    if (wait > 0.5)
+    {
+        g_movie_playback.start_time = t;
+        g_movie_playback.tick = 0;
+        wait = 0.0;
+    }
 
+    int decoded_frames = 0;
+    int max_decode_frames =
+        wait < -g_movie_playback.frame_duration ? 3 : 1;
+
+    while (wait <= 0.0 && decoded_frames < max_decode_frames)
+    {
         int r = readMpeg(&g_vd, &g_rb);
 
         if (r < 0)
+        {
+            return 0;
+        }
+
+        if (r == 0)
         {
             break;
         }
 
         if (r == 2)
         {
-            g_audio_state.eof = 1;
+            g_movie_playback.draining_audio = 1;
             break;
         }
 
-        if (r == 1)
-        {
-            haveAnyFrame = 1;
-        }
+        g_movie_playback.have_any_frame = 1;
+        g_movie_playback.tick++;
+        decoded_frames++;
 
-        feedAudio();
-
-        if (haveAnyFrame)
-        {
-            renderMovFrame(g_vd.ti);
-        }
-
-        else
-        {
-            MikuPan_Clear();
-        }
-
-        MikuPan_RenderUi();
-        SDL_GL_SwapWindow(mikupan_render.window);
-        SDL_PumpEvents();
-
-        tick++;
+        t = now_sec();
+        target_time =
+            g_movie_playback.start_time
+            + (double)g_movie_playback.tick * g_movie_playback.frame_duration;
+        wait = target_time - t;
     }
 
-    if (g_audio_state.stream)
+    if (wait < -1.0)
     {
-        int drain_safety = 100;
-
-        while (SDL_GetAudioStreamQueued(g_audio_state.stream) > 0
-               && drain_safety-- > 0)
-        {
-            SDL_Delay(10);
-        }
+        g_movie_playback.start_time =
+            t - (double) g_movie_playback.tick * g_movie_playback.frame_duration;
     }
+
+    if (decoded_frames > 0)
+    {
+        feedAudio();
+    }
+
+    if (g_movie_playback.have_any_frame)
+    {
+        renderMovFrame(g_vd.ti);
+    }
+
+    return 1;
+}
+
+static void endMovPlayback(void)
+{
+    termMov();
+    memset(&g_movie_playback, 0, sizeof(g_movie_playback));
+    ChangeThreadPriority(GetThreadId(), thread_id);
 }
 
 volatile int isCountVblank = 0;
@@ -986,8 +1063,6 @@ static void termMov()
     }
 
     memset(&g_audio_state, 0, sizeof(g_audio_state));
-
-    SDL_GL_MakeCurrent(mikupan_render.window, gl_context);
 }
 
 void defMain(void)
@@ -1016,13 +1091,30 @@ void proceedAudio()
 int MoviePlay(int scene_no)
 {
     int i;
+    int started;
+    static int movie_play_active = 0;
+    static int movie_play_scene_no = 0;
+
+    if (movie_play_active)
+    {
+        if (stepMovPlayback())
+        {
+            return 1;
+        }
+
+        endMovPlayback();
+        movie_play_active = 0;
+        scene_no = movie_play_scene_no;
+        goto movie_play_restore;
+    }
 
     SetSysBackColor(0, 0, 0);
     clearGsMem(0, 0, 0, DISP_WIDTH, DISP_HEIGHT);
 
-    while (checkIOP() != 0)
+    if (checkIOP() != 0)
     {
         vfunc();
+        return 1;
     }
 
     AdpcmShiftMovie();
@@ -1057,16 +1149,23 @@ int MoviePlay(int scene_no)
 #ifdef BUILD_EU_VERSION
     if (scene_no == 0x60)
     {
-        movie(mpegStaff[sys_wrk.pal_disp_mode][sys_wrk.language]);
+        started = beginMovPlayback(mpegStaff[sys_wrk.pal_disp_mode][sys_wrk.language]);
     }
     else
     {
-        movie(mpegName[sys_wrk.pal_disp_mode][play_mov_no]);
+        started = beginMovPlayback(mpegName[sys_wrk.pal_disp_mode][play_mov_no]);
     }
 #else
-    movie(mpegName[play_mov_no]);
+    started = beginMovPlayback(mpegName[play_mov_no]);
 #endif
+    if (started)
+    {
+        movie_play_active = 1;
+        movie_play_scene_no = scene_no;
+        return 1;
+    }
 
+movie_play_restore:
     SetIopCmdSm(1, 1, 0, 0);
     SeSetMVol(opt_wrk.bgm_vol);
     SeSetSteMono(opt_wrk.sound_mode);
@@ -3295,5 +3394,3 @@ void voBufDecCount(VoBuf *f)
         f->count--;
     }
 }
-
-

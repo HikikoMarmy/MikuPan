@@ -276,6 +276,9 @@ set(MIKUPAN_SOURCES
 )
 
 add_executable(MikuPan ${MIKUPAN_SOURCES} ${APP_ICON_RESOURCE_WINDOWS})
+if(TARGET ffmpeg_build)
+    add_dependencies(MikuPan ffmpeg_build)
+endif()
 
 target_include_directories(MikuPan PRIVATE
         "sdk/"
@@ -304,8 +307,10 @@ target_link_libraries(MikuPan PRIVATE
 add_custom_command(TARGET MikuPan POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/resources $<TARGET_FILE_DIR:MikuPan>/resources
 )
-add_custom_command(TARGET MikuPan POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_directory
-        "${FFMPEG_ROOT}/bin"
-        $<TARGET_FILE_DIR:MikuPan>
-)
+if(WIN32)
+    add_custom_command(TARGET MikuPan POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_directory
+            "${FFMPEG_ROOT}/bin"
+            $<TARGET_FILE_DIR:MikuPan>
+    )
+endif()

@@ -257,6 +257,5 @@ VoData* voBufGetData(VoBuf *f);
 int voBufIsEmpty(VoBuf *f);
 VoTag* voBufGetTag(VoBuf *f);
 void voBufDecCount(VoBuf *f);
-void playMovLoop();
 
 #endif // GRAPHICS_MOV_MOVIE_H
