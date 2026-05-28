@@ -136,6 +136,79 @@ static float normal_length = 10.0f;
 static float brightness = 1.0f;
 static float gamma_value = 1.0f;
 
+#define MIKUPAN_CRT_DEFAULTS \
+    {                        \
+        0,                   \
+        1.0f,                \
+        0.08f,               \
+        0.02f,               \
+        0.18f,               \
+        1.0f,                \
+        1.6f,                \
+        0.22f,               \
+        1.0f,                \
+        0.25f,               \
+        0.78f,               \
+        0.75f,               \
+        0.02f,               \
+        0.02f,               \
+        0.08f                \
+    }
+
+static const MikuPan_ConfigCrt crt_defaults = MIKUPAN_CRT_DEFAULTS;
+static MikuPan_ConfigCrt crt_settings = MIKUPAN_CRT_DEFAULTS;
+
+static void MikuPan_UiStoreRuntimeConfiguration(void);
+
+static float MikuPan_ClampFloat(float value, float min_value, float max_value)
+{
+    if (value < min_value)
+    {
+        return min_value;
+    }
+
+    if (value > max_value)
+    {
+        return max_value;
+    }
+
+    return value;
+}
+
+static void MikuPan_ClampCrtSettings(MikuPan_ConfigCrt *crt)
+{
+    crt->enabled = crt->enabled ? 1 : 0;
+    crt->strength = MikuPan_ClampFloat(crt->strength, 0.0f, 1.0f);
+    crt->curvature = MikuPan_ClampFloat(crt->curvature, 0.0f, 0.30f);
+    crt->overscan = MikuPan_ClampFloat(crt->overscan, 0.0f, 0.12f);
+    crt->scanline_strength = MikuPan_ClampFloat(crt->scanline_strength, 0.0f, 1.0f);
+    crt->scanline_scale = MikuPan_ClampFloat(crt->scanline_scale, 0.25f, 3.0f);
+    crt->scanline_thickness = MikuPan_ClampFloat(crt->scanline_thickness, 0.5f, 4.0f);
+    crt->mask_strength = MikuPan_ClampFloat(crt->mask_strength, 0.0f, 1.0f);
+    crt->mask_scale = MikuPan_ClampFloat(crt->mask_scale, 0.5f, 4.0f);
+    crt->vignette_strength = MikuPan_ClampFloat(crt->vignette_strength, 0.0f, 1.0f);
+    crt->vignette_size = MikuPan_ClampFloat(crt->vignette_size, 0.25f, 1.25f);
+    crt->chroma_offset = MikuPan_ClampFloat(crt->chroma_offset, 0.0f, 3.0f);
+    crt->noise_strength = MikuPan_ClampFloat(crt->noise_strength, 0.0f, 0.15f);
+    crt->flicker_strength = MikuPan_ClampFloat(crt->flicker_strength, 0.0f, 0.10f);
+    crt->glow_strength = MikuPan_ClampFloat(crt->glow_strength, 0.0f, 0.50f);
+}
+
+static void MikuPan_UiSaveConfiguration(void)
+{
+    MikuPan_UiStoreRuntimeConfiguration();
+    if (MikuPan_SaveConfiguration(NULL))
+    {
+        snprintf(config_save_status, sizeof(config_save_status),
+                 "Saved to mikupan.ini");
+    }
+    else
+    {
+        snprintf(config_save_status, sizeof(config_save_status),
+                 "Failed to save mikupan.ini");
+    }
+}
+
 static void MikuPan_UiStoreRuntimeConfiguration(void)
 {
     mikupan_configuration.renderer.render.width = render_resolution_width;
@@ -146,6 +219,7 @@ static void MikuPan_UiStoreRuntimeConfiguration(void)
     mikupan_configuration.renderer.msaa_index = msaa_samples;
     mikupan_configuration.renderer.brightness = brightness;
     mikupan_configuration.renderer.gamma = gamma_value;
+    mikupan_configuration.crt = crt_settings;
 }
 
 // -- FrameTimeGraph ----------------------------------------------------------
@@ -1067,6 +1141,9 @@ void MikuPan_InitUi(SDL_Window *window, SDL_GLContext renderer)
     is_fullscreen = mikupan_configuration.renderer.is_fullscreen;
     mesh_lighting_mode = mikupan_configuration.renderer.lighting_mode;
     is_vsync = mikupan_configuration.renderer.vsync;
+    crt_settings = mikupan_configuration.crt;
+    MikuPan_ClampCrtSettings(&crt_settings);
+    mikupan_configuration.crt = crt_settings;
 
     if (mesh_lighting_mode > 1 || mesh_lighting_mode < 0)
     {
@@ -1348,17 +1425,7 @@ void MikuPan_UiMenuBar(void)
 
         if (igMenuItem_Bool("Save Configuration", NULL, false, true))
         {
-            MikuPan_UiStoreRuntimeConfiguration();
-            if (MikuPan_SaveConfiguration(NULL))
-            {
-                snprintf(config_save_status, sizeof(config_save_status),
-                         "Saved to mikupan.ini");
-            }
-            else
-            {
-                snprintf(config_save_status, sizeof(config_save_status),
-                         "Failed to save mikupan.ini");
-            }
+            MikuPan_UiSaveConfiguration();
         }
 
         if (config_save_status[0] != '\0')
@@ -1369,6 +1436,61 @@ void MikuPan_UiMenuBar(void)
         if (igMenuItem_Bool("Take Screenshot (F12)", NULL, false, true))
         {
             MikuPan_ScreenshotRequest();
+        }
+
+        igEndMenu();
+    }
+
+    if (igBeginMenu("CRT", 1))
+    {
+        igCheckbox("Enabled", (bool *) &crt_settings.enabled);
+        igSliderFloat("Strength", &crt_settings.strength, 0.0f, 1.0f, "%.2f", 0);
+        igSliderFloat("Curvature", &crt_settings.curvature, 0.0f, 0.30f, "%.3f", 0);
+        igSliderFloat("Overscan", &crt_settings.overscan, 0.0f, 0.12f, "%.3f", 0);
+
+        igSeparator();
+        igSliderFloat("Scanline Strength", &crt_settings.scanline_strength,
+                      0.0f, 1.0f, "%.2f", 0);
+        igSliderFloat("Scanline Scale", &crt_settings.scanline_scale,
+                      0.25f, 3.0f, "%.2f", 0);
+        igSliderFloat("Scanline Thickness", &crt_settings.scanline_thickness,
+                      0.5f, 4.0f, "%.2f", 0);
+
+        igSeparator();
+        igSliderFloat("Mask Strength", &crt_settings.mask_strength,
+                      0.0f, 1.0f, "%.2f", 0);
+        igSliderFloat("Mask Scale", &crt_settings.mask_scale,
+                      0.5f, 4.0f, "%.2f", 0);
+
+        igSeparator();
+        igSliderFloat("Vignette Strength", &crt_settings.vignette_strength,
+                      0.0f, 1.0f, "%.2f", 0);
+        igSliderFloat("Vignette Size", &crt_settings.vignette_size,
+                      0.25f, 1.25f, "%.2f", 0);
+        igSliderFloat("Chroma Offset", &crt_settings.chroma_offset,
+                      0.0f, 3.0f, "%.2f", 0);
+        igSliderFloat("Noise", &crt_settings.noise_strength,
+                      0.0f, 0.15f, "%.3f", 0);
+        igSliderFloat("Flicker", &crt_settings.flicker_strength,
+                      0.0f, 0.10f, "%.3f", 0);
+        igSliderFloat("Glow", &crt_settings.glow_strength,
+                      0.0f, 0.50f, "%.2f", 0);
+
+        MikuPan_ClampCrtSettings(&crt_settings);
+
+        if (igButton("Reset CRT", (ImVec2) {0.0f, 0.0f}))
+        {
+            crt_settings = crt_defaults;
+        }
+
+        if (igMenuItem_Bool("Save Configuration", NULL, false, true))
+        {
+            MikuPan_UiSaveConfiguration();
+        }
+
+        if (config_save_status[0] != '\0')
+        {
+            igTextDisabled("%s", config_save_status);
         }
 
         igEndMenu();
@@ -1484,6 +1606,11 @@ float MikuPan_GetBrightness(void)
 float MikuPan_GetGamma(void)
 {
     return gamma_value;
+}
+
+const MikuPan_ConfigCrt *MikuPan_GetCrtSettings(void)
+{
+    return &crt_settings;
 }
 
 int MikuPan_IsFullScreen(void)

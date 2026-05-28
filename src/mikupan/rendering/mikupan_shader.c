@@ -586,6 +586,17 @@ void MikuPan_SetUniform1fToCurrentShader(float value, char *name)
     glad_glUniform1f(loc, value);
 }
 
+void MikuPan_SetUniform2fToCurrentShader(float x, float y, char *name)
+{
+    GLint loc = GetCachedLocation(FindShaderIndex(current_program), name);
+    if (loc < 0)
+    {
+        return;
+    }
+
+    glad_glUniform2f(loc, x, y);
+}
+
 void MikuPan_ResetShaderCache(void)
 {
     current_program = 0;

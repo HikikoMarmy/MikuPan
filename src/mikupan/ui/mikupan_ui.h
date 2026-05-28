@@ -3,6 +3,7 @@
 
 #include "SDL3/SDL_video.h"
 #include "SDL3/SDL_events.h"
+#include "mikupan/mikupan_basictypes.h"
 
 extern int show_fps;
 extern int show_menu_bar;
@@ -39,6 +40,7 @@ int MikuPan_GetMSAA(void);
 int MikuPan_ShowControllerRemapWindow(void);
 float MikuPan_GetBrightness(void);
 float MikuPan_GetGamma(void);
+const MikuPan_ConfigCrt *MikuPan_GetCrtSettings(void);
 int MikuPan_IsFullScreen(void);
 int MikuPan_IsVsync(void);
 

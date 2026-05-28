@@ -85,7 +85,27 @@ typedef struct
 
 typedef struct
 {
+    int enabled;
+    float strength;
+    float curvature;
+    float overscan;
+    float scanline_strength;
+    float scanline_scale;
+    float scanline_thickness;
+    float mask_strength;
+    float mask_scale;
+    float vignette_strength;
+    float vignette_size;
+    float chroma_offset;
+    float noise_strength;
+    float flicker_strength;
+    float glow_strength;
+} MikuPan_ConfigCrt;
+
+typedef struct
+{
     MikuPan_ConfigRenderer renderer;
+    MikuPan_ConfigCrt crt;
     int selected_theme;
 } MikuPan_Config;
 

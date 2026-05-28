@@ -394,6 +394,8 @@ void MikuPan_CreateInternalBuffer(int w, int h, int msaa)
 
     glad_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glad_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glad_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glad_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
 
     glad_glFramebufferTexture2D(GL_FRAMEBUFFER,
                                 GL_COLOR_ATTACHMENT0,
@@ -539,6 +541,32 @@ void MikuPan_EndFrame()
     MikuPan_SetCurrentShaderProgram(POSTPROCESS_SHADER);
     MikuPan_SetUniform1fToCurrentShader(MikuPan_GetBrightness(), "uBrightness");
     MikuPan_SetUniform1fToCurrentShader(MikuPan_GetGamma(),      "uGamma");
+    {
+        const MikuPan_ConfigCrt *crt = MikuPan_GetCrtSettings();
+        MikuPan_SetUniform1iToCurrentShader(crt->enabled, "uCrtEnabled");
+        MikuPan_SetUniform1fToCurrentShader(crt->strength, "uCrtStrength");
+        MikuPan_SetUniform1fToCurrentShader(crt->curvature, "uCrtCurvature");
+        MikuPan_SetUniform1fToCurrentShader(crt->overscan, "uCrtOverscan");
+        MikuPan_SetUniform1fToCurrentShader(crt->scanline_strength, "uCrtScanlineStrength");
+        MikuPan_SetUniform1fToCurrentShader(crt->scanline_scale, "uCrtScanlineScale");
+        MikuPan_SetUniform1fToCurrentShader(crt->scanline_thickness, "uCrtScanlineThickness");
+        MikuPan_SetUniform1fToCurrentShader(crt->mask_strength, "uCrtMaskStrength");
+        MikuPan_SetUniform1fToCurrentShader(crt->mask_scale, "uCrtMaskScale");
+        MikuPan_SetUniform1fToCurrentShader(crt->vignette_strength, "uCrtVignetteStrength");
+        MikuPan_SetUniform1fToCurrentShader(crt->vignette_size, "uCrtVignetteSize");
+        MikuPan_SetUniform1fToCurrentShader(crt->chroma_offset, "uCrtChromaOffset");
+        MikuPan_SetUniform1fToCurrentShader(crt->noise_strength, "uCrtNoiseStrength");
+        MikuPan_SetUniform1fToCurrentShader(crt->flicker_strength, "uCrtFlickerStrength");
+        MikuPan_SetUniform1fToCurrentShader(crt->glow_strength, "uCrtGlowStrength");
+        MikuPan_SetUniform2fToCurrentShader((float) render_back_msaa.texture.width,
+                                            (float) render_back_msaa.texture.height,
+                                            "uTextureSize");
+        MikuPan_SetUniform2fToCurrentShader((float) offset_output[2],
+                                            (float) offset_output[3],
+                                            "uOutputSize");
+        MikuPan_SetUniform1fToCurrentShader((float) ((double) SDL_GetTicks() / 1000.0),
+                                            "uTime");
+    }
     MikuPan_PipelineInfo* pipeline = MikuPan_GetPipelineInfo(UV4_COLOUR4_POSITION4);
     MikuPan_BindVAO(pipeline->vao);
 
