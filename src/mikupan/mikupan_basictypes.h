@@ -97,6 +97,8 @@ typedef struct
     float vignette_strength;
     float vignette_size;
     float chroma_offset;
+    float blend_strength;
+    float blend_radius;
     float noise_strength;
     float flicker_strength;
     float glow_strength;

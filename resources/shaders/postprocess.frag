@@ -24,6 +24,8 @@ uniform float uCrtMaskScale;
 uniform float uCrtVignetteStrength;
 uniform float uCrtVignetteSize;
 uniform float uCrtChromaOffset;
+uniform float uCrtBlendStrength;
+uniform float uCrtBlendRadius;
 uniform float uCrtNoiseStrength;
 uniform float uCrtFlickerStrength;
 uniform float uCrtGlowStrength;
@@ -60,6 +62,27 @@ vec3 FetchSceneCrt(vec2 uv)
     return color * uColor.rgb;
 }
 
+vec3 BlendSceneCrt(vec2 uv)
+{
+    vec3 center = FetchSceneCrt(uv);
+    float strength = clamp(uCrtBlendStrength, 0.0, 1.0);
+    if (strength <= 0.001)
+    {
+        return center;
+    }
+
+    vec2 texel = 1.0 / max(uTextureSize, vec2(1.0));
+    vec2 radius = texel * max(uCrtBlendRadius, 0.0);
+
+    vec3 blended = center * 0.40;
+    blended += FetchSceneCrt(uv + vec2( radius.x, 0.0)) * 0.20;
+    blended += FetchSceneCrt(uv + vec2(-radius.x, 0.0)) * 0.20;
+    blended += FetchSceneCrt(uv + vec2(0.0,  radius.y)) * 0.10;
+    blended += FetchSceneCrt(uv + vec2(0.0, -radius.y)) * 0.10;
+
+    return mix(center, blended, strength);
+}
+
 vec2 WarpCrtUv(vec2 uv)
 {
     vec2 centered = uv * 2.0 - 1.0;
@@ -80,7 +103,7 @@ vec3 ApplyCrt(vec2 uv)
     }
 
     vec2 texel = 1.0 / max(uTextureSize, vec2(1.0));
-    vec3 color = FetchSceneCrt(warped);
+    vec3 color = BlendSceneCrt(warped);
 
     vec3 glow = FetchSceneCrt(warped + vec2( texel.x, 0.0));
     glow += FetchSceneCrt(warped + vec2(-texel.x, 0.0));

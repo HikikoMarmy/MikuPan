@@ -108,6 +108,8 @@ bool TryLoadConfigurationFile(const std::filesystem::path& path)
     ApplyValue(ini, "crt", "vignette_strength", mikupan_configuration.crt.vignette_strength);
     ApplyValue(ini, "crt", "vignette_size", mikupan_configuration.crt.vignette_size);
     ApplyValue(ini, "crt", "chroma_offset", mikupan_configuration.crt.chroma_offset);
+    ApplyValue(ini, "crt", "blend_strength", mikupan_configuration.crt.blend_strength);
+    ApplyValue(ini, "crt", "blend_radius", mikupan_configuration.crt.blend_radius);
     ApplyValue(ini, "crt", "noise_strength", mikupan_configuration.crt.noise_strength);
     ApplyValue(ini, "crt", "flicker_strength", mikupan_configuration.crt.flicker_strength);
     ApplyValue(ini, "crt", "glow_strength", mikupan_configuration.crt.glow_strength);
@@ -163,6 +165,8 @@ bool TrySaveConfigurationFile(const std::filesystem::path& path)
     SetValue(ini, "crt", "vignette_strength", mikupan_configuration.crt.vignette_strength);
     SetValue(ini, "crt", "vignette_size", mikupan_configuration.crt.vignette_size);
     SetValue(ini, "crt", "chroma_offset", mikupan_configuration.crt.chroma_offset);
+    SetValue(ini, "crt", "blend_strength", mikupan_configuration.crt.blend_strength);
+    SetValue(ini, "crt", "blend_radius", mikupan_configuration.crt.blend_radius);
     SetValue(ini, "crt", "noise_strength", mikupan_configuration.crt.noise_strength);
     SetValue(ini, "crt", "flicker_strength", mikupan_configuration.crt.flicker_strength);
     SetValue(ini, "crt", "glow_strength", mikupan_configuration.crt.glow_strength);

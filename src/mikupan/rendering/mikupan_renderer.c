@@ -555,6 +555,8 @@ void MikuPan_EndFrame()
         MikuPan_SetUniform1fToCurrentShader(crt->vignette_strength, "uCrtVignetteStrength");
         MikuPan_SetUniform1fToCurrentShader(crt->vignette_size, "uCrtVignetteSize");
         MikuPan_SetUniform1fToCurrentShader(crt->chroma_offset, "uCrtChromaOffset");
+        MikuPan_SetUniform1fToCurrentShader(crt->blend_strength, "uCrtBlendStrength");
+        MikuPan_SetUniform1fToCurrentShader(crt->blend_radius, "uCrtBlendRadius");
         MikuPan_SetUniform1fToCurrentShader(crt->noise_strength, "uCrtNoiseStrength");
         MikuPan_SetUniform1fToCurrentShader(crt->flicker_strength, "uCrtFlickerStrength");
         MikuPan_SetUniform1fToCurrentShader(crt->glow_strength, "uCrtGlowStrength");

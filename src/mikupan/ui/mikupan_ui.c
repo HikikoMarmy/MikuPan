@@ -81,7 +81,7 @@ float MikuPan_GsGetDownloadMs(void);
 
 // -- State -------------------------------------------------------------------
 const int msaa_list[] = {0, 2, 4, 8, 16, 32};
-int show_fps = 1;
+int show_fps = 0;
 int show_menu_bar = 0;
 
 static int show_frame_time_graph = 0;
@@ -150,6 +150,8 @@ static float gamma_value = 1.0f;
         0.25f,               \
         0.78f,               \
         0.75f,               \
+        0.15f,               \
+        0.75f,               \
         0.02f,               \
         0.02f,               \
         0.08f                \
@@ -189,6 +191,8 @@ static void MikuPan_ClampCrtSettings(MikuPan_ConfigCrt *crt)
     crt->vignette_strength = MikuPan_ClampFloat(crt->vignette_strength, 0.0f, 1.0f);
     crt->vignette_size = MikuPan_ClampFloat(crt->vignette_size, 0.25f, 1.25f);
     crt->chroma_offset = MikuPan_ClampFloat(crt->chroma_offset, 0.0f, 3.0f);
+    crt->blend_strength = MikuPan_ClampFloat(crt->blend_strength, 0.0f, 1.0f);
+    crt->blend_radius = MikuPan_ClampFloat(crt->blend_radius, 0.0f, 3.0f);
     crt->noise_strength = MikuPan_ClampFloat(crt->noise_strength, 0.0f, 0.15f);
     crt->flicker_strength = MikuPan_ClampFloat(crt->flicker_strength, 0.0f, 0.10f);
     crt->glow_strength = MikuPan_ClampFloat(crt->glow_strength, 0.0f, 0.50f);
@@ -1468,6 +1472,10 @@ void MikuPan_UiMenuBar(void)
         igSliderFloat("Vignette Size", &crt_settings.vignette_size,
                       0.25f, 1.25f, "%.2f", 0);
         igSliderFloat("Chroma Offset", &crt_settings.chroma_offset,
+                      0.0f, 3.0f, "%.2f", 0);
+        igSliderFloat("Blend Strength", &crt_settings.blend_strength,
+                      0.0f, 1.0f, "%.2f", 0);
+        igSliderFloat("Blend Radius", &crt_settings.blend_radius,
                       0.0f, 3.0f, "%.2f", 0);
         igSliderFloat("Noise", &crt_settings.noise_strength,
                       0.0f, 0.15f, "%.3f", 0);
