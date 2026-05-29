@@ -26,6 +26,7 @@
 #include "graphics/graph3d/sglib.h"
 #include "main/glob.h"
 #include "mikupan/mikupan_rng.h"
+#include "mikupan/mikupan_utils.h"
 #include "mikupan/rendering/mikupan_renderer.h"
 #include "os/eeiop/cdvd/eecdvd.h"
 #include "outgame/btl_mode/btl_mode.h"
@@ -127,6 +128,129 @@ typedef struct { // 0xd0
 
 #define INIT_TBP 0x1a40
 #define TBP_0x8c0 (INIT_TBP / 3)
+
+#define EFFECT_SCR_SCREEN_COPY_W 1024.0f
+#define EFFECT_SCR_SCREEN_COPY_H 256.0f
+#define EFFECT_SCR_DEFORM_MAX_VERTICES (32 * 24 * 6)
+#define EFFECT_SCR_DEFORM0_MAX_VERTICES (24 * 16 * 6)
+#define EFFECT_SCR_NOW_LOADING_MAX_VERTICES (16 * 16 * 6)
+#define EFFECT_SCR_GAME_OVER_MAX_VERTICES (48 * 36 * 6)
+
+static u_char EffectScrClampColor(int value)
+{
+    if (value < 0)
+    {
+        return 0;
+    }
+
+    if (value > 0xff)
+    {
+        return 0xff;
+    }
+
+    return (u_char)value;
+}
+
+static void EffectScrWriteScreenCopyVertex(
+    float *dst,
+    float src_x,
+    float src_y,
+    float dst_gs_x,
+    float dst_gs_y,
+    float z,
+    int r,
+    int g,
+    int b,
+    int a)
+{
+    float ndc[2];
+
+    MikuPan_ConvertPs2GSCoordToNDC(
+        ndc,
+        (float)MikuPan_GetWindowWidth(),
+        (float)MikuPan_GetWindowHeight(),
+        dst_gs_x,
+        dst_gs_y);
+
+    dst[0] = src_x / EFFECT_SCR_SCREEN_COPY_W;
+    dst[1] = src_y / EFFECT_SCR_SCREEN_COPY_H;
+    dst[2] = (dst_gs_x - 1728.0f) / EFFECT_SCR_SCREEN_COPY_W;
+    dst[3] = (dst_gs_y - 1936.0f) / EFFECT_SCR_SCREEN_COPY_H;
+    dst[4] = MikuPan_ConvertScaleColor(EffectScrClampColor(r));
+    dst[5] = MikuPan_ConvertScaleColor(EffectScrClampColor(g));
+    dst[6] = MikuPan_ConvertScaleColor(EffectScrClampColor(b));
+    dst[7] = MikuPan_ConvertScaleColor(EffectScrClampColor(a));
+    dst[8] = ndc[0];
+    dst[9] = ndc[1];
+    dst[10] = z;
+    dst[11] = 1.0f;
+}
+
+static int EffectScrAppendScreenCopyQuad(
+    float *buffer,
+    int vertex_count,
+    int max_vertices,
+    const float src_x[4],
+    const float src_y[4],
+    const float dst_x[4],
+    const float dst_y[4],
+    const int rgba[4][4])
+{
+    static const int indices[6] = {0, 1, 2, 2, 1, 3};
+    int i;
+
+    if (vertex_count + 6 > max_vertices)
+    {
+        return vertex_count;
+    }
+
+    for (i = 0; i < 6; i++)
+    {
+        int idx = indices[i];
+
+        EffectScrWriteScreenCopyVertex(
+            buffer + (vertex_count + i) * 12,
+            src_x[idx],
+            src_y[idx],
+            dst_x[idx],
+            dst_y[idx],
+            0.0f,
+            rgba[idx][0],
+            rgba[idx][1],
+            rgba[idx][2],
+            rgba[idx][3]);
+    }
+
+    return vertex_count + 6;
+}
+
+static int EffectScrAppendScreenCopyQuadFixed(
+    float *buffer,
+    int vertex_count,
+    int max_vertices,
+    const int src_x[4],
+    const int src_y[4],
+    const int dst_x[4],
+    const int dst_y[4],
+    const int rgba[4][4])
+{
+    float fsx[4];
+    float fsy[4];
+    float fdx[4];
+    float fdy[4];
+    int i;
+
+    for (i = 0; i < 4; i++)
+    {
+        fsx[i] = (float)src_x[i] / 16.0f;
+        fsy[i] = (float)src_y[i] / 16.0f;
+        fdx[i] = (float)dst_x[i] / 16.0f;
+        fdy[i] = (float)dst_y[i] / 16.0f;
+    }
+
+    return EffectScrAppendScreenCopyQuad(
+        buffer, vertex_count, max_vertices, fsx, fsy, fdx, fdy, rgba);
+}
 
 void InitEffectScr()
 {
@@ -814,6 +938,8 @@ void MakeScrDeformPacket(/* s1 17 */ int pnumw, /* 0x0(sp) */ int pnumh, /* s2 1
 	/* s6 22 */ int j;
 	/* s5 21 */ int k;
 	/* s3 19 */ Q_WORDDATA *ppbuf;
+    float render_buffer[EFFECT_SCR_DEFORM_MAX_VERTICES][12];
+    int render_vertices = 0;
     
     Reserve2DPacket(0x1000);
     
@@ -882,6 +1008,44 @@ void MakeScrDeformPacket(/* s1 17 */ int pnumw, /* 0x0(sp) */ int pnumh, /* s2 1
     }
     
     Set2DPacketBufferAddress(ppbuf);
+
+    for (j = 0; j < pnumh; j++)
+    {
+        for (i = 0; i < pnumw; i++)
+        {
+            SCRDEF *tl = &scrdef[j][i];
+            SCRDEF *bl = &scrdef[j + 1][i];
+            SCRDEF *tr = &scrdef[j][i + 1];
+            SCRDEF *br = &scrdef[j + 1][i + 1];
+            float src_x[4] = {tl->stq[0], bl->stq[0], tr->stq[0], br->stq[0]};
+            float src_y[4] = {tl->stq[1], bl->stq[1], tr->stq[1], br->stq[1]};
+            float dst_x[4] = {tl->vtw[0], bl->vtw[0], tr->vtw[0], br->vtw[0]};
+            float dst_y[4] = {tl->vtw[1], bl->vtw[1], tr->vtw[1], br->vtw[1]};
+            int rgba[4][4] = {
+                {0x80, 0x80, 0x80, alp},
+                {0x80, 0x80, 0x80, alp},
+                {0x80, 0x80, 0x80, alp},
+                {0x80, 0x80, 0x80, alp},
+            };
+
+            render_vertices = EffectScrAppendScreenCopyQuad(
+                &render_buffer[0][0],
+                render_vertices,
+                EFFECT_SCR_DEFORM_MAX_VERTICES,
+                src_x,
+                src_y,
+                dst_x,
+                dst_y,
+                rgba);
+        }
+    }
+
+    MikuPan_RenderScreenCopyTriangles3D(
+        (sceGsTex0 *)&tex0,
+        &render_buffer[0][0],
+        render_vertices,
+        1,
+        0);
 }
 
 void SetDeform0(/* 0x2850(sp) */ int type, /* f20 58 */ float rate, /* 0x2854(sp) */ u_char alp)
@@ -1083,6 +1247,49 @@ void SetDeform0(/* 0x2850(sp) */ int type, /* f20 58 */ float rate, /* 0x2854(sp
             pbuf[ndpkt].ui32[2] = (int)(vtw[i % 2 + j][i / 2][2] * 16.0f);
             pbuf[ndpkt++].ui32[3] = (i <= 1) ? 0x8000 : 0;
         }
+    }
+
+    {
+        float render_buffer[EFFECT_SCR_DEFORM0_MAX_VERTICES][12];
+        int render_vertices = 0;
+
+        for (j = 0; j < pnumh; j++)
+        {
+            for (i = 0; i < vnumw; i++)
+            {
+                int tlc = i * 2 * c;
+                int blc = (i * 2 + 1) * c;
+                int trc = (i * 2 + 2) * c;
+                int brc = (i * 2 + 3) * c;
+                float src_x[4] = {tx[j][i], tx[j + 1][i], tx[j][i + 1], tx[j + 1][i + 1]};
+                float src_y[4] = {ty[j][i], ty[j + 1][i], ty[j][i + 1], ty[j + 1][i + 1]};
+                float dst_x[4] = {vtw[j][i][0], vtw[j + 1][i][0], vtw[j][i + 1][0], vtw[j + 1][i + 1][0]};
+                float dst_y[4] = {vtw[j][i][1], vtw[j + 1][i][1], vtw[j][i + 1][1], vtw[j + 1][i + 1][1]};
+                int rgba[4][4] = {
+                    {swch ? tlc : 0x80, swch ? tlc : 0x80, swch ? tlc : 0x80, alp},
+                    {swch ? blc : 0x80, swch ? blc : 0x80, swch ? blc : 0x80, alp},
+                    {swch ? trc : 0x80, swch ? trc : 0x80, swch ? trc : 0x80, alp},
+                    {swch ? brc : 0x80, swch ? brc : 0x80, swch ? brc : 0x80, alp},
+                };
+
+                render_vertices = EffectScrAppendScreenCopyQuad(
+                    &render_buffer[0][0],
+                    render_vertices,
+                    EFFECT_SCR_DEFORM0_MAX_VERTICES,
+                    src_x,
+                    src_y,
+                    dst_x,
+                    dst_y,
+                    rgba);
+            }
+        }
+
+        MikuPan_RenderScreenCopyTriangles3D(
+            &sd1.g_GsTex0,
+            &render_buffer[0][0],
+            render_vertices,
+            1,
+            0);
     }
 
     eff_deform.init = 1;
@@ -1400,6 +1607,53 @@ void SetDeform2(/* 0x81f8(sp) */ int type, /* f30 68 */ float rate, /* 0x81fc(sp
         pbuf[ndpkt].ui32[2] = (int)(vtw[i + vnumw][2] * 16.0f);
         pbuf[ndpkt++].ui32[3] = k;
     }
+
+    {
+        float render_buffer[EFFECT_SCR_DEFORM_MAX_VERTICES][12];
+        int render_vertices = 0;
+
+        for (int j = 0; j < pnumh; j++)
+        {
+            for (i = 0; i < pnumw; i++)
+            {
+                int tl = j * vnumw + i;
+                int bl = tl + vnumw;
+                int tr = tl + 1;
+                int br = bl + 1;
+                int tlc = swch ? (tl % 0xff) : 0x80;
+                int blc = swch ? (bl % 0xff) : 0x80;
+                int trc = swch ? (tr % 0xff) : 0x80;
+                int brc = swch ? (br % 0xff) : 0x80;
+                float src_x[4] = {tx[tl], tx[bl], tx[tr], tx[br]};
+                float src_y[4] = {ty[tl], ty[bl], ty[tr], ty[br]};
+                float dst_x[4] = {vtw[tl][0], vtw[bl][0], vtw[tr][0], vtw[br][0]};
+                float dst_y[4] = {vtw[tl][1], vtw[bl][1], vtw[tr][1], vtw[br][1]};
+                int rgba[4][4] = {
+                    {tlc, tlc, tlc, swch ? 0x80 : 0x80},
+                    {blc, blc, blc, swch ? 0x80 : alp},
+                    {trc, trc, trc, swch ? 0x80 : 0x80},
+                    {brc, brc, brc, swch ? 0x80 : alp},
+                };
+
+                render_vertices = EffectScrAppendScreenCopyQuad(
+                    &render_buffer[0][0],
+                    render_vertices,
+                    EFFECT_SCR_DEFORM_MAX_VERTICES,
+                    src_x,
+                    src_y,
+                    dst_x,
+                    dst_y,
+                    rgba);
+            }
+        }
+
+        MikuPan_RenderScreenCopyTriangles3D(
+            &sd1.g_GsTex0,
+            &render_buffer[0][0],
+            render_vertices,
+            1,
+            0);
+    }
     
     pbuf[bak].ui32[0] = ndpkt + DMAend - bak - 1;
     
@@ -1660,6 +1914,59 @@ void SetDeform3(/* 0x81f0(sp) */ int type, /* f20 58 */ float rate, /* 0x81f4(sp
             pbuf[ndpkt++].ui32[3] = (i <= 1) ? 0x8000 : 0;
         }
     }
+
+    {
+        float render_buffer[EFFECT_SCR_DEFORM_MAX_VERTICES][12];
+        int render_vertices = 0;
+
+        for (j = 0; j < pnumh; j++)
+        {
+            for (i = 0; i < pnumw; i++)
+            {
+                int tlc = i * 2 * c;
+                int blc = (i * 2 + 1) * c;
+                int trc = (i * 2 + 2) * c;
+                int brc = (i * 2 + 3) * c;
+                float src_x[4] = {tx[j][i], tx[j + 1][i], tx[j][i + 1], tx[j + 1][i + 1]};
+                float src_y[4] = {ty[j][i], ty[j + 1][i], ty[j][i + 1], ty[j + 1][i + 1]};
+                float dst_x[4] = {
+                    vt[j][i][0] + vtw[j][i][0],
+                    vt[j + 1][i][0] + vtw[j + 1][i][0],
+                    vt[j][i + 1][0] + vtw[j][i + 1][0],
+                    vt[j + 1][i + 1][0] + vtw[j + 1][i + 1][0],
+                };
+                float dst_y[4] = {
+                    vt[j][i][1] + vtw[j][i][1],
+                    vt[j + 1][i][1] + vtw[j + 1][i][1],
+                    vt[j][i + 1][1] + vtw[j][i + 1][1],
+                    vt[j + 1][i + 1][1] + vtw[j + 1][i + 1][1],
+                };
+                int rgba[4][4] = {
+                    {swch ? tlc : 0x80, swch ? tlc : 0x80, swch ? tlc : 0x80, alp},
+                    {swch ? blc : 0x80, swch ? blc : 0x80, swch ? blc : 0x80, alp},
+                    {swch ? trc : 0x80, swch ? trc : 0x80, swch ? trc : 0x80, alp},
+                    {swch ? brc : 0x80, swch ? brc : 0x80, swch ? brc : 0x80, alp},
+                };
+
+                render_vertices = EffectScrAppendScreenCopyQuad(
+                    &render_buffer[0][0],
+                    render_vertices,
+                    EFFECT_SCR_DEFORM_MAX_VERTICES,
+                    src_x,
+                    src_y,
+                    dst_x,
+                    dst_y,
+                    rgba);
+            }
+        }
+
+        MikuPan_RenderScreenCopyTriangles3D(
+            &sd1.g_GsTex0,
+            &render_buffer[0][0],
+            render_vertices,
+            1,
+            0);
+    }
     
     eff_deform.pass = 1;
     eff_deform.type = type;
@@ -1691,7 +1998,7 @@ void SetDeform4(/* 0x6720(sp) */ int type, /* f20 58 */ float rate, /* 0x6724(sp
 	/* v0 2 */ SCRDEF *pscr;
 	/* s0 16 */ DEFWORK *pdef;
 	// /* f21 59 */ float r;
-    u_long tex0;
+    u_long tex0 = SCE_GS_SET_TEX0(0x1a40, 10, SCE_GS_PSMCT32, 10, 8, 0, SCE_GS_MODULATE, 0, SCE_GS_PSMCT32, 0, 0, 1);
 
     // pnumw = 32;
     vnumw = 33;
@@ -1828,7 +2135,7 @@ void SetDeform5(/* 0x6720(sp) */ int type, /* f21 59 */ float rate, /* 0x6724(sp
 	/* f2 40 */ float yy;
 	/* s0 16 */ DEFWORK *pdef;
 	// /* f21 59 */ float r;
-    u_long tex0;
+    u_long tex0 = SCE_GS_SET_TEX0(0x1a40, 10, SCE_GS_PSMCT32, 10, 8, 0, SCE_GS_MODULATE, 0, SCE_GS_PSMCT32, 0, 0, 1);
 
     // pnumw = 32;
     vnumw = 33;
@@ -1974,7 +2281,7 @@ void SetDeform6(/* 0x6720(sp) */ int type, /* f20 58 */ float rate, /* 0x6724(sp
 	/* s1 17 */ SCRDEF *pscr;
 	/* s0 16 */ DEFWORK *pdef;
 	// /* f21 59 */ float r;
-    u_long tex0;
+    u_long tex0 = SCE_GS_SET_TEX0(0x1a40, 10, SCE_GS_PSMCT32, 10, 8, 0, SCE_GS_MODULATE, 0, SCE_GS_PSMCT32, 0, 0, 1);
 
     // pnumw = 32;
     vnumw = 33;
@@ -3730,6 +4037,54 @@ u_char SubNowLoading(/* a0 4 */ int fl, /* 0x3440(sp) */ int num, /* f12 50 */ f
     
     pbuf[bak].ui32[0] = ndpkt + DMAend - bak - 1; // Line 4933
 
+    {
+        float render_buffer[EFFECT_SCR_NOW_LOADING_MAX_VERTICES][12];
+        int render_vertices = 0;
+
+        for (j = 0; j < pnumh; j++)
+        {
+            for (i = 0; i < pnumw; i++)
+            {
+                int tl = j * vnumw + i;
+                int bl = tl + vnumw;
+                int tr = tl + 1;
+                int br = bl + 1;
+                int src_x[4] = {tx[tl], tx[bl], tx[tr], tx[br]};
+                int src_y[4] = {ty[tl], ty[bl], ty[tr], ty[br]};
+                int dst_x[4] = {vtiw[tl][0], vtiw[bl][0], vtiw[tr][0], vtiw[br][0]};
+                int dst_y[4] = {vtiw[tl][1], vtiw[bl][1], vtiw[tr][1], vtiw[br][1]};
+                int rgba[4][4] = {
+                    {0x80, 0x80, 0x80, (int)(alpha1[tl] * c)},
+                    {0x80, 0x80, 0x80, (int)(alpha1[bl] * c)},
+                    {0x80, 0x80, 0x80, (int)(alpha1[tr] * c)},
+                    {0x80, 0x80, 0x80, (int)(alpha1[br] * c)},
+                };
+
+                if (clip[tl] == 0 && clip[bl] == 0 && clip[tr] == 0 && clip[br] == 0)
+                {
+                    continue;
+                }
+
+                render_vertices = EffectScrAppendScreenCopyQuadFixed(
+                    &render_buffer[0][0],
+                    render_vertices,
+                    EFFECT_SCR_NOW_LOADING_MAX_VERTICES,
+                    src_x,
+                    src_y,
+                    dst_x,
+                    dst_y,
+                    rgba);
+            }
+        }
+
+        MikuPan_RenderScreenCopyTriangles3D(
+            (sceGsTex0 *)&tex0,
+            &render_buffer[0][0],
+            render_vertices,
+            1,
+            0);
+    }
+
     return pbuf[bak].ui32[0];
 }
 
@@ -4085,6 +4440,49 @@ void SubGameOver(/* 0x11b60(sp) */ u_char alp, /* f20 58 */ float rate)
     }
     
     pbuf[bak].ui32[0] = ndpkt + DMAend - bak - 1;
+
+    {
+        float render_buffer[EFFECT_SCR_GAME_OVER_MAX_VERTICES][12];
+        int render_vertices = 0;
+
+        for (wiy = 0; wiy < pnumh; wiy++)
+        {
+            for (wix = 0; wix < pnumw; wix++)
+            {
+                int tl = wiy * vnumw + wix;
+                int bl = tl + vnumw;
+                int tr = tl + 1;
+                int br = bl + 1;
+                int src_x[4] = {(int)tx[tl], (int)tx[bl], (int)tx[tr], (int)tx[br]};
+                int src_y[4] = {(int)ty[tl], (int)ty[bl], (int)ty[tr], (int)ty[br]};
+                int dst_x[4] = {vtiw[tl][0], vtiw[bl][0], vtiw[tr][0], vtiw[br][0]};
+                int dst_y[4] = {vtiw[tl][1], vtiw[bl][1], vtiw[tr][1], vtiw[br][1]};
+                int rgba[4][4] = {
+                    {0x80, 0x80, 0x80, alp},
+                    {0x80, 0x80, 0x80, alp},
+                    {0x80, 0x80, 0x80, alp},
+                    {0x80, 0x80, 0x80, alp},
+                };
+
+                render_vertices = EffectScrAppendScreenCopyQuadFixed(
+                    &render_buffer[0][0],
+                    render_vertices,
+                    EFFECT_SCR_GAME_OVER_MAX_VERTICES,
+                    src_x,
+                    src_y,
+                    dst_x,
+                    dst_y,
+                    rgba);
+            }
+        }
+
+        MikuPan_RenderScreenCopyTriangles3D(
+            (sceGsTex0 *)&tex0,
+            &render_buffer[0][0],
+            render_vertices,
+            1,
+            0);
+    }
 }
 
 /* sdata 3564f4 */ int gameover_flow = 9;

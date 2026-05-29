@@ -8,6 +8,8 @@
 #include "cimgui.h"
 #include "ui/mikupan_ui.h"
 
+#include <stdio.h>
+
 static int remap_target = -1;
 static int remap_target_kb = 0;
 
@@ -19,6 +21,7 @@ static int remap_stick_target = -1;
 static int remap_stick_mode = 0;
 
 SDL_Gamepad *mikupan_gamepad = NULL;
+static int mikupan_preferred_gamepad_index = MIKUPAN_CONTROLLER_AUTO_INDEX;
 
 static const char *mikupan_controller_labels[MIKUPAN_CONTROLLER_LOGICAL_COUNT] = {
     "Triangle",
@@ -140,12 +143,154 @@ u_short mikupan_controller_game_bitmask[MIKUPAN_CONTROLLER_LOGICAL_COUNT] = {
     0x800,   0x100,   0x200,   0x400,
 };
 
+static void MikuPan_CloseCurrentGamepad(void)
+{
+    if (mikupan_gamepad != NULL)
+    {
+        SDL_CloseGamepad(mikupan_gamepad);
+        mikupan_gamepad = NULL;
+    }
+}
+
+void MikuPan_ControllerSetPreferredGamepadIndex(int index)
+{
+    if (index < MIKUPAN_CONTROLLER_AUTO_INDEX)
+    {
+        index = MIKUPAN_CONTROLLER_AUTO_INDEX;
+    }
+
+    if (mikupan_preferred_gamepad_index == index)
+    {
+        return;
+    }
+
+    mikupan_preferred_gamepad_index = index;
+    MikuPan_CloseCurrentGamepad();
+    MikuPan_OpenController();
+}
+
+int MikuPan_ControllerGetPreferredGamepadIndex(void)
+{
+    return mikupan_preferred_gamepad_index;
+}
+
+static const char *MikuPan_ControllerNameForId(SDL_JoystickID id)
+{
+    const char *name = SDL_GetGamepadNameForID(id);
+    return (name != NULL && name[0] != '\0') ? name : "<unknown controller>";
+}
+
+static int MikuPan_ControllerFindGamepadIndex(SDL_JoystickID *ids, int count,
+                                              SDL_JoystickID id)
+{
+    for (int i = 0; i < count; i++)
+    {
+        if (ids[i] == id)
+        {
+            return i;
+        }
+    }
+
+    return -1;
+}
+
+void MikuPan_ControllerDrawDeviceSelectorUi(void)
+{
+    int num_gamepads = 0;
+    SDL_JoystickID *joysticks_id = SDL_GetGamepads(&num_gamepads);
+
+    char preview[160];
+    if (mikupan_preferred_gamepad_index == MIKUPAN_CONTROLLER_AUTO_INDEX)
+    {
+        snprintf(preview, sizeof(preview), "Auto (first available)");
+    }
+    else if (joysticks_id != NULL &&
+             mikupan_preferred_gamepad_index >= 0 &&
+             mikupan_preferred_gamepad_index < num_gamepads)
+    {
+        snprintf(preview, sizeof(preview), "%d: %s",
+                 mikupan_preferred_gamepad_index + 1,
+                 MikuPan_ControllerNameForId(joysticks_id[mikupan_preferred_gamepad_index]));
+    }
+    else
+    {
+        snprintf(preview, sizeof(preview), "%d: <not connected>",
+                 mikupan_preferred_gamepad_index + 1);
+    }
+
+    if (igBeginCombo("Controller", preview, 0))
+    {
+        const bool auto_selected =
+            mikupan_preferred_gamepad_index == MIKUPAN_CONTROLLER_AUTO_INDEX;
+        if (igSelectable_Bool("Auto (first available)", auto_selected, 0, (ImVec2){0, 0}))
+        {
+            MikuPan_ControllerSetPreferredGamepadIndex(MIKUPAN_CONTROLLER_AUTO_INDEX);
+        }
+        if (auto_selected)
+        {
+            igSetItemDefaultFocus();
+        }
+
+        for (int i = 0; i < num_gamepads; i++)
+        {
+            char label[160];
+            snprintf(label, sizeof(label), "%d: %s", i + 1,
+                     MikuPan_ControllerNameForId(joysticks_id[i]));
+
+            const bool is_selected = mikupan_preferred_gamepad_index == i;
+            if (igSelectable_Bool(label, is_selected, 0, (ImVec2){0, 0}))
+            {
+                MikuPan_ControllerSetPreferredGamepadIndex(i);
+            }
+            if (is_selected)
+            {
+                igSetItemDefaultFocus();
+            }
+        }
+
+        igEndCombo();
+    }
+
+    if (mikupan_gamepad != NULL)
+    {
+        const char *name = SDL_GetGamepadName(mikupan_gamepad);
+        const char *safe_name = (name != NULL && name[0] != '\0') ? name : "<unknown controller>";
+        int active_index = -1;
+        if (joysticks_id != NULL)
+        {
+            active_index = MikuPan_ControllerFindGamepadIndex(
+                joysticks_id, num_gamepads, SDL_GetGamepadID(mikupan_gamepad));
+        }
+
+        if (active_index >= 0)
+        {
+            igTextDisabled("Active: %d: %s", active_index + 1, safe_name);
+        }
+        else
+        {
+            igTextDisabled("Active: %s", safe_name);
+        }
+    }
+    else if (num_gamepads > 0)
+    {
+        igTextDisabled("No active controller for the current selection.");
+    }
+    else
+    {
+        igTextDisabled("No controllers detected.");
+    }
+
+    if (joysticks_id != NULL)
+    {
+        SDL_free(joysticks_id);
+    }
+}
+
 int MikuPan_OpenController()
 {
     if (mikupan_gamepad != NULL && !SDL_GamepadConnected(mikupan_gamepad))
     {
-        SDL_CloseGamepad(mikupan_gamepad);
-        return 0;
+        MikuPan_CloseCurrentGamepad();
     }
 
     if (mikupan_gamepad != NULL || !SDL_HasGamepad())
@@ -161,13 +306,35 @@ int MikuPan_OpenController()
         return 0;
     }
 
-    mikupan_gamepad = SDL_OpenGamepad(joysticks_id[0]);
+    int selected_index = mikupan_preferred_gamepad_index;
+    if (selected_index == MIKUPAN_CONTROLLER_AUTO_INDEX)
+    {
+        selected_index = 0;
+    }
 
-    info_log("Controller %s connected to", SDL_GetGamepadName(mikupan_gamepad));
+    if (selected_index < 0 || selected_index >= num_gamepad)
+    {
+        SDL_free(joysticks_id);
+        return 0;
+    }
+
+    mikupan_gamepad = SDL_OpenGamepad(joysticks_id[selected_index]);
+    if (mikupan_gamepad != NULL)
+    {
+        const char *name = SDL_GetGamepadName(mikupan_gamepad);
+        const char *safe_name = (name != NULL && name[0] != '\0') ? name : "<unknown controller>";
+        info_log("Controller %d connected: %s",
+                 selected_index + 1, safe_name);
+    }
+    else
+    {
+        info_log("Failed to open controller %d: %s",
+                 selected_index + 1, SDL_GetError());
+    }
 
     SDL_free(joysticks_id);
 
-    return 1;
+    return mikupan_gamepad != NULL ? 1 : 0;
 }
 
 void MikuPan_ControllerResetBindings(void)
@@ -886,10 +1053,13 @@ void MikuPan_ControllerDrawRemapWindow(void)
         return;
     }
 
-    SDL_Gamepad *gp = MikuPan_GetController();
-
     igSetNextWindowSize((ImVec2){600.0f, 720.0f}, ImGuiCond_FirstUseEver);
     igBegin("Controller Mapping", NULL, 0);
+
+    MikuPan_ControllerDrawDeviceSelectorUi();
+    igSpacing();
+
+    SDL_Gamepad *gp = MikuPan_GetController();
 
     if (gp != NULL)
     {

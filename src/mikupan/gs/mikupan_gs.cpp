@@ -102,6 +102,112 @@ int __attribute__((optimize("O3"))) GetPixelAddressPSMT4(int block, int width, i
     return addr;
 }
 
+static int MikuPan_GetRawTextureRegion(sceGsTex0 *tex0, int *out_addr, int *out_size)
+{
+    int width;
+    int height;
+    int addr;
+    int size;
+
+    if (tex0 == nullptr || out_addr == nullptr || out_size == nullptr)
+    {
+        return 0;
+    }
+
+    width = 1 << tex0->TW;
+    height = 1 << tex0->TH;
+
+    switch (static_cast<PixelStorageFormat>(tex0->PSM))
+    {
+        case PSMZ32:
+        case PSMCT32:
+            addr = GetPixelAddressPSMCT32(tex0->TBP0, tex0->TBW, 0, 0);
+            size = width * height * 4;
+            break;
+
+        case PSMT8:
+            addr = GetPixelAddressPSMT8(tex0->TBP0, tex0->TBW, 0, 0);
+            size = width * height;
+            break;
+
+        case PSMT4:
+            addr = GetPixelAddressPSMT4(tex0->TBP0, tex0->TBW, 0, 0) >> 1;
+            size = (width * height + 1) >> 1;
+            break;
+
+        default:
+            return 0;
+    }
+
+    if (addr < 0 || size <= 0 || addr + size > static_cast<int>(gsHelper.mem_.size()))
+    {
+        return 0;
+    }
+
+    *out_addr = addr;
+    *out_size = size;
+    return 1;
+}
+
+static int MikuPan_GetUploadRegion(sceGsLoadImage *image_load, int *out_addr, int *out_size)
+{
+    int width;
+    int height;
+    int addr;
+    int size;
+
+    if (image_load == nullptr || out_addr == nullptr || out_size == nullptr)
+    {
+        return 0;
+    }
+
+    width = static_cast<int>(image_load->trxreg.RRW);
+    height = static_cast<int>(image_load->trxreg.RRH);
+
+    switch (static_cast<PixelStorageFormat>(image_load->bitbltbuf.DPSM))
+    {
+        case PSMZ32:
+        case PSMCT32:
+            addr = GetPixelAddressPSMCT32(
+                image_load->bitbltbuf.DBP,
+                image_load->bitbltbuf.DBW,
+                image_load->trxpos.DSAX,
+                image_load->trxpos.DSAY);
+            size = width * height * 4;
+            break;
+
+        case PSMT8:
+            addr = GetPixelAddressPSMT8(
+                image_load->bitbltbuf.DBP,
+                image_load->bitbltbuf.DBW,
+                image_load->trxpos.DSAX,
+                image_load->trxpos.DSAY);
+            size = width * height;
+            break;
+
+        case PSMT4:
+            addr = GetPixelAddressPSMT4(
+                image_load->bitbltbuf.DBP,
+                image_load->bitbltbuf.DBW,
+                image_load->trxpos.DSAX,
+                image_load->trxpos.DSAY) >> 1;
+            size = (width * height + 1) >> 1;
+            break;
+
+        default:
+            return 0;
+    }
+
+    if (addr < 0 || size <= 0 || addr + size > static_cast<int>(gsHelper.mem_.size()))
+    {
+        return 0;
+    }
+
+    *out_addr = addr;
+    *out_size = size;
+    return 1;
+}
+
 GS::GSHelper::GSHelper()
 {
     mem_.resize(4 * 1024 * 1024);// 4 MB
@@ -286,10 +392,13 @@ void MikuPan_GsUpload(sceGsLoadImage *image_load, unsigned char *image)
     // fresh-this-frame tex0). Region uses the same byte-address convention
     // as MikuPan_GetTextureHash so overlap testing is symmetrical.
     {
-        int up_addr = GetPixelAddressPSMCT32(
-            image_load->bitbltbuf.DBP, image_load->bitbltbuf.DBW, 0, 0);
-        int up_size = (int)image_load->trxreg.RRW * (int)image_load->trxreg.RRH;
-        g_pending_uploads.push_back({up_addr, up_size});
+        int up_addr;
+        int up_size;
+
+        if (MikuPan_GetUploadRegion(image_load, &up_addr, &up_size))
+        {
+            g_pending_uploads.push_back({up_addr, up_size});
+        }
     }
 
     Uint64 t0 = SDL_GetPerformanceCounter();
@@ -403,21 +512,20 @@ unsigned char *MikuPan_GsDownloadTexture(sceGsTex0 *tex0, uint64_t* hash)
 
 uint64_t MikuPan_GetTextureHash(sceGsTex0 *tex0)
 {
+    int addr;
+    int size;
+
     if (!MikuPan_IsFirstUploadDone())
     {
         return 0;
     }
 
-    int width = (1 << tex0->TW);
-    int height = (1 << tex0->TH);
-    int addr = GetPixelAddressPSMCT32(tex0->CBP, tex0->TBW, 0, 0);
-
-    if ((addr + width * height) > 4 * 1024 * 1024)
+    if (!MikuPan_GetRawTextureRegion(tex0, &addr, &size))
     {
         return 0;
     }
 
-    XXH64_hash_t hash = XXH3_64bits(&gsHelper.mem_[addr], width*height);
+    XXH64_hash_t hash = XXH3_64bits(&gsHelper.mem_[addr], size);
 
     return hash;
 }
@@ -469,10 +577,11 @@ void MikuPan_GetTextureGsRegion(sceGsTex0 *tex0, int *out_addr, int *out_size)
     // size convention. That way an overlap between this region and a
     // pending-upload region == "an upload may have changed the bytes the
     // hash function reads", which is precisely when the L1 entry is stale.
-    int width  = (1 << tex0->TW);
-    int height = (1 << tex0->TH);
-    *out_addr = GetPixelAddressPSMCT32(tex0->CBP, tex0->TBW, 0, 0);
-    *out_size = width * height;
+    if (!MikuPan_GetRawTextureRegion(tex0, out_addr, out_size))
+    {
+        *out_addr = 0;
+        *out_size = 0;
+    }
 }
 
 void MikuPan_GsStore(sceGsStoreImage *sp, unsigned char *out)

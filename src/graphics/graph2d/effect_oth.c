@@ -157,6 +157,85 @@ static void EffectWriteWaterVertex(
     dst[11] = 1.0f;
 }
 
+static void EffectWriteTexturedVertex(
+    float *dst,
+    float u,
+    float v,
+    float r,
+    float g,
+    float b,
+    float a,
+    const sceVu0FVECTOR pos)
+{
+    dst[0] = u;
+    dst[1] = v;
+    dst[2] = 0.0f;
+    dst[3] = 0.0f;
+    dst[4] = r;
+    dst[5] = g;
+    dst[6] = b;
+    dst[7] = a;
+    dst[8] = pos[0];
+    dst[9] = pos[1];
+    dst[10] = pos[2];
+    dst[11] = 1.0f;
+}
+
+static void EffectWriteUntexturedVertex(
+    float *dst,
+    float r,
+    float g,
+    float b,
+    float a,
+    const sceVu0FVECTOR pos)
+{
+    dst[0] = r;
+    dst[1] = g;
+    dst[2] = b;
+    dst[3] = a;
+    dst[4] = pos[0];
+    dst[5] = pos[1];
+    dst[6] = pos[2];
+    dst[7] = 1.0f;
+}
+
+static void EffectWriteScreenTexturedVertex(
+    float *dst,
+    u_int u,
+    u_int v,
+    float tex_w,
+    float tex_h,
+    int gs_sub_x,
+    int gs_sub_y,
+    float z,
+    u_char r,
+    u_char g,
+    u_char b,
+    int a)
+{
+    float ndc[2];
+
+    MikuPan_ConvertPs2GSSubPixelToNDC(
+        ndc,
+        (float)MikuPan_GetWindowWidth(),
+        (float)MikuPan_GetWindowHeight(),
+        gs_sub_x,
+        gs_sub_y);
+
+    dst[0] = ((float)u / 16.0f) / tex_w;
+    dst[1] = ((float)v / 16.0f) / tex_h;
+    dst[2] = 0.0f;
+    dst[3] = 0.0f;
+    dst[4] = MikuPan_ConvertScaleColor(r);
+    dst[5] = MikuPan_ConvertScaleColor(g);
+    dst[6] = MikuPan_ConvertScaleColor(b);
+    dst[7] = MikuPan_ConvertScaleColor(EffectClampColor(a));
+    dst[8] = ndc[0];
+    dst[9] = ndc[1];
+    dst[10] = z;
+    dst[11] = 1.0f;
+}
+
 static void EffectWriteDistortionTexturedVertex(
     float *dst,
     float window_w,
@@ -2821,11 +2900,13 @@ int SetAmuletFire()
     sceVu0FMATRIX world_screen;
     sceVu0FMATRIX view_screen;
     sceVu0FMATRIX local_screen;
+    sceVu0FMATRIX local_clip;
     sceVu0FMATRIX work;
     sceVu0FVECTOR rot;
     sceVu0FVECTOR bpos;
     sceVu0FVECTOR obj_pos;
     sceVu0FVECTOR fire_pos;
+    sceVu0FVECTOR gl_seal[17][2];
     U32DATA ts[17][2];
     U32DATA tt[17][2];
     U32DATA tq[17][2];
@@ -2890,11 +2971,14 @@ int SetAmuletFire()
     sceVu0RotMatrixY(local_world, local_world, rot[1]);
     sceVu0TransMatrix(local_world, local_world, obj_pos);
     sceVu0MulMatrix(local_screen, SgWSMtx, local_world);
+    sceVu0MulMatrix(local_clip, *(sceVu0FMATRIX*)MikuPan_GetWorldClipView(), local_world);
 
     for (i = 0, w = 0; i < 17; i++)
     {
         sceVu0RotTransPers(ivec[i][0], local_screen, seal[i][0], 1);
         sceVu0RotTransPers(ivec[i][1], local_screen, seal[i][1], 1);
+        sceVu0RotTransPersF(gl_seal[i][0], local_clip, seal[i][0], 0);
+        sceVu0RotTransPersF(gl_seal[i][1], local_clip, seal[i][1], 0);
 
         if (0x5000 < ivec[i][0][0] - 0x5800U)
         {
@@ -3008,6 +3092,39 @@ int SetAmuletFire()
         pbuf[ndpkt].ui32[1] = ivec[i][1][1];
         pbuf[ndpkt].ui32[2] = ivec[i][1][2] * 16;
         pbuf[ndpkt++].ui32[3] = (i > 0) ? 0 : 0x8000;
+    }
+
+    {
+        float render_buffer[16 * 6][12];
+        int out = 0;
+        float cr = MikuPan_ConvertScaleColor(0x40);
+        float cg = MikuPan_ConvertScaleColor(0x40);
+        float cb = MikuPan_ConvertScaleColor(0x40);
+        float u0 = 0.02f * 94.0f / 128.0f;
+        float u1 = 0.98f * 94.0f / 128.0f;
+
+        for (i = 0; i < 16; i++)
+        {
+            float v0 = ((i * 0.96f) / fdiv) + 0.02f;
+            float v1 = (((i + 1) * 0.96f) / fdiv) + 0.02f;
+            float a0 = MikuPan_ConvertScaleColor(alp[i]);
+            float a1 = MikuPan_ConvertScaleColor(alp[i + 1]);
+
+            EffectWriteTexturedVertex(&render_buffer[out++][0], u0, v0, cr, cg, cb, a0, gl_seal[i][0]);
+            EffectWriteTexturedVertex(&render_buffer[out++][0], u1, v0, cr, cg, cb, a0, gl_seal[i][1]);
+            EffectWriteTexturedVertex(&render_buffer[out++][0], u0, v1, cr, cg, cb, a1, gl_seal[i + 1][0]);
+
+            EffectWriteTexturedVertex(&render_buffer[out++][0], u1, v0, cr, cg, cb, a0, gl_seal[i][1]);
+            EffectWriteTexturedVertex(&render_buffer[out++][0], u1, v1, cr, cg, cb, a1, gl_seal[i + 1][1]);
+            EffectWriteTexturedVertex(&render_buffer[out++][0], u0, v1, cr, cg, cb, a1, gl_seal[i + 1][0]);
+        }
+
+        MikuPan_RenderTexturedTriangles3DWithState(
+            (sceGsTex0 *)&effdat[monochrome_mode + 28].tex0,
+            &render_buffer[0][0],
+            out,
+            1,
+            0);
     }
 
     pbuf[c].ui32[0] = ndpkt + DMAend - c - 1;
@@ -3551,7 +3668,9 @@ void SetSunshine(EFFECT_CONT *ec)
     float add;
     sceVu0FMATRIX wlm = {0};
     sceVu0FMATRIX slm = {0};
+    sceVu0FMATRIX gl_slm = {0};
     sceVu0FVECTOR wpos = {0};
+    sceVu0FVECTOR gl_ray[6][8];
     sceVu0FVECTOR base_pos = {22875.0f, -457.0f, 8676.0f, 1.0f};
     sceVu0FVECTOR mpos[6] = {
         {0.0f, -120.0f, -92.0f, 1.0f},
@@ -3660,8 +3779,10 @@ void SetSunshine(EFFECT_CONT *ec)
     sceVu0RotMatrixY(wlm, wlm, rot_y);
     sceVu0TransMatrix(wlm, wlm, base_pos);
     sceVu0MulMatrix(slm, SgWSMtx, wlm);
+    sceVu0MulMatrix(gl_slm, *(sceVu0FMATRIX*)MikuPan_GetWorldClipView(), wlm);
 
     sceVu0RotTransPers(eff_ray[0].ipos[0], slm, eff_ray[0].fpos[0], 0);
+    sceVu0RotTransPersF(gl_ray[0][0], gl_slm, eff_ray[0].fpos[0], 0);
 
     n = 0;
 
@@ -3692,6 +3813,7 @@ void SetSunshine(EFFECT_CONT *ec)
         for (j = 0; j <= num; j++)
         {
             sceVu0RotTransPers(eff_ray[i].ipos[j], slm, eff_ray[i].fpos[j], 1);
+            sceVu0RotTransPersF(gl_ray[i][j], gl_slm, eff_ray[i].fpos[j], 0);
 
             eff_ray[i].tq[j].fl32 = 1.0f / (eff_ray[i].ipos[j][3] == 0 ? 1.0f : (float)eff_ray[i].ipos[j][3]);
             eff_ray[i].ts[j].fl32 = eff_ray[i].ts[j].fl32 * eff_ray[i].tq[j].fl32;
@@ -3812,6 +3934,73 @@ void SetSunshine(EFFECT_CONT *ec)
             pbuf[ndpkt].ui32[1] = eff_ray[i+1].ipos[j][1];
             pbuf[ndpkt].ui32[2] = eff_ray[i+1].ipos[j][2] * 16;
             pbuf[ndpkt++].ui32[3] = k > 2 ? 0 : 0x8000;
+        }
+    }
+
+    {
+        float render_buffer[4 * 7 * 6][12];
+        int out = 0;
+        float cr = MikuPan_ConvertScaleColor(mr);
+        float cg = MikuPan_ConvertScaleColor(mg);
+        float cb = MikuPan_ConvertScaleColor(mb);
+
+        for (i = 1; i < 5; i++)
+        {
+            for (j = 0; j < num; j++)
+            {
+                int a = eff_ray[i].clip[j] && eff_ray[i + 1].clip[j] && eff_ray[i].clip[j + 1];
+                int b = eff_ray[i + 1].clip[j] && eff_ray[i].clip[j + 1] && eff_ray[i + 1].clip[j + 1];
+
+                if (a)
+                {
+                    float q0 = eff_ray[i].tq[j].fl32;
+                    float q1 = eff_ray[i + 1].tq[j].fl32;
+                    float q2 = eff_ray[i].tq[j + 1].fl32;
+
+                    EffectWriteTexturedVertex(&render_buffer[out++][0],
+                        q0 != 0.0f ? eff_ray[i].ts[j].fl32 / q0 : eff_ray[i].ts[j].fl32,
+                        q0 != 0.0f ? eff_ray[i].tt[j].fl32 / q0 : eff_ray[i].tt[j].fl32,
+                        cr, cg, cb, MikuPan_ConvertScaleColor(eff_ray[i].alp[j]), gl_ray[i][j]);
+                    EffectWriteTexturedVertex(&render_buffer[out++][0],
+                        q1 != 0.0f ? eff_ray[i + 1].ts[j].fl32 / q1 : eff_ray[i + 1].ts[j].fl32,
+                        q1 != 0.0f ? eff_ray[i + 1].tt[j].fl32 / q1 : eff_ray[i + 1].tt[j].fl32,
+                        cr, cg, cb, MikuPan_ConvertScaleColor(eff_ray[i + 1].alp[j]), gl_ray[i + 1][j]);
+                    EffectWriteTexturedVertex(&render_buffer[out++][0],
+                        q2 != 0.0f ? eff_ray[i].ts[j + 1].fl32 / q2 : eff_ray[i].ts[j + 1].fl32,
+                        q2 != 0.0f ? eff_ray[i].tt[j + 1].fl32 / q2 : eff_ray[i].tt[j + 1].fl32,
+                        cr, cg, cb, MikuPan_ConvertScaleColor(eff_ray[i].alp[j + 1]), gl_ray[i][j + 1]);
+                }
+
+                if (b)
+                {
+                    float q0 = eff_ray[i + 1].tq[j].fl32;
+                    float q1 = eff_ray[i + 1].tq[j + 1].fl32;
+                    float q2 = eff_ray[i].tq[j + 1].fl32;
+
+                    EffectWriteTexturedVertex(&render_buffer[out++][0],
+                        q0 != 0.0f ? eff_ray[i + 1].ts[j].fl32 / q0 : eff_ray[i + 1].ts[j].fl32,
+                        q0 != 0.0f ? eff_ray[i + 1].tt[j].fl32 / q0 : eff_ray[i + 1].tt[j].fl32,
+                        cr, cg, cb, MikuPan_ConvertScaleColor(eff_ray[i + 1].alp[j]), gl_ray[i + 1][j]);
+                    EffectWriteTexturedVertex(&render_buffer[out++][0],
+                        q1 != 0.0f ? eff_ray[i + 1].ts[j + 1].fl32 / q1 : eff_ray[i + 1].ts[j + 1].fl32,
+                        q1 != 0.0f ? eff_ray[i + 1].tt[j + 1].fl32 / q1 : eff_ray[i + 1].tt[j + 1].fl32,
+                        cr, cg, cb, MikuPan_ConvertScaleColor(eff_ray[i + 1].alp[j + 1]), gl_ray[i + 1][j + 1]);
+                    EffectWriteTexturedVertex(&render_buffer[out++][0],
+                        q2 != 0.0f ? eff_ray[i].ts[j + 1].fl32 / q2 : eff_ray[i].ts[j + 1].fl32,
+                        q2 != 0.0f ? eff_ray[i].tt[j + 1].fl32 / q2 : eff_ray[i].tt[j + 1].fl32,
+                        cr, cg, cb, MikuPan_ConvertScaleColor(eff_ray[i].alp[j + 1]), gl_ray[i][j + 1]);
+                }
+            }
+        }
+
+        if (out > 0)
+        {
+            MikuPan_RenderTexturedTriangles3DWithState(
+                (sceGsTex0 *)&effdat[monochrome_mode + 30].tex0,
+                &render_buffer[0][0],
+                out,
+                0,
+                1);
         }
     }
 
@@ -6500,10 +6689,12 @@ void SetHaze_Pond()
     float ll;
     sceVu0IVECTOR ivec;
     sceVu0FVECTOR cpos;
+    sceVu0FVECTOR gl_cpos;
     sceVu0FVECTOR rot;
     sceVu0FVECTOR rw1;
     sceVu0FVECTOR rw2;
     HAZE_WORK hw[10];
+    float gl_z[10];
     static HAZE_NUMS hn[10];
     long v2;
 
@@ -6611,6 +6802,8 @@ void SetHaze_Pond()
         cpos[3] = 1.0f;
 
         sceVu0RotTransPers(ivec, SgWSMtx, cpos, 0);
+        sceVu0RotTransPersF(gl_cpos, *(sceVu0FMATRIX*)MikuPan_GetWorldClipView(), cpos, 0);
+        gl_z[i] = gl_cpos[2];
         GetTrgtRot(camera.p, camera.i, rot, 2);
 
         wline = (rot[1] * 128.0f) / PI;
@@ -6795,6 +6988,50 @@ void SetHaze_Pond()
         pbuf[ndpkt++].ui32[3] = 0;
     }
 
+    {
+        int haze_tex = monochrome_mode + 10;
+        float tex_w = EffectTextureWidth(haze_tex);
+        float tex_h = EffectTextureHeight(haze_tex);
+        float render_buffer[10 * 6][12];
+        int out = 0;
+
+        for (i = 0; i < 10; i++)
+        {
+            EffectWriteScreenTexturedVertex(&render_buffer[out++][0],
+                hw[i].u1, hw[i].v1, tex_w, tex_h,
+                hw[i].x1, hw[i].y1, gl_z[i],
+                0x44, 0x44, 0x44, (int)(hw[i].alp * lft));
+            EffectWriteScreenTexturedVertex(&render_buffer[out++][0],
+                hw[i].u1, hw[i].v2, tex_w, tex_h,
+                hw[i].x1, hw[i].y2, gl_z[i],
+                0x44, 0x44, 0x44, (int)(hw[i].alp * lft));
+            EffectWriteScreenTexturedVertex(&render_buffer[out++][0],
+                hw[i].u2, hw[i].v1, tex_w, tex_h,
+                hw[i].x2, hw[i].y1, gl_z[i],
+                0x44, 0x44, 0x44, (int)(hw[i].alp * rht));
+
+            EffectWriteScreenTexturedVertex(&render_buffer[out++][0],
+                hw[i].u1, hw[i].v2, tex_w, tex_h,
+                hw[i].x1, hw[i].y2, gl_z[i],
+                0x44, 0x44, 0x44, (int)(hw[i].alp * lft));
+            EffectWriteScreenTexturedVertex(&render_buffer[out++][0],
+                hw[i].u2, hw[i].v2, tex_w, tex_h,
+                hw[i].x2, hw[i].y2, gl_z[i],
+                0x44, 0x44, 0x44, (int)(hw[i].alp * rht));
+            EffectWriteScreenTexturedVertex(&render_buffer[out++][0],
+                hw[i].u2, hw[i].v1, tex_w, tex_h,
+                hw[i].x2, hw[i].y1, gl_z[i],
+                0x44, 0x44, 0x44, (int)(hw[i].alp * rht));
+        }
+
+        MikuPan_RenderTexturedTriangles3DWithState(
+            (sceGsTex0 *)&effdat[haze_tex].tex0,
+            &render_buffer[0][0],
+            out,
+            0,
+            0);
+    }
+
     pbuf[c].ui32[0] = ndpkt + DMAend - c - 1;
 
     if (init_pond != 0)
@@ -6824,10 +7061,12 @@ void DrawNewPerticleSub(int num, sceVu0FVECTOR *pos, u_char r1, u_char g1, u_cha
     int cnt;
     int clip[192];
     sceVu0IVECTOR ivec[192];
+    sceVu0FVECTOR fvec[192];
     u_long xyzf[192];
     u_long rgbaq1;
     u_long rgbaq2;
     u_long reg;
+    int render_num;
 
     clpx2 = 0xff80;
     clpy2 = 0xff80;
@@ -6856,7 +7095,13 @@ void DrawNewPerticleSub(int num, sceVu0FVECTOR *pos, u_char r1, u_char g1, u_cha
 
     rgbaq2 = SCE_GS_SET_RGBAQ(rr2, gg2, bb2, 0, 0);
 
+    render_num = num > 64 ? 64 : num;
+
     sceVu0RotTransPersN(ivec, SgWSMtx, pos, num * 3, 1);
+    if (render_num > 0)
+    {
+        sceVu0RotTransPersNF(fvec, *(sceVu0FMATRIX*)MikuPan_GetWorldClipView(), pos, render_num * 3, 1);
+    }
 
     for (i = 0; i < num * 3; i++)
     {
@@ -6997,6 +7242,105 @@ void DrawNewPerticleSub(int num, sceVu0FVECTOR *pos, u_char r1, u_char g1, u_cha
         ndpkt--;
     }
 
+    if (render_num > 1)
+    {
+        float render_buffer[64 * 2 * 6][8];
+        int out = 0;
+
+        for (j = 0; j < 2; j++)
+        {
+            for (i = 0; i < render_num - 1; i++)
+            {
+                int k0 = i * 3 + j;
+                int k1 = k0 + 1;
+                int k2 = (i + 1) * 3 + j;
+                int k3 = k2 + 1;
+                int alp0 = (((num - i) - 1) * a) / num;
+                int alp1 = (((num - (i + 1)) - 1) * a) / num;
+                float r0;
+                float g0;
+                float b0;
+                float a0;
+                float r1f;
+                float g1f;
+                float b1f;
+                float a1f;
+                float r2f;
+                float g2f;
+                float b2f;
+                float a2f;
+                float r3f;
+                float g3f;
+                float b3f;
+                float a3f;
+
+                if (plyr_wrk.mode != 1)
+                {
+                    alp0 = (i * alp0) / num;
+                    alp1 = ((i + 1) * alp1) / num;
+                }
+
+                if (j == 0)
+                {
+                    r0 = MikuPan_ConvertScaleColor(rr2);
+                    g0 = MikuPan_ConvertScaleColor(gg2);
+                    b0 = MikuPan_ConvertScaleColor(bb2);
+                    a0 = 0.0f;
+                    r1f = MikuPan_ConvertScaleColor(rr1);
+                    g1f = MikuPan_ConvertScaleColor(gg1);
+                    b1f = MikuPan_ConvertScaleColor(bb1);
+                    a1f = MikuPan_ConvertScaleColor(EffectClampColor(alp0));
+                    r2f = r0;
+                    g2f = g0;
+                    b2f = b0;
+                    a2f = 0.0f;
+                    r3f = r1f;
+                    g3f = g1f;
+                    b3f = b1f;
+                    a3f = MikuPan_ConvertScaleColor(EffectClampColor(alp1));
+                }
+                else
+                {
+                    r0 = MikuPan_ConvertScaleColor(rr1);
+                    g0 = MikuPan_ConvertScaleColor(gg1);
+                    b0 = MikuPan_ConvertScaleColor(bb1);
+                    a0 = MikuPan_ConvertScaleColor(EffectClampColor(alp0));
+                    r1f = MikuPan_ConvertScaleColor(rr2);
+                    g1f = MikuPan_ConvertScaleColor(gg2);
+                    b1f = MikuPan_ConvertScaleColor(bb2);
+                    a1f = 0.0f;
+                    r2f = r0;
+                    g2f = g0;
+                    b2f = b0;
+                    a2f = MikuPan_ConvertScaleColor(EffectClampColor(alp1));
+                    r3f = r1f;
+                    g3f = g1f;
+                    b3f = b1f;
+                    a3f = 0.0f;
+                }
+
+                if (clip[k0] && clip[k1] && clip[k2])
+                {
+                    EffectWriteUntexturedVertex(&render_buffer[out++][0], r0, g0, b0, a0, fvec[k0]);
+                    EffectWriteUntexturedVertex(&render_buffer[out++][0], r1f, g1f, b1f, a1f, fvec[k1]);
+                    EffectWriteUntexturedVertex(&render_buffer[out++][0], r2f, g2f, b2f, a2f, fvec[k2]);
+                }
+
+                if (clip[k1] && clip[k3] && clip[k2])
+                {
+                    EffectWriteUntexturedVertex(&render_buffer[out++][0], r1f, g1f, b1f, a1f, fvec[k1]);
+                    EffectWriteUntexturedVertex(&render_buffer[out++][0], r3f, g3f, b3f, a3f, fvec[k3]);
+                    EffectWriteUntexturedVertex(&render_buffer[out++][0], r2f, g2f, b2f, a2f, fvec[k2]);
+                }
+            }
+        }
+
+        if (out > 0)
+        {
+            MikuPan_RenderUntexturedTriangles3D(&render_buffer[0][0], out, 0, 0);
+        }
+    }
+
     pbuf[n].ui32[0] = ndpkt + DMAend - n - 1;
 }
 
@@ -7021,7 +7365,9 @@ void SetEneFace(EFFECT_CONT *ec)
     float stq[2] = {0.01f, 0.99f};
     sceVu0FMATRIX wlm;
     sceVu0FMATRIX slm;
+    sceVu0FMATRIX gl_slm;
     sceVu0IVECTOR ivec[16][4];
+    sceVu0FVECTOR gl_pos[16][4];
     sceVu0FVECTOR wpos;
     sceVu0FVECTOR ppos[4] = {
         {-256.0f, -217.0f, 0.0f, 1.0f},
@@ -7083,6 +7429,7 @@ void SetEneFace(EFFECT_CONT *ec)
     sceVu0RotMatrixY(wlm, wlm, rot_y);
     sceVu0TransMatrix(wlm, wlm, wpos);
     sceVu0MulMatrix(slm, SgWSMtx, wlm);
+    sceVu0MulMatrix(gl_slm, *(sceVu0FMATRIX*)MikuPan_GetWorldClipView(), wlm);
 
     tw = eneface[num + monochrome_mode].w;
     th = eneface[num + monochrome_mode].h;
@@ -7095,6 +7442,7 @@ void SetEneFace(EFFECT_CONT *ec)
         ppos[2][1] = ppos[3][1] = -((j * 0.2f / 16.0f + scl) * 175.0f);
 
         sceVu0RotTransPersN(ivec[j], slm, ppos, 4, 1);
+        sceVu0RotTransPersNF(gl_pos[j], gl_slm, ppos, 4, 1);
 
 
         for (i = 0; i < 4; i++)
@@ -7176,6 +7524,43 @@ void SetEneFace(EFFECT_CONT *ec)
                 pbuf[ndpkt].ui32[2] = ivec[j][i][2] * 16;
                 pbuf[ndpkt++].ui32[3] = i > 1 ? 0 : 0x8000;
             }
+        }
+    }
+
+    {
+        static const int tri[6] = {0, 1, 2, 1, 3, 2};
+        float render_buffer[16 * 6][12];
+        int out = 0;
+        float cr = MikuPan_ConvertScaleColor(0x80);
+        float cg = MikuPan_ConvertScaleColor(0x80);
+        float cb = MikuPan_ConvertScaleColor(0x80);
+
+        for (j = 15; j >= 0; j--)
+        {
+            if (clip[j][0] + clip[j][1] + clip[j][2] + clip[j][3] == 0)
+            {
+                float ca = MikuPan_ConvertScaleColor(EffectClampColor(alp - (j * alp / 16)));
+
+                for (i = 0; i < 6; i++)
+                {
+                    int v = tri[i];
+                    float u = stq[v % 2] * (float)tw / 256.0f;
+                    float t = stq[v / 2] * (float)th / 256.0f;
+
+                    EffectWriteTexturedVertex(&render_buffer[out++][0],
+                        u, t, cr, cg, cb, ca, gl_pos[j][v]);
+                }
+            }
+        }
+
+        if (out > 0)
+        {
+            MikuPan_RenderTexturedTriangles3DWithState(
+                (sceGsTex0 *)&eneface[num + monochrome_mode].tex0,
+                &render_buffer[0][0],
+                out,
+                0,
+                0);
         }
     }
 
@@ -7312,9 +7697,12 @@ void SetFaceSpirit(EFFECT_CONT *ec)
     FACESPIRIT_ST *fs;
     sceVu0FMATRIX wlm;
     sceVu0FMATRIX slm;
+    sceVu0FMATRIX gl_slm;
     sceVu0IVECTOR ivclip;
     sceVu0IVECTOR ivec[24][4];
     sceVu0IVECTOR ivecb[4];
+    sceVu0FVECTOR gl_pos[24][4];
+    sceVu0FVECTOR gl_posb[4];
     sceVu0FVECTOR bpos;
     sceVu0FVECTOR wpos;
     sceVu0FVECTOR zero = {0.0f, 0.0f, 0.0f, 1.0f};
@@ -7450,7 +7838,9 @@ void SetFaceSpirit(EFFECT_CONT *ec)
         sceVu0RotMatrixY(wlm, wlm, rot_y);
         sceVu0TransMatrix(wlm, wlm, wpos);
         sceVu0MulMatrix(slm, SgWSMtx, wlm);
+        sceVu0MulMatrix(gl_slm, *(sceVu0FMATRIX*)MikuPan_GetWorldClipView(), wlm);
         sceVu0RotTransPersN(ivec[n], slm, ppos, 4, 0);
+        sceVu0RotTransPersNF(gl_pos[n], gl_slm, ppos, 4, 0);
 
         clip[n] = 0;
 
@@ -7488,7 +7878,9 @@ void SetFaceSpirit(EFFECT_CONT *ec)
     sceVu0RotMatrixY(wlm, wlm, rot_y);
     sceVu0TransMatrix(wlm, wlm, wpos);
     sceVu0MulMatrix(slm, SgWSMtx, wlm);
+    sceVu0MulMatrix(gl_slm, *(sceVu0FMATRIX*)MikuPan_GetWorldClipView(), wlm);
     sceVu0RotTransPersN(ivecb, slm, ppos, 4, 0);
+    sceVu0RotTransPersNF(gl_posb, gl_slm, ppos, 4, 0);
     sceVu0RotTransPers(ivclip, slm, zero, 0);
 
     bclip = 0;
@@ -7596,6 +7988,68 @@ void SetFaceSpirit(EFFECT_CONT *ec)
             pbuf[ndpkt].ui32[1] = ivecb[i][1];
             pbuf[ndpkt].ui32[2] = ivecb[i][2];
             pbuf[ndpkt++].ui32[3] = i > 1 ? 0 : 0x8000;
+        }
+    }
+
+    {
+        static const int tri[6] = {0, 1, 2, 1, 3, 2};
+        float render_buffer[(24 + 1) * 6][12];
+        int out = 0;
+        float tex_w = (float)tw;
+        float tex_h = (float)th;
+
+        for (j = num - 1; j >= 0; j--)
+        {
+            int fn = fs->tbl[j];
+            float fade = num != 0 ? (float)j / (float)num : 0.0f;
+
+            if (clip[fn] == 0)
+            {
+                sc = (float)(num - j) / (num + 1);
+
+                for (i = 0; i < 6; i++)
+                {
+                    int v = tri[i];
+                    float u = (float)((v & 1) != 0 ? tw - 8 : 8) / tex_w;
+                    float t = (float)((v / 2) != 0 ? th - 8 : 8) / tex_h;
+
+                    EffectWriteTexturedVertex(&render_buffer[out++][0],
+                        u, t,
+                        MikuPan_ConvertScaleColor(EffectClampColor((int)(mr * fade))),
+                        MikuPan_ConvertScaleColor(EffectClampColor((int)(mg * fade))),
+                        MikuPan_ConvertScaleColor(EffectClampColor((int)(mb * fade))),
+                        MikuPan_ConvertScaleColor(EffectClampColor((int)(sc * 32.0f * arate))),
+                        gl_pos[fn][v]);
+                }
+            }
+        }
+
+        if (bclip == 0)
+        {
+            for (i = 0; i < 6; i++)
+            {
+                int v = tri[i];
+                float u = (float)((v & 1) != 0 ? tw - 8 : 8) / tex_w;
+                float t = (float)((v / 2) != 0 ? th - 8 : 8) / tex_h;
+
+                EffectWriteTexturedVertex(&render_buffer[out++][0],
+                    u, t,
+                    MikuPan_ConvertScaleColor(EffectClampColor((int)mr)),
+                    MikuPan_ConvertScaleColor(EffectClampColor((int)mg)),
+                    MikuPan_ConvertScaleColor(EffectClampColor((int)mb)),
+                    MikuPan_ConvertScaleColor(EffectClampColor((int)(arate * 48.0f))),
+                    gl_posb[v]);
+            }
+        }
+
+        if (out > 0)
+        {
+            MikuPan_RenderTexturedTriangles3DWithState(
+                (sceGsTex0 *)&tx0,
+                &render_buffer[0][0],
+                out,
+                0,
+                1);
         }
     }
 

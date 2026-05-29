@@ -224,6 +224,8 @@ static void MikuPan_UiStoreRuntimeConfiguration(void)
     mikupan_configuration.renderer.brightness = brightness;
     mikupan_configuration.renderer.gamma = gamma_value;
     mikupan_configuration.crt = crt_settings;
+    mikupan_configuration.input.selected_gamepad_index =
+        MikuPan_ControllerGetPreferredGamepadIndex();
 }
 
 // -- FrameTimeGraph ----------------------------------------------------------
@@ -1341,6 +1343,10 @@ void MikuPan_InitUi(SDL_Window *window, SDL_GLContext renderer)
     crt_settings = mikupan_configuration.crt;
     MikuPan_ClampCrtSettings(&crt_settings);
     mikupan_configuration.crt = crt_settings;
+    MikuPan_ControllerSetPreferredGamepadIndex(
+        mikupan_configuration.input.selected_gamepad_index);
+    mikupan_configuration.input.selected_gamepad_index =
+        MikuPan_ControllerGetPreferredGamepadIndex();
 
     if (mesh_lighting_mode > 1 || mesh_lighting_mode < 0)
     {
@@ -1582,6 +1588,11 @@ void MikuPan_UiMenuBar(void)
         }
 
         igCheckbox("Textures", (bool *) &show_texture_list);
+        if (igButton("Clear Texture Cache", (ImVec2) {0.0f, 0.0f}))
+        {
+            MikuPan_RequestFlushTextureCache();
+        }
+
         igCheckbox("BoundingBox", (bool *) &show_bounding_boxes);
 
         if (igBeginMenu("Meshes", 1))
@@ -1592,11 +1603,6 @@ void MikuPan_UiMenuBar(void)
             igCheckbox("Mesh 0x10", (bool *) &show_mesh_0x10);
             igCheckbox("Mesh 0x2", (bool *) &show_mesh_0x2);
             igEndMenu();
-        }
-
-        if (igButton("Clear Texture Cache", (ImVec2) {0.0f, 0.0f}))
-        {
-            MikuPan_RequestFlushTextureCache();
         }
 
         int mesh_cache_on = MikuPan_MeshCache_IsEnabled();
@@ -1750,6 +1756,9 @@ void MikuPan_UiMenuBar(void)
 
     if (igBeginMenu("Input", 1))
     {
+        MikuPan_ControllerDrawDeviceSelectorUi();
+        igSeparator();
+
         igCheckbox("Controller / Joystick Mapping", (bool *)&show_controller_remap);
 
         if (igMenuItem_Bool("Reset Bindings to Defaults", NULL, false, true))

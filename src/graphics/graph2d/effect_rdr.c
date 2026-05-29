@@ -20,6 +20,7 @@
 #include "ingame/map/furn_spe/fsla_main.h"
 #include "ingame/map/furn_spe/furn_spe.h"
 #include "main/glob.h"
+#include "mikupan/mikupan_utils.h"
 #include "mikupan/rendering/mikupan_renderer.h"
 #include "os/eeiop/cdvd/eecdvd.h"
 #include "os/eeiop/eese.h"
@@ -64,6 +65,45 @@ static FURN_ACT_WRK *ef_rdfire3[6];
 static void *ef_smoke_addr[4];
 
 #define PI 3.1415927f
+
+static u_char EffectRdrClampColor(int value)
+{
+    if (value < 0)
+    {
+        return 0;
+    }
+
+    if (value > 0xff)
+    {
+        return 0xff;
+    }
+
+    return (u_char)value;
+}
+
+static void EffectRdrWriteTexturedVertex(
+    float *dst,
+    float u,
+    float v,
+    float r,
+    float g,
+    float b,
+    float a,
+    const sceVu0FVECTOR pos)
+{
+    dst[0] = u;
+    dst[1] = v;
+    dst[2] = 0.0f;
+    dst[3] = 0.0f;
+    dst[4] = r;
+    dst[5] = g;
+    dst[6] = b;
+    dst[7] = a;
+    dst[8] = pos[0];
+    dst[9] = pos[1];
+    dst[10] = pos[2];
+    dst[11] = 1.0f;
+}
 
 void InitEffectRdr()
 {
@@ -564,6 +604,36 @@ void SubRDFire(EFFECT_CONT *ec)
             pbuf[ndpkt].ui32[1] = ivec[i*2+1][1];
             pbuf[ndpkt].ui32[2] = ivec[i*2+1][2];
             pbuf[ndpkt++].ui32[3] = 0;
+        }
+
+        {
+            float render_buffer[23 * 6][12];
+            int out = 0;
+            float cr = MikuPan_ConvertScaleColor(mr);
+            float cg = MikuPan_ConvertScaleColor(mg);
+            float cb = MikuPan_ConvertScaleColor(mb);
+            float ca = MikuPan_ConvertScaleColor(EffectRdrClampColor((int)(arate * 96.0f)));
+            float inv_th = th != 0 ? 1.0f / (float)th : 0.0f;
+
+            for (i = 0; i < 23; i++)
+            {
+                int l0 = i * 2;
+                int r0 = l0 + 1;
+                int l1 = l0 + 2;
+                int r1 = l0 + 3;
+                float v0 = (float)vv[i] * inv_th;
+                float v1 = (float)vv[i + 1] * inv_th;
+
+                EffectRdrWriteTexturedVertex(&render_buffer[out++][0], 0.0f, v0, cr, cg, cb, ca, fvec[l0]);
+                EffectRdrWriteTexturedVertex(&render_buffer[out++][0], 1.0f, v0, cr, cg, cb, ca, fvec[r0]);
+                EffectRdrWriteTexturedVertex(&render_buffer[out++][0], 0.0f, v1, cr, cg, cb, ca, fvec[l1]);
+
+                EffectRdrWriteTexturedVertex(&render_buffer[out++][0], 1.0f, v0, cr, cg, cb, ca, fvec[r0]);
+                EffectRdrWriteTexturedVertex(&render_buffer[out++][0], 1.0f, v1, cr, cg, cb, ca, fvec[r1]);
+                EffectRdrWriteTexturedVertex(&render_buffer[out++][0], 0.0f, v1, cr, cg, cb, ca, fvec[l1]);
+            }
+
+            MikuPan_RenderTexturedTriangles3DWithState((sceGsTex0 *)&tx0, &render_buffer[0][0], out, 0, 1);
         }
 
         pbuf[bak].ui32[0] = ndpkt + DMAend - bak - 1;

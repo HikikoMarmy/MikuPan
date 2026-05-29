@@ -106,9 +106,15 @@ typedef struct
 
 typedef struct
 {
+    int selected_gamepad_index;
+} MikuPan_ConfigInput;
+
+typedef struct
+{
     MikuPan_ConfigRenderer renderer;
     MikuPan_ConfigCrt crt;
     int selected_theme;
+    MikuPan_ConfigInput input;
 } MikuPan_Config;
 
 enum MikuPan_PipelineType

@@ -91,6 +91,82 @@ typedef struct { // 0x10
 
 #define ANM2D_DAT_TABLE_P(table_p) ((ANM2D_DAT_TABLE *)table_p)
 #define ANM2D_WRK_TABLE_P(table_p) ((ANM2D_WRK_TABLE *)table_p)
+#define EFFECT_SUB2_MAX_GUS_VERTICES (600 * 6)
+
+static u_char EffectSub2ClampColor(int value)
+{
+    if (value < 0)
+    {
+        return 0;
+    }
+
+    if (value > 0xff)
+    {
+        return 0xff;
+    }
+
+    return (u_char)value;
+}
+
+static void EffectSub2WriteTexturedVertex(
+    float *dst,
+    float u,
+    float v,
+    float r,
+    float g,
+    float b,
+    float a,
+    const sceVu0FVECTOR pos)
+{
+    dst[0] = u;
+    dst[1] = v;
+    dst[2] = 0.0f;
+    dst[3] = 0.0f;
+    dst[4] = r;
+    dst[5] = g;
+    dst[6] = b;
+    dst[7] = a;
+    dst[8] = pos[0];
+    dst[9] = pos[1];
+    dst[10] = pos[2];
+    dst[11] = 1.0f;
+}
+
+static int EffectSub2AppendTexturedQuad(
+    float *buffer,
+    int vertex_count,
+    int max_vertices,
+    const sceVu0FVECTOR pos[4],
+    float r,
+    float g,
+    float b,
+    float a)
+{
+    static const int tri[6] = {0, 1, 2, 1, 3, 2};
+    int i;
+
+    if (vertex_count + 6 > max_vertices)
+    {
+        return vertex_count;
+    }
+
+    for (i = 0; i < 6; i++)
+    {
+        int v = tri[i];
+        EffectSub2WriteTexturedVertex(
+            buffer + (vertex_count * 12),
+            (v & 1) ? 1.0f : 0.0f,
+            (v / 2) ? 1.0f : 0.0f,
+            r,
+            g,
+            b,
+            a,
+            pos[v]);
+        vertex_count++;
+    }
+
+    return vertex_count;
+}
 
 #include "data/fall_table.h" /* data 270e30 */ // FALL_TABLE fall_table[/*4*/];
 /* sdata 3563e8 */ short int fallen_effect_switch = 0;
@@ -1026,8 +1102,10 @@ void GusObjDraw(/* a0 4 */ int leaf_num, /* a1 5 */ int area, /* a2 6 */ int fal
 	/* s3 19 */ int bak;
 	/* 0x0(sp) */ sceVu0FMATRIX wlm;
 	/* 0x40(sp) */ sceVu0FMATRIX slm;
+	sceVu0FMATRIX gl_slm;
 	/* 0x80(sp) */ sceVu0FMATRIX wlm2;
 	/* 0xc0(sp) */ sceVu0IVECTOR ivec[4];
+	sceVu0FVECTOR gl_pos[4];
 	/* 0x100(sp) */ sceVu0FVECTOR wpos;
 	/* 0x110(sp) */ sceVu0FVECTOR ppos[4] = {
         { -200.0f, +200.0f, 0.0f, 1.0f },
@@ -1039,6 +1117,12 @@ void GusObjDraw(/* a0 4 */ int leaf_num, /* a1 5 */ int area, /* a2 6 */ int fal
 	/* 0x158(sp) */ u_char mg;
 	/* s6 22 */ u_char mb;
 	/* s2 18 */ u_long tex0;
+	static float render_buffer[EFFECT_SUB2_MAX_GUS_VERTICES][12];
+	int render_vertices;
+	int draw_num;
+	float cr;
+	float cg;
+	float cb;
     
     i = 8;
     
@@ -1057,6 +1141,22 @@ void GusObjDraw(/* a0 4 */ int leaf_num, /* a1 5 */ int area, /* a2 6 */ int fal
         mr = r_temp;
         mg = g_temp;
         mb = b_temp;
+    }
+
+    cr = MikuPan_ConvertScaleColor(mr);
+    cg = MikuPan_ConvertScaleColor(mg);
+    cb = MikuPan_ConvertScaleColor(mb);
+    render_vertices = 0;
+    draw_num = gus_wrk.fnum_keep;
+
+    if (draw_num > leaf_num)
+    {
+        draw_num = leaf_num;
+    }
+
+    if (draw_num > 600)
+    {
+        draw_num = 600;
     }
     
     Reserve2DPacket(0x1000);
@@ -1092,13 +1192,15 @@ void GusObjDraw(/* a0 4 */ int leaf_num, /* a1 5 */ int area, /* a2 6 */ int fal
     sceVu0RotMatrixY(wlm, wlm, rots[0][1]);
     sceVu0TransMatrix(wlm, wlm, gus_wrk.mpos_keep);
 
-    for (k = 0; k < gus_wrk.fnum_keep; k++)
+    for (k = 0; k < draw_num; k++)
     {
         if (k <= gus_wrk.fall_count)
         {
             sceVu0TransMatrix(wlm2, wlm, leaves[k]);
             sceVu0MulMatrix(slm, SgWSMtx, wlm2);
             sceVu0RotTransPersN(ivec, slm, ppos, 4, 0);
+            sceVu0MulMatrix(gl_slm, *(sceVu0FMATRIX*)MikuPan_GetWorldClipView(), wlm2);
+            sceVu0RotTransPersNF(gl_pos, gl_slm, ppos, 4, 0);
             
             w = 0;
                     
@@ -1148,10 +1250,33 @@ void GusObjDraw(/* a0 4 */ int leaf_num, /* a1 5 */ int area, /* a2 6 */ int fal
                     pbuf[ndpkt++].ui32[3] = (i <= 1) ? 0x8000 : 0;
                 }
             }
+
+            if (!MikuPan_IsVisibleOnScreen(gl_pos))
+            {
+                render_vertices = EffectSub2AppendTexturedQuad(
+                    &render_buffer[0][0],
+                    render_vertices,
+                    EFFECT_SUB2_MAX_GUS_VERTICES,
+                    gl_pos,
+                    cr,
+                    cg,
+                    cb,
+                    MikuPan_ConvertScaleColor(EffectSub2ClampColor(gus_wrk.rgba[k][3] >> 3)));
+            }
         }
     }
     
     pbuf[bak].ui32[0] = ndpkt + DMAend - bak - 1;
+
+    if (render_vertices > 0)
+    {
+        MikuPan_RenderTexturedTriangles3DWithState(
+            (sceGsTex0 *)&tex0,
+            &render_buffer[0][0],
+            render_vertices,
+            0,
+            0);
+    }
 }
 
 void CallHoleGusEffect(/* a0 4 */ sceVu0FVECTOR mpos)
@@ -1367,8 +1492,10 @@ void HoleGusDraw(/* s5 21 */ int leaf_no)
 	/* t6 14 */ int bak;
 	/* 0x0(sp) */ sceVu0FMATRIX wlm;
 	/* 0x40(sp) */ sceVu0FMATRIX slm;
+	sceVu0FMATRIX gl_slm;
 	/* 0x80(sp) */ sceVu0FMATRIX wlm2;
 	/* 0xc0(sp) */ sceVu0IVECTOR ivec[4];
+	sceVu0FVECTOR gl_pos[4];
 	/* 0x150(sp) */ float tmp_x = 0.0f;
 	/* 0x154(sp) */ float tmp_y = 0.0f;
 	/* 0x100(sp) */ sceVu0FVECTOR wpos;
@@ -1379,6 +1506,8 @@ void HoleGusDraw(/* s5 21 */ int leaf_no)
         { +30.0f, -30.0f, 0.0f, 1.0f },
     };
 	/* s2 18 */ u_long tex0;
+	float render_buffer[6][12];
+	int gl_visible;
     
     Get2PosRot(camera.p, camera.i, &tmp_x, &tmp_y);
     sceVu0UnitMatrix(wlm);
@@ -1386,8 +1515,11 @@ void HoleGusDraw(/* s5 21 */ int leaf_no)
     sceVu0RotMatrixY(wlm, wlm, tmp_y);
     sceVu0TransMatrix(wlm, wlm, hole_gus[leaf_no]);
     sceVu0MulMatrix(slm, SgWSMtx, wlm);
+    sceVu0MulMatrix(gl_slm, *(sceVu0FMATRIX*)MikuPan_GetWorldClipView(), wlm);
     
     sceVu0RotTransPersN(ivec, slm, ppos, 4, 0);
+    sceVu0RotTransPersNF(gl_pos, gl_slm, ppos, 4, 0);
+    gl_visible = !MikuPan_IsVisibleOnScreen(gl_pos);
 
     w = 0;
     
@@ -1409,7 +1541,7 @@ void HoleGusDraw(/* s5 21 */ int leaf_no)
         }
     }
     
-    if (!w)
+    if (!w || gl_visible)
     {
         i = 8;
         
@@ -1424,6 +1556,10 @@ void HoleGusDraw(/* s5 21 */ int leaf_no)
                 // debug code?
             }
         }
+    }
+
+    if (!w)
+    {
         
         Reserve2DPacket(0x1000);
         
@@ -1477,6 +1613,26 @@ void HoleGusDraw(/* s5 21 */ int leaf_no)
         }
         
         pbuf[bak].ui32[0] = ndpkt + DMAend - bak - 1;
+    }
+
+    if (gl_visible)
+    {
+        EffectSub2AppendTexturedQuad(
+            &render_buffer[0][0],
+            0,
+            6,
+            gl_pos,
+            MikuPan_ConvertScaleColor(101),
+            MikuPan_ConvertScaleColor(93),
+            MikuPan_ConvertScaleColor(94),
+            MikuPan_ConvertScaleColor(EffectSub2ClampColor(hole_wrk.rgba[leaf_no][3] / 8)));
+
+        MikuPan_RenderTexturedTriangles3DWithState(
+            (sceGsTex0 *)&tex0,
+            &render_buffer[0][0],
+            6,
+            0,
+            0);
     }
 }
 
@@ -1991,8 +2147,10 @@ void LineGusDraw(/* s6 22 */ int leaf_no, /* s5 21 */ int line_num)
 	/* t6 14 */ int bak;
 	/* 0x0(sp) */ sceVu0FMATRIX wlm;
 	/* 0x40(sp) */ sceVu0FMATRIX slm;
+	sceVu0FMATRIX gl_slm;
 	/* 0x80(sp) */ sceVu0FMATRIX wlm2;
 	/* 0xc0(sp) */ sceVu0IVECTOR ivec[4];
+	sceVu0FVECTOR gl_pos[4];
 	/* 0x150(sp) */ float tmp_x = 0.0f;
 	/* 0x154(sp) */ float tmp_y = 0.0f;
 	/* 0x100(sp) */ sceVu0FVECTOR wpos;
@@ -2003,6 +2161,8 @@ void LineGusDraw(/* s6 22 */ int leaf_no, /* s5 21 */ int line_num)
         { +30.0f, -30.0f, 0.0f, 1.0f },
     };
 	/* s2 18 */ u_long tex0;
+	float render_buffer[6][12];
+	int gl_visible;
     
     Get2PosRot(camera.p, camera.i, &tmp_x, &tmp_y);
     sceVu0UnitMatrix(wlm);
@@ -2010,8 +2170,11 @@ void LineGusDraw(/* s6 22 */ int leaf_no, /* s5 21 */ int line_num)
     sceVu0RotMatrixY(wlm, wlm, tmp_y);
     sceVu0TransMatrix(wlm, wlm, line_gus[line_num][leaf_no]);
     sceVu0MulMatrix(slm, SgWSMtx, wlm);
+    sceVu0MulMatrix(gl_slm, *(sceVu0FMATRIX*)MikuPan_GetWorldClipView(), wlm);
     
     sceVu0RotTransPersN(ivec, slm, ppos, 4, 0);
+    sceVu0RotTransPersNF(gl_pos, gl_slm, ppos, 4, 0);
+    gl_visible = !MikuPan_IsVisibleOnScreen(gl_pos);
 
     w = 0;
     
@@ -2033,7 +2196,7 @@ void LineGusDraw(/* s6 22 */ int leaf_no, /* s5 21 */ int line_num)
         }
     }
     
-    if (!w)
+    if (!w || gl_visible)
     {
         i = 8;
         
@@ -2048,6 +2211,10 @@ void LineGusDraw(/* s6 22 */ int leaf_no, /* s5 21 */ int line_num)
                 // debug code?
             }
         }
+    }
+
+    if (!w)
+    {
         
         Reserve2DPacket(0x1000);
         
@@ -2101,6 +2268,26 @@ void LineGusDraw(/* s6 22 */ int leaf_no, /* s5 21 */ int line_num)
         }
         
         pbuf[bak].ui32[0] = ndpkt + DMAend - bak - 1;
+    }
+
+    if (gl_visible)
+    {
+        EffectSub2AppendTexturedQuad(
+            &render_buffer[0][0],
+            0,
+            6,
+            gl_pos,
+            MikuPan_ConvertScaleColor(81),
+            MikuPan_ConvertScaleColor(73),
+            MikuPan_ConvertScaleColor(74),
+            MikuPan_ConvertScaleColor(EffectSub2ClampColor(line_wrk[line_num].rgba[leaf_no][3] / 8)));
+
+        MikuPan_RenderTexturedTriangles3DWithState(
+            (sceGsTex0 *)&tex0,
+            &render_buffer[0][0],
+            6,
+            0,
+            0);
     }
 }
 

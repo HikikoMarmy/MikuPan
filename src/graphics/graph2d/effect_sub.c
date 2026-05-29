@@ -48,6 +48,293 @@ static u_long128 *bufz;
 #define MIN(a,b) (((a)<(b))?(a):(b))
 #define MAX(a,b) (((a)>(b))?(a):(b))
 
+static u_char EffectSubClampColor(int value)
+{
+    if (value < 0)
+    {
+        return 0;
+    }
+
+    if (value > 0xff)
+    {
+        return 0xff;
+    }
+
+    return (u_char)value;
+}
+
+static void EffectSubWriteUntextured2DVertex(
+    float *dst,
+    float x,
+    float y,
+    float z,
+    int r,
+    int g,
+    int b,
+    int a)
+{
+    float ndc[2];
+
+    MikuPan_ConvertPs2HalfScreenCoordToNDCMaintainAspectRatio(
+        ndc,
+        (float)MikuPan_GetWindowWidth(),
+        (float)MikuPan_GetWindowHeight(),
+        x,
+        y);
+
+    dst[0] = MikuPan_ConvertScaleColor(EffectSubClampColor(r));
+    dst[1] = MikuPan_ConvertScaleColor(EffectSubClampColor(g));
+    dst[2] = MikuPan_ConvertScaleColor(EffectSubClampColor(b));
+    dst[3] = MikuPan_ConvertScaleColor(EffectSubClampColor(a));
+    dst[4] = ndc[0];
+    dst[5] = ndc[1];
+    dst[6] = z;
+    dst[7] = 1.0f;
+}
+
+static void EffectSubWriteUntexturedNDCVertex(
+    float *dst,
+    float x,
+    float y,
+    float z,
+    int r,
+    int g,
+    int b,
+    int a)
+{
+    dst[0] = MikuPan_ConvertScaleColor(EffectSubClampColor(r));
+    dst[1] = MikuPan_ConvertScaleColor(EffectSubClampColor(g));
+    dst[2] = MikuPan_ConvertScaleColor(EffectSubClampColor(b));
+    dst[3] = MikuPan_ConvertScaleColor(EffectSubClampColor(a));
+    dst[4] = x;
+    dst[5] = y;
+    dst[6] = z;
+    dst[7] = 1.0f;
+}
+
+static void EffectSubWriteTextured2DVertex(
+    float *dst,
+    float u,
+    float v,
+    float x,
+    float y,
+    float z,
+    int r,
+    int g,
+    int b,
+    int a)
+{
+    float ndc[2];
+
+    MikuPan_ConvertPs2HalfScreenCoordToNDCMaintainAspectRatio(
+        ndc,
+        (float)MikuPan_GetWindowWidth(),
+        (float)MikuPan_GetWindowHeight(),
+        x,
+        y);
+
+    dst[0] = u;
+    dst[1] = v;
+    dst[2] = 0.0f;
+    dst[3] = 0.0f;
+    dst[4] = MikuPan_ConvertScaleColor(EffectSubClampColor(r));
+    dst[5] = MikuPan_ConvertScaleColor(EffectSubClampColor(g));
+    dst[6] = MikuPan_ConvertScaleColor(EffectSubClampColor(b));
+    dst[7] = MikuPan_ConvertScaleColor(EffectSubClampColor(a));
+    dst[8] = ndc[0];
+    dst[9] = ndc[1];
+    dst[10] = z;
+    dst[11] = 1.0f;
+}
+
+static int EffectSubIsMainFramebufferAddress(int addr)
+{
+    return addr == 0 || addr == SCR_HEIGHT * (SCR_WIDTH / 64);
+}
+
+static int EffectSubIsLiveFramebufferTexture(const sceGsTex0 *tex)
+{
+    return tex != NULL &&
+        tex->PSM == SCE_GS_PSMCT32 &&
+        tex->TBW == SCR_WIDTH / 64 &&
+        tex->TW == 10 &&
+        tex->TH == 8 &&
+        EffectSubIsMainFramebufferAddress(tex->TBP0);
+}
+
+static int EffectSubReadMainFramebuffer(u_long128 *outbuf)
+{
+    if (outbuf == NULL)
+    {
+        return 0;
+    }
+
+    return MikuPan_ReadFramebufferRGBA8TopLeft(
+        SCR_WIDTH,
+        SCR_HEIGHT,
+        (unsigned char *)outbuf);
+}
+
+static int EffectSubUploadMainFramebufferToGs(int addr)
+{
+    static u_long128 framebuffer_copy[(SCR_WIDTH * SCR_HEIGHT * 4) / sizeof(u_long128)];
+    sceGsLoadImage gs_limage;
+
+    if (!EffectSubReadMainFramebuffer(framebuffer_copy))
+    {
+        return 0;
+    }
+
+    sceGsSetDefLoadImage(
+        &gs_limage,
+        addr,
+        SCR_WIDTH / 64,
+        SCE_GS_PSMCT32,
+        0,
+        0,
+        SCR_WIDTH,
+        SCR_HEIGHT);
+    sceGsExecLoadImage(&gs_limage, framebuffer_copy);
+    sceGsSyncPath(0, 0);
+
+    return 1;
+}
+
+static void EffectSubRenderTexturedSpriteVertices(sceGsTex0 *tex, float *vertices)
+{
+    if (EffectSubIsLiveFramebufferTexture(tex))
+    {
+        static const int tri_indices[6] = {0, 2, 1, 1, 2, 3};
+        float triangles[6][12];
+        int i;
+        int j;
+
+        for (i = 0; i < 6; i++)
+        {
+            float *src = vertices + tri_indices[i] * 12;
+
+            for (j = 0; j < 12; j++)
+            {
+                triangles[i][j] = src[j];
+            }
+        }
+
+        MikuPan_RenderScreenCopyTriangles3D(tex, &triangles[0][0], 6, 1, 0);
+        return;
+    }
+
+    MikuPan_RenderSprite2D(tex, vertices);
+}
+
+static void EffectSubRenderTexturedSpriteQuad(
+    sceGsTex0 *tex,
+    float x0,
+    float y0,
+    float x1,
+    float y1,
+    float u0,
+    float v0,
+    float u1,
+    float v1,
+    int r,
+    int g,
+    int b,
+    int a)
+{
+    float vertices[4][12];
+
+    EffectSubWriteTextured2DVertex(vertices[0], u0, v0, x0, y0, 0.0f, r, g, b, a);
+    EffectSubWriteTextured2DVertex(vertices[1], u1, v0, x1, y0, 0.0f, r, g, b, a);
+    EffectSubWriteTextured2DVertex(vertices[2], u0, v1, x0, y1, 0.0f, r, g, b, a);
+    EffectSubWriteTextured2DVertex(vertices[3], u1, v1, x1, y1, 0.0f, r, g, b, a);
+
+    EffectSubRenderTexturedSpriteVertices(tex, &vertices[0][0]);
+}
+
+static void EffectSubConvertGSPointToNDC(const sceVu0IVECTOR ivec, float ndc[2])
+{
+    float z;
+
+    MikuPan_GSToNDC(
+        ivec[0],
+        ivec[1],
+        ivec[2],
+        &ndc[0],
+        &ndc[1],
+        &z,
+        (float)MikuPan_GetWindowWidth(),
+        (float)MikuPan_GetWindowHeight());
+}
+
+static void EffectSubRenderPointGS(const sceVu0IVECTOR ivec, int r, int g, int b, int a, int depth_always)
+{
+    float center[2];
+    float px;
+    float py;
+    float vertices[6][8];
+
+    EffectSubConvertGSPointToNDC(ivec, center);
+
+    px = 2.0f / (float)MikuPan_GetWindowWidth();
+    py = 2.0f / (float)MikuPan_GetWindowHeight();
+
+    EffectSubWriteUntexturedNDCVertex(vertices[0], center[0] - px, center[1] - py, 0.0f, r, g, b, a);
+    EffectSubWriteUntexturedNDCVertex(vertices[1], center[0] - px, center[1] + py, 0.0f, r, g, b, a);
+    EffectSubWriteUntexturedNDCVertex(vertices[2], center[0] + px, center[1] - py, 0.0f, r, g, b, a);
+    EffectSubWriteUntexturedNDCVertex(vertices[3], center[0] + px, center[1] - py, 0.0f, r, g, b, a);
+    EffectSubWriteUntexturedNDCVertex(vertices[4], center[0] - px, center[1] + py, 0.0f, r, g, b, a);
+    EffectSubWriteUntexturedNDCVertex(vertices[5], center[0] + px, center[1] + py, 0.0f, r, g, b, a);
+
+    MikuPan_RenderUntexturedTriangles3D(&vertices[0][0], 6, depth_always, 0);
+}
+
+static void EffectSubRenderLineGS(
+    const sceVu0IVECTOR ivec0,
+    const sceVu0IVECTOR ivec1,
+    int r0,
+    int g0,
+    int b0,
+    int a0,
+    int r1,
+    int g1,
+    int b1,
+    int a1)
+{
+    float p0[2];
+    float p1[2];
+    float dx;
+    float dy;
+    float len;
+    float ox;
+    float oy;
+    float vertices[6][8];
+
+    EffectSubConvertGSPointToNDC(ivec0, p0);
+    EffectSubConvertGSPointToNDC(ivec1, p1);
+
+    dx = p1[0] - p0[0];
+    dy = p1[1] - p0[1];
+    len = SgSqrtf(dx * dx + dy * dy);
+
+    if (len <= 0.00001f)
+    {
+        EffectSubRenderPointGS(ivec0, r0, g0, b0, a0, 0);
+        return;
+    }
+
+    ox = (-dy / len) * (1.0f / (float)MikuPan_GetWindowWidth());
+    oy = ( dx / len) * (1.0f / (float)MikuPan_GetWindowHeight());
+
+    EffectSubWriteUntexturedNDCVertex(vertices[0], p0[0] - ox, p0[1] - oy, 0.0f, r0, g0, b0, a0);
+    EffectSubWriteUntexturedNDCVertex(vertices[1], p0[0] + ox, p0[1] + oy, 0.0f, r0, g0, b0, a0);
+    EffectSubWriteUntexturedNDCVertex(vertices[2], p1[0] - ox, p1[1] - oy, 0.0f, r1, g1, b1, a1);
+    EffectSubWriteUntexturedNDCVertex(vertices[3], p1[0] - ox, p1[1] - oy, 0.0f, r1, g1, b1, a1);
+    EffectSubWriteUntexturedNDCVertex(vertices[4], p0[0] + ox, p0[1] + oy, 0.0f, r0, g0, b0, a0);
+    EffectSubWriteUntexturedNDCVertex(vertices[5], p1[0] + ox, p1[1] + oy, 0.0f, r1, g1, b1, a1);
+
+    MikuPan_RenderUntexturedTriangles3D(&vertices[0][0], 6, 0, 0);
+}
+
 void InitEffectSub()
 {
     buf = (u_long128 *)MikuPan_GetHostPointer(EFFECT_ADDRESS);
@@ -323,6 +610,17 @@ void SetSquare2s(int pri, float x1, float y1, float x4, float y4, u_char r1, u_c
     pbuf[ndpkt].ui32[2] = z;
     pbuf[ndpkt].ui32[3] = 0;
     ndpkt++;
+
+    {
+        float vertices[4][8];
+
+        EffectSubWriteUntextured2DVertex(vertices[0], x1, y1, 0.0f, r1, g1, b1, a);
+        EffectSubWriteUntextured2DVertex(vertices[1], x4, y1, 0.0f, r1, g1, b1, a);
+        EffectSubWriteUntextured2DVertex(vertices[2], x1, y4, 0.0f, r2, g2, b2, a);
+        EffectSubWriteUntextured2DVertex(vertices[3], x4, y4, 0.0f, r2, g2, b2, a);
+
+        MikuPan_RenderUntexturedSprite(&vertices[0][0]);
+    }
 }
 
 void SetSquareZ(int pri, float x1, float y1, float x4, float y4, int z)
@@ -387,6 +685,17 @@ void SetSquareZ(int pri, float x1, float y1, float x4, float y4, int z)
     pbuf[ndpkt].ui32[2] = z;
     pbuf[ndpkt].ui32[3] = 0;
     ndpkt++;
+
+    {
+        float vertices[4][8];
+
+        EffectSubWriteUntextured2DVertex(vertices[0], x1, y1, 0.0f, 0x80, 0x80, 0x80, pri);
+        EffectSubWriteUntextured2DVertex(vertices[1], x4, y1, 0.0f, 0x80, 0x80, 0x80, pri);
+        EffectSubWriteUntextured2DVertex(vertices[2], x1, y4, 0.0f, 0x80, 0x80, 0x80, pri);
+        EffectSubWriteUntextured2DVertex(vertices[3], x4, y4, 0.0f, 0x80, 0x80, 0x80, pri);
+
+        MikuPan_RenderUntexturedSprite(&vertices[0][0]);
+    }
 }
 
 void SetPanel(u_int pri, float x1, float y1, float x2, float y2, u_char r, u_char g, u_char b, u_char a)
@@ -440,7 +749,7 @@ void SetSquareSN(int pri, float x1, float y1, float x4, float y4, u_char r, u_ch
 
 void SetSquareN(int pri, float x1, float y1, float x2, float y2, float x3, float y3, float x4, float y4, u_char r, u_char g, u_char b, u_char a)
 {
-    return;
+    SetSquare(pri, x1, y1, x2, y2, x3, y3, x4, y4, r, g, b, a);
 }
 
 void SetTriangle(int pri, float x1, float y1, float x2, float y2, float x3, float y3, u_char r, u_char g, u_char b, u_char a)
@@ -514,6 +823,16 @@ void SetTriangle(int pri, float x1, float y1, float x2, float y2, float x3, floa
     pbuf[ndpkt].ui32[2] = z;
     pbuf[ndpkt].ui32[3] = 0;
     ndpkt++;
+
+    {
+        float vertices[3][8];
+
+        EffectSubWriteUntextured2DVertex(vertices[0], x1, y1, 0.0f, r, g, b, a);
+        EffectSubWriteUntextured2DVertex(vertices[1], x2, y2, 0.0f, r, g, b, a);
+        EffectSubWriteUntextured2DVertex(vertices[2], x3, y3, 0.0f, r, g, b, a);
+
+        MikuPan_RenderUntexturedTriangles3D(&vertices[0][0], 3, 1, 0);
+    }
 }
 
 void SetTriangleZ(int pri, float x1, float y1, float z1, float x2, float y2, float z2, float x3, float y3, float z3, u_char r, u_char g, u_char b, u_char a)
@@ -586,6 +905,16 @@ void SetTriangleZ(int pri, float x1, float y1, float z1, float x2, float y2, flo
     pbuf[ndpkt].ui32[2] = z3;
     pbuf[ndpkt].ui32[3] = 0;
     ndpkt++;
+
+    {
+        float vertices[3][8];
+
+        EffectSubWriteUntextured2DVertex(vertices[0], x1, y1, 0.0f, r, g, b, a);
+        EffectSubWriteUntextured2DVertex(vertices[1], x2, y2, 0.0f, r, g, b, a);
+        EffectSubWriteUntextured2DVertex(vertices[2], x3, y3, 0.0f, r, g, b, a);
+
+        MikuPan_RenderUntexturedTriangles3D(&vertices[0][0], 3, 1, 0);
+    }
 }
 
 void SetLine(int pri, float x1, float y1, float x2, float y2, u_char r, u_char g, u_char b, u_char a)
@@ -779,6 +1108,8 @@ void DrawPoint(float *mpos, int no)
         ndpkt++;
         
         pbuf[n].ui32[0] = ndpkt + DMAend - n - 1;
+
+        EffectSubRenderPointGS(ivec, 0xff, no * 0xff, no * 0xff, 0x80, 1);
     }
 }
 
@@ -859,6 +1190,8 @@ void DrawPoint2(float *mpos, u_char r, u_char g, u_char b, u_char a) {
         ndpkt++;
         
         pbuf[n].ui32[0] = ndpkt + DMAend - n - 1;
+
+        EffectSubRenderPointGS(ivec, r, g, b, a, 0);
     }
 }
 
@@ -960,6 +1293,8 @@ void DrawLine(float *mpos1, u_char r1, u_char g1, u_char b1, u_char a1, float *m
         pbuf[ndpkt++].iv[3] = 0;
         
         pbuf[n].ui32[0] = ndpkt + DMAend - n - 1;
+
+        EffectSubRenderLineGS(ivec[0], ivec[1], r1, g1, b1, a1, r2, g2, b2, a2);
     }
 }
 
@@ -1156,6 +1491,7 @@ void _SetTexDirectS(int pri, SPRITE_DATA *sd, int atype) {
 	u_char malp;
 	sceGsTex0 Load;
 	sceGsTex0 Change;
+    sceGsTex0 render_tex;
 
     malp = sd->alpha;
     mz = sd->pos_z;
@@ -1200,6 +1536,8 @@ void _SetTexDirectS(int pri, SPRITE_DATA *sd, int atype) {
         Change.CSA = 0;
         Change.CLD = 0;
     }
+
+    render_tex = sd->g_GsTex0.PSM == SCE_GS_PSMT4 ? Load : sd->g_GsTex0;
     
     Reserve2DPacket(pri);
 
@@ -1291,6 +1629,27 @@ void _SetTexDirectS(int pri, SPRITE_DATA *sd, int atype) {
     pbuf[ndpkt].ui32[1] = yy[3];
     pbuf[ndpkt].ui32[2] = mz;
     pbuf[ndpkt++].ui32[3] = 0;
+
+    if (render_tex.PSM < SCE_GS_PSMZ32)
+    {
+        float tex_w = (float)(1 << render_tex.TW);
+        float tex_h = (float)(1 << render_tex.TH);
+
+        EffectSubRenderTexturedSpriteQuad(
+            &render_tex,
+            mx,
+            my,
+            mx + mszw,
+            my + mszh,
+            0.0f,
+            0.0f,
+            (float)tw / (tex_w * 16.0f),
+            (float)th / (tex_h * 16.0f),
+            0x80,
+            0x80,
+            0x80,
+            malp);
+    }
 }
 
 void SetTexDirectS(int pri, SPRITE_DATA *sd, int atype) {
@@ -1318,6 +1677,7 @@ void SetTexDirectS(int pri, SPRITE_DATA *sd, int atype) {
 	u_char malp;
 	sceGsTex0 Load;
 	sceGsTex0 Change;
+    sceGsTex0 render_tex;
     
     malp = sd->alpha;
     mz = sd->pos_z;
@@ -1379,6 +1739,8 @@ void SetTexDirectS(int pri, SPRITE_DATA *sd, int atype) {
         Change.CSA = 0;
         Change.CLD = 0;
     }
+
+    render_tex = sd->g_GsTex0.PSM == SCE_GS_PSMT4 ? Load : sd->g_GsTex0;
     
     Reserve2DPacket(pri);
     
@@ -1472,6 +1834,27 @@ void SetTexDirectS(int pri, SPRITE_DATA *sd, int atype) {
         pbuf[ndpkt].ui32[1] = yy[3];
         pbuf[ndpkt].ui32[2] = mz;
         pbuf[ndpkt++].ui32[3] = (i > 0) ? 0 : 0x8000;
+    }
+
+    if (render_tex.PSM < SCE_GS_PSMZ32)
+    {
+        float tex_w = (float)(1 << render_tex.TW);
+        float tex_h = (float)(1 << render_tex.TH);
+
+        EffectSubRenderTexturedSpriteQuad(
+            &render_tex,
+            mx,
+            my,
+            mx + mszw,
+            my + mszh,
+            0.0f,
+            0.0f,
+            ((float)mtw * 16.0f) / (tex_w * 16.0f),
+            (float)v / (tex_h * 16.0f),
+            0x80,
+            0x80,
+            0x80,
+            malp);
     }
 }
 
@@ -1691,7 +2074,7 @@ void SetTexDirectS2(int pri, SPRITE_DATA *sd, DRAW_ENV *de, int type)
         buffer[i][11] = 1.0f;
     }
 
-    MikuPan_RenderSprite2D(mikupan_texture_load, &buffer[0][0]);
+    EffectSubRenderTexturedSpriteVertices(mikupan_texture_load, &buffer[0][0]);
 
     pbuf[ndpkt].ui32[0] = r;
     pbuf[ndpkt].ui32[1] = g;
@@ -1934,7 +2317,7 @@ void SetTexDirect2(int pri, SPRITE_DATA *sd, DRAW_ENV *de, sceVu0FVECTOR *v)
         buffer[i][11] = 1.0f;
     }
 
-    MikuPan_RenderSprite2D(mikupan_texture_load, &buffer[0][0]);
+    EffectSubRenderTexturedSpriteVertices(mikupan_texture_load, &buffer[0][0]);
     
     pbuf[ndpkt].ui32[0] = r;
     pbuf[ndpkt].ui32[1] = g;
@@ -2218,14 +2601,14 @@ void SetTexDirect(SPRITE_DATA *sd, int atype)
         {1.0f, 1.0f, 0.0f, 0.0f, (float)r/128.0f, (float)g/128.0f, (float)b/128.0f, MikuPan_ConvertScaleColor(128), x1, y1, 0.0f, 1.0f, }, // bottom-right
     };
 
-    for (int i = 0; i < 4; i++)
+    for (i = 0; i < 4; i++)
     {
         MikuPan_ConvertPs2HalfScreenCoordToNDCMaintainAspectRatio(&vertices[i][8],
             (float)MikuPan_GetWindowWidth(), (float)MikuPan_GetWindowHeight(),
             vertices[i][8], vertices[i][9]);
     }
 
-    MikuPan_RenderSprite2D(mikupan_texture_load, &vertices[0][0]);
+    EffectSubRenderTexturedSpriteVertices(mikupan_texture_load, &vertices[0][0]);
     
     pbuf[ndpkt].ui32[0] = r;
     pbuf[ndpkt].ui32[1] = g;
@@ -2867,9 +3250,13 @@ void LocalCopyLtoB_Sub(int no, int type, int addr) {
     sceGsSyncPath(0, 0);
     
     FlushCache(0);
-    
-    sceGsExecStoreImage(&gs_simage1, pbuf);
-    sceGsExecStoreImage(&gs_simage2, &pbuf[32000]);
+
+    if (!EffectSubIsMainFramebufferAddress(addr) ||
+        !EffectSubReadMainFramebuffer(pbuf))
+    {
+        sceGsExecStoreImage(&gs_simage1, pbuf);
+        sceGsExecStoreImage(&gs_simage2, &pbuf[32000]);
+    }
     
     if (type == 0)
     {
@@ -2890,8 +3277,25 @@ void LocalCopyBtoL_Sub(int no, int type, int addr) {
 	int bline;
 	int rline;
 	int oline;
+    sceGsLoadImage gs_limage;
     
     bbuf = (no != 0) ? buf2 : buf;
+
+    sceGsSetDefLoadImage(
+        &gs_limage,
+        addr,
+        SCR_WIDTH / 64,
+        SCE_GS_PSMCT32,
+        0,
+        0,
+        SCR_WIDTH,
+        SCR_HEIGHT);
+    sceGsExecLoadImage(&gs_limage, bbuf);
+
+    if (type != 0)
+    {
+        sceGsSyncPath(0, 0);
+    }
 
     bline = 100;
     rline = SCR_HEIGHT;
@@ -3092,6 +3496,12 @@ void LocalCopyLtoL(int addr1, int addr2)
 	int i;
     Q_WORDDATA *pbuf;
     sceGsLoadImage load_image;
+
+    if (EffectSubIsMainFramebufferAddress(addr1) &&
+        EffectSubUploadMainFramebufferToGs(addr2))
+    {
+        return;
+    }
     
     Reserve2DPacket(0x1000);
     
@@ -3209,8 +3619,13 @@ void LocalCopyLtoBD(int addr, void *outbuf)
     CheckDMATrans();
     sceGsSyncPath(0, 0);
     FlushCache(0);
-    sceGsExecStoreImage(&gs_simage1, outbuf);
-    sceGsExecStoreImage(&gs_simage2, outbuf + 0x7d000);
+
+    if (!EffectSubIsMainFramebufferAddress(addr) ||
+        !EffectSubReadMainFramebuffer((u_long128 *)outbuf))
+    {
+        sceGsExecStoreImage(&gs_simage1, outbuf);
+        sceGsExecStoreImage(&gs_simage2, outbuf + 0x7d000);
+    }
     sceGsSyncPath(0, 0);
 }
 

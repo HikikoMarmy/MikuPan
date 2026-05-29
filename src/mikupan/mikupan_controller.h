@@ -6,6 +6,7 @@
 #define MIKUPAN_CONTROLLER_BIND_NONE   (0)
 #define MIKUPAN_CONTROLLER_BIND_BUTTON (1)
 #define MIKUPAN_CONTROLLER_BIND_AXIS   (2)
+#define MIKUPAN_CONTROLLER_AUTO_INDEX  (-1)
 
 typedef struct
 {
@@ -54,6 +55,9 @@ void MikuPan_ControllerResetBindings(void);
 const char *MikuPan_ControllerBindingLabel(MikuPan_ControllerBindings binding);
 const char *MikuPan_ControllerScanCodeLabel(int scancode);
 const char *MikuPan_ControllerStickAxisLabel(int sdl_axis);
+void MikuPan_ControllerSetPreferredGamepadIndex(int index);
+int MikuPan_ControllerGetPreferredGamepadIndex(void);
+void MikuPan_ControllerDrawDeviceSelectorUi(void);
 SDL_Gamepad* MikuPan_GetController(void);
 int MikuPan_ControllerRumble(const unsigned char* data);
 void MikuPan_ControllerDrawRemapWindow(void);
