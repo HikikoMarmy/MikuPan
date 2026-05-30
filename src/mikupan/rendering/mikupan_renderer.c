@@ -571,6 +571,7 @@ void MikuPan_EndFrame()
         MikuPan_SetUniform1fToCurrentShader((float) ((double) SDL_GetTicks() / 1000.0),
                                             "uTime");
     }
+
     MikuPan_PipelineInfo* pipeline = MikuPan_GetPipelineInfo(UV4_COLOUR4_POSITION4);
     MikuPan_BindVAO(pipeline->vao);
 
