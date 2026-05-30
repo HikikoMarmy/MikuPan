@@ -7,6 +7,8 @@ in vec4 uColor;
 out vec4 FragColor;
 
 uniform sampler2D uTexture;
+uniform vec2 uFramebufferUvOffset;
+uniform vec2 uFramebufferUvScale;
 
 void main()
 {
@@ -17,8 +19,14 @@ void main()
         discard;
     }
 
-    vec2 src_uv = clamp(vUV, vec2(0.0), vec2(1.0));
-    vec2 dst_uv = clamp(vDstUV, vec2(0.0), vec2(1.0));
+    vec2 src_uv = clamp(
+        uFramebufferUvOffset + vUV * uFramebufferUvScale,
+        vec2(0.0),
+        vec2(1.0));
+    vec2 dst_uv = clamp(
+        uFramebufferUvOffset + vDstUV * uFramebufferUvScale,
+        vec2(0.0),
+        vec2(1.0));
 
     vec3 src = texture(uTexture, src_uv).rgb;
     vec3 dst = texture(uTexture, dst_uv).rgb;

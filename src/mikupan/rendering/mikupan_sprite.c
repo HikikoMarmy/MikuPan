@@ -23,6 +23,8 @@ static GLuint g_screen_copy_texture = 0;
 static GLuint g_screen_copy_fbo = 0;
 static int g_screen_copy_w = 0;
 static int g_screen_copy_h = 0;
+static float g_screen_copy_uv_offset[2] = {0.0f, 0.0f};
+static float g_screen_copy_uv_scale[2] = {1.0f, 1.0f};
 static MikuPan_ScreenCopyDebugInfo g_screen_copy_debug = {0};
 
 void MikuPan_Render2DMessage(DISP_SPRT *sprite)
@@ -425,16 +427,16 @@ static int MikuPan_UpdateScreenCopyTexture(sceGsTex0 *tex)
     render_w = render_back_msaa.texture.width;
     render_h = render_back_msaa.texture.height;
 
+    if (render_w <= 0 || render_h <= 0)
+    {
+        return 0;
+    }
+
     glad_glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &prev_read_fbo);
     glad_glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &prev_draw_fbo);
     glad_glGetIntegerv(GL_VIEWPORT, prev_viewport);
     glad_glGetFloatv(GL_COLOR_CLEAR_VALUE, prev_clear_color);
     glad_glGetBooleanv(GL_COLOR_WRITEMASK, prev_color_mask);
-
-    if (!MikuPan_EnsureScreenCopyTexture(texture_w, texture_h))
-    {
-        goto restore;
-    }
 
     glad_glBindFramebuffer(GL_READ_FRAMEBUFFER, render_back_msaa.framebuffer_readback.id);
     glad_glBindFramebuffer(GL_DRAW_FRAMEBUFFER, render_back_msaa.framebuffer.id);
@@ -448,16 +450,30 @@ static int MikuPan_UpdateScreenCopyTexture(sceGsTex0 *tex)
                            &viewport_w, &viewport_h,
                            &viewport_scale);
 
-    copy_w = texture_w < PS2_RESOLUTION_X_INT ? texture_w : PS2_RESOLUTION_X_INT;
-    copy_h = texture_h < (int)PS2_CENTER_Y ? texture_h : (int)PS2_CENTER_Y;
+    copy_w = render_w;
+    copy_h = render_h;
 
-    src_x0 = (int)(viewport_x + 0.5f);
-    src_x1 = (int)(viewport_x + viewport_w + 0.5f);
-    src_y0 = (int)((float)render_h - viewport_y + 0.5f);
-    src_y1 = (int)((float)render_h - (viewport_y + viewport_h) + 0.5f);
+    if (!MikuPan_EnsureScreenCopyTexture(copy_w, copy_h))
+    {
+        goto restore;
+    }
+
+    g_screen_copy_uv_offset[0] = viewport_x / (float)render_w;
+    g_screen_copy_uv_offset[1] = viewport_y / (float)render_h;
+    g_screen_copy_uv_scale[0] =
+        (viewport_w / (float)render_w) *
+        ((float)texture_w / PS2_RESOLUTION_X_FLOAT);
+    g_screen_copy_uv_scale[1] =
+        (viewport_h / (float)render_h) *
+        ((float)texture_h / PS2_CENTER_Y);
+
+    src_x0 = 0;
+    src_x1 = render_w;
+    src_y0 = render_h;
+    src_y1 = 0;
 
     glad_glBindFramebuffer(GL_DRAW_FRAMEBUFFER, g_screen_copy_fbo);
-    MikuPan_SetViewportCached(0, 0, texture_w, texture_h);
+    MikuPan_SetViewportCached(0, 0, copy_w, copy_h);
 
     glad_glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
     glad_glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
@@ -534,6 +550,12 @@ void MikuPan_RenderScreenCopyTriangles3D(sceGsTex0 *tex, float *buffer, int vert
     MIKUPAN_PERF_SCOPE(PERF_SECT_SPRITE_RENDER);
     MikuPan_SetCurrentShaderProgram(HEAT_HAZE_SHADER);
     MikuPan_SetUniform1iToCurrentShader(0, "uTexture");
+    MikuPan_SetUniform2fToCurrentShader(g_screen_copy_uv_offset[0],
+                                        g_screen_copy_uv_offset[1],
+                                        "uFramebufferUvOffset");
+    MikuPan_SetUniform2fToCurrentShader(g_screen_copy_uv_scale[0],
+                                        g_screen_copy_uv_scale[1],
+                                        "uFramebufferUvScale");
     MikuPan_PipelineInfo *pipeline = MikuPan_GetPipelineInfo(UV4_COLOUR4_POSITION4);
 
     MikuPan_BindVAO(pipeline->vao);
