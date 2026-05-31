@@ -355,7 +355,9 @@ void SetFlash()
 
 void SetBlackFilter(/* s0 16 */ EFFECT_CONT *ec)
 {
-    SetPanel(0x500, 0.0f, 0.0f, 640.0f, 448.0f, 0, 0, 0, ec->dat.uc8[2]);
+    float eff_hw, eff_hh;
+    MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+    SetPanel(0x500, 320.0f - eff_hw, 224.0f - eff_hh, 320.0f + eff_hw, 224.0f + eff_hh, 0, 0, 0, ec->dat.uc8[2]);
 
     if ((ec->dat.uc8[1] & 1) != 0)
     {
@@ -443,12 +445,16 @@ void SubBlur(/* t2 10 */ int type, /* t3 11 */ u_char alpha, /* f12 50 */ float 
     hw = scale * 640.0f - 640.0f;
     fx = (hw * cx) / 640.0f;
     fy = (hh * cy * 2) / 448.0f;
-    
-    sd.pos_x = -320.5f - fx;
-    sd.pos_y = -224.5f - fy;
+
+    {
+        float eff_hw, eff_hh;
+        MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+        sd.pos_x = -eff_hw - 0.5f - fx;
+        sd.pos_y = -eff_hh - 0.5f - fy;
+        sd.size_w = hw + eff_hw * 2.0f;
+        sd.size_h = hh + eff_hh * 2.0f;
+    }
     sd.pos_z = 0xfffff5f;
-    sd.size_w = hw + 640.0f;
-    sd.size_h = hh + 448.0f;
     sd.angle = rot - 180.0f;
     sd.alpha = alpha;
     
@@ -622,32 +628,35 @@ void SubFocus(/* a0 4 */ int ef)
     {
         return;
     }
-    
+
     hw = ef / 40.0f;
-    
+
     sd.alpha = ef > 10 ? 0x28 : ef * 4;
-    
-    sd.pos_x = -320.5f - hw;
-    sd.pos_y = (-224.5f - hw) + ff;
     sd.pos_z = 0xffffdff;
-    
     sd.g_GsTex0.TBP0 = (sys_wrk.count % 2) * TBP_0x8c0;
-    
-    SetTexDirectS(0x200, &sd, 0);
-    
-    sd.pos_x = hw + -320.5f;
-    sd.pos_y = (-224.5f - hw) + ff;
-    
-    SetTexDirectS(0x200, &sd, 0);
-    
-    sd.pos_x = -320.5f - hw;
-    sd.pos_y = hw + -224.5f + ff;
-    
-    SetTexDirectS(0x200, &sd, 0);
-    sd.pos_x = hw + -320.5f;
-    sd.pos_y = hw + -224.5f + ff;
-    
-    SetTexDirectS(0x200, &sd, 0);
+
+    {
+        float eff_hw, eff_hh;
+        MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+        sd.size_w = eff_hw * 2.0f;
+        sd.size_h = eff_hh * 2.0f;
+
+        sd.pos_x = -eff_hw - 0.5f - hw;
+        sd.pos_y = (-eff_hh - 0.5f - hw) + ff;
+        SetTexDirectS(0x200, &sd, 0);
+
+        sd.pos_x = -eff_hw - 0.5f + hw;
+        sd.pos_y = (-eff_hh - 0.5f - hw) + ff;
+        SetTexDirectS(0x200, &sd, 0);
+
+        sd.pos_x = -eff_hw - 0.5f - hw;
+        sd.pos_y = -eff_hh - 0.5f + hw + ff;
+        SetTexDirectS(0x200, &sd, 0);
+
+        sd.pos_x = -eff_hw - 0.5f + hw;
+        sd.pos_y = -eff_hh - 0.5f + hw + ff;
+        SetTexDirectS(0x200, &sd, 0);
+    }
 }
 
 void SetFocus1(/* s0 16 */ EFFECT_CONT *ec)
@@ -1111,40 +1120,47 @@ void SetDeform0(/* 0x2850(sp) */ int type, /* f20 58 */ float rate, /* 0x2854(sp
     
     yoff = GetYOffsetf();
     
+    {
+        float eff_hw, eff_hh;
+        MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+        float deform_full_w = eff_hw * 2.0f;
+        float deform_gs_x0 = 2048.0f - eff_hw - 1.5f;
+        float deform_tx0 = 320.0f - eff_hw;
     for (j = 0; j < h; j++)
     {
         for (i = 0; i < w; i++)
         {
-            vtw[j][i][0] = (float)(i * 640) / vnumw + 1726.5f;
+            vtw[j][i][0] = (float)(i * deform_full_w) / vnumw + deform_gs_x0;
             vtw[j][i][1] = (float)(j * 224) / pnumh + 1936.0f;
             vtw[j][i][2] = 0.0f;
             vtw[j][i][3] = 1.0f;
 
-            tx[j][i] = (float)(i * 640) / vnumw;
+            tx[j][i] = (float)(i * deform_full_w) / vnumw + deform_tx0;
             ty[j][i] = (float)(j * 224) / pnumh + yoff;
-            
+
             if (i == 0)
             {
                 tx[j][0] += 1.0f;
             }
-            
+
             if (i == w-1)
             {
                 tx[j][w-1] -= 1.0f;
             }
-            
+
             if (j == 0)
             {
                 ty[0][i] += 1.0f;
             }
-            
+
             if (j == h-1)
             {
                 ty[h-1][i] -= 1.0f;
             }
         }
     }
-    
+    } // close full-screen extent block
+
     fw = rate / 10.0f;
     
     add = 2.0f;
@@ -1435,13 +1451,18 @@ void SetDeform2(/* 0x81f8(sp) */ int type, /* f30 68 */ float rate, /* 0x81fc(sp
         sceVu0ApplyMatrix(vtw[i], slm, vt[i]);
         sceVu0DivVector(vtw[i], vtw[i], vtw[i][3]);
         
-        tx[i] = ((vtw[i][0] - 2048.0f) + 320.0f);
-        ty[i] = ((vtw[i][1] - 2048.0f) + 112.0f) + yoff;
-        
-        tx[i] = (tx[i] < 0.0f) ? 0.0f : ((639.0f < tx[i]) ? 639.0f : tx[i]);
-        ty[i] = (ty[i] < 0.0f) ? 0.0f : ((223.0f < ty[i]) ? 223.0f : ty[i]);   
+        {
+            float eff_hw, eff_hh;
+            MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+            float tx_start = 320.0f - eff_hw;
+            float tx_end = 319.0f + eff_hw;
+            tx[i] = ((vtw[i][0] - 2048.0f) + eff_hw);
+            ty[i] = ((vtw[i][1] - 2048.0f) + 112.0f) + yoff;
+            tx[i] = (tx[i] < tx_start) ? tx_start : ((tx_end < tx[i]) ? tx_end : tx[i]);
+            ty[i] = (ty[i] < 0.0f) ? 0.0f : ((223.0f < ty[i]) ? 223.0f : ty[i]);
+        }
     }
-    
+
     fw = rate / 25.0f;
     
     if (eff_deform.init != 0)
@@ -1742,11 +1763,11 @@ void SetDeform3(/* 0x81f0(sp) */ int type, /* f20 58 */ float rate, /* 0x81f4(sp
 	pszh = 224.0f; // $f29,0x4360
     cntw = 320.0f; // $f28,0x43a0
 	cnth = 112.0f; // $f27,0x42e0
-    
+
     LocalCopyLtoLDraw((sys_wrk.count & 1) * 0x8c0, 0x1a40);
-    
+
     yoff = GetYOffsetf();
-    
+
     for (j = 0; j < vnumh; j++)
     {
         for (i = 0; i < vnumw; i++)
@@ -2009,26 +2030,31 @@ void SetDeform4(/* 0x6720(sp) */ int type, /* f20 58 */ float rate, /* 0x6724(sp
     
     yoff = GetYOffsetf();
     
-    for (j = 0; j < vnumh; j++)
     {
+        float eff_hw, eff_hh;
+        MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+        float deform_full_w = eff_hw * 2.0f;
+        float deform_tx_start = 320.0f - eff_hw;
+        for (j = 0; j < vnumh; j++)
+        {
+            for (i = 0; i < vnumw; i++)
+            {
+                pscr = &scrdef[j][i];
+                pscr->stq[0] = (i * deform_full_w) / 32.0f + deform_tx_start;
+                pscr->stq[1] = (j * 224) / 24.0f + yoff;
+            }
+
+            scrdef[j][0].stq[0] += 1.0f;
+            scrdef[j][vnumw-1].stq[0] -= 1.0f;
+        }
+
         for (i = 0; i < vnumw; i++)
         {
-            pscr = &scrdef[j][i];
-            
-            pscr->stq[0] = (i * 640) / 32.0f;
-            pscr->stq[1] = (j * 224) / 24.0f + yoff;
+            scrdef[0][i].stq[1] += 1.0f;
+            scrdef[vnumh-1][i].stq[1] -= 1.0f;
         }
-        
-        scrdef[j][0].stq[0] += 1.0f;
-        scrdef[j][vnumw-1].stq[0] -= 1.0f;
     }
-    
-    for (i = 0; i < vnumw; i++)
-    {
-        scrdef[0][i].stq[1] += 1.0f;
-        scrdef[vnumh-1][i].stq[1] -= 1.0f;
-    }
-    
+
     fw = rate / 4.0f;
     lm = SgSqrtf(224 * 224 + 320 * 320);
     lw = 1.0f / lm;
@@ -2292,28 +2318,33 @@ void SetDeform6(/* 0x6720(sp) */ int type, /* f20 58 */ float rate, /* 0x6724(sp
     
     yoff = GetYOffsetf();
     
-    for (j = 0; j < vnumh; j++)
     {
-        pdef = &dw[j][i];
-        
+        float eff_hw, eff_hh;
+        MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+        float deform_full_w = eff_hw * 2.0f;
+        float deform_tx_start = 320.0f - eff_hw;
+        for (j = 0; j < vnumh; j++)
+        {
+            pdef = &dw[j][i];
+
+            for (i = 0; i < vnumw; i++)
+            {
+                pscr = &scrdef[j][i];
+                pscr->stq[0] = (i * deform_full_w) / 32.0f + deform_tx_start;
+                pscr->stq[1] = (j * 224) / 24.0f + yoff;
+            }
+
+            scrdef[j][0].stq[0] += 1.0f;
+            scrdef[j][vnumw-1].stq[0] -= 1.0f;
+        }
+
         for (i = 0; i < vnumw; i++)
         {
-            pscr = &scrdef[j][i];
-            
-            pscr->stq[0] = (i * 640) / 32.0f;
-            pscr->stq[1] = (j * 224) / 24.0f + yoff;
+            scrdef[0][i].stq[1] += 1.0f;
+            scrdef[vnumh-1][i].stq[1] -= 1.0f;
         }
-        
-        scrdef[j][0].stq[0] += 1.0f;
-        scrdef[j][vnumw-1].stq[0] -= 1.0f;
     }
-    
-    for (i = 0; i < vnumw; i++)
-    {
-        scrdef[0][i].stq[1] += 1.0f;
-        scrdef[vnumh-1][i].stq[1] -= 1.0f;
-    }
-    
+
     fw = rate / 4.0f;
     lm = SgSqrtf(224 * 224 + 320 * 320);
     lw = 1.0f / lm;
@@ -2440,17 +2471,21 @@ void SubContrast2(/* t5 13 */ u_char col, /* t6 14 */ u_char alp)
         .prim = SCE_GIF_SET_TAG(1, SCE_GS_TRUE, SCE_GS_TRUE, 342, SCE_GIF_PACKED, 5),
     };
     
-    sd.r = col;
-    sd.g = col;
-    sd.b = col;
-    sd.alpha = alp;
-    sd.g_GsTex0.TBP0 = (sys_wrk.count & 1) * 0x8c0;
-    sd.pos_x = -320.5f;
-    sd.pos_y = -224.5f;
-    sd.pos_z = 0xfffffdf;
-    sd.size_w = 640.0f;
-    sd.size_h = 448.0f;
-    
+    {
+        float eff_hw, eff_hh;
+        MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+        sd.r = col;
+        sd.g = col;
+        sd.b = col;
+        sd.alpha = alp;
+        sd.g_GsTex0.TBP0 = (sys_wrk.count & 1) * 0x8c0;
+        sd.pos_x = -eff_hw - 0.5f;
+        sd.pos_y = -eff_hh - 0.5f;
+        sd.pos_z = 0xfffffdf;
+        sd.size_w = eff_hw * 2.0f;
+        sd.size_h = eff_hh * 2.0f;
+    }
+
     SetTexDirectS2(0, &sd, &de, 1);
 }
 
@@ -2516,20 +2551,24 @@ void SubContrast3(/* t4 12 */ u_char col, /* t5 13 */ u_char alp)
     sd.g = col;
     sd.b = col;
     sd.alpha = alp;
-    
+
     LocalCopyLtoL((sys_wrk.count & 1) * 0x8c0, 0x1a40);
-    
-    sd.g_GsTex0.TBP0 = 0;
-    sd.pos_x = -320.5f;
-    sd.pos_y = -224.5f;
-    sd.pos_z = 0xffffcdf;
-    sd.size_w = 640.0f;
-    sd.size_h = 448.0f;
-    
+
+    {
+        float eff_hw, eff_hh;
+        MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+        sd.g_GsTex0.TBP0 = 0;
+        sd.pos_x = -eff_hw - 0.5f;
+        sd.pos_y = -eff_hh - 0.5f;
+        sd.pos_z = 0xffffcdf;
+        sd.size_w = eff_hw * 2.0f;
+        sd.size_h = eff_hh * 2.0f;
+    }
+
     SetTexDirectS2(0x320, &sd, &de, 1);
-    
+
     sd.pos_z = 0xffffcef;
-    
+
     SetTexDirectS2(0x310, &sd, &de, 1);
 }
 
@@ -2593,19 +2632,23 @@ void SubNega(/* s0 16 */ u_char r, /* s1 17 */ u_char g, /* s3 19 */ u_char b, /
 
     LocalCopyLtoL((sys_wrk.count & 1) * 0x8c0, 0x1a40);
     
+    {
+        float eff_hw, eff_hh;
+        MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+        sd.pos_x = -eff_hw - 0.5f;
+        sd.pos_y = -eff_hh - 0.5f;
+        sd.size_w = eff_hw * 2.0f;
+        sd.size_h = eff_hh * 2.0f;
+    }
     sd.r = r;
     sd.g = g;
     sd.b = b;
     sd.alpha = alp;
     sd.g_GsTex0.TBP0 = 0;
-    sd.pos_x = -320.5;
-    sd.pos_y = -224.5;
     sd.pos_z = 0xffffcdf;
-    sd.size_w = 640.0f;
-    sd.size_h = 448.0f;
-    
+
     SetTexDirectS2(0x320, &sd, &de, 1);
-    
+
     sd.r = 0x80;
     sd.g = 0x80;
     sd.b = 0x80;
@@ -2614,7 +2657,7 @@ void SubNega(/* s0 16 */ u_char r, /* s1 17 */ u_char g, /* s3 19 */ u_char b, /
     sd.pos_z = 0xffffcef;
     de.alpha = 0x44;
     de.prim = SCE_GIF_SET_TAG(1, SCE_GS_TRUE, SCE_GS_TRUE, 342, SCE_GIF_PACKED, 5);
-    
+
     SetTexDirectS2(0x310, &sd, &de, 1);
 }
 
@@ -2789,7 +2832,7 @@ void SetOverRap(/* s0 16 */ EFFECT_CONT *ec)
             .alpha = 0x80,
             .mask = 0,
         };
-        
+
         de = (DRAW_ENV){
             .tex1 = SCE_GS_SET_TEX1(1, 0, SCE_GS_LINEAR, SCE_GS_LINEAR_MIPMAP_LINEAR, 0, 0, 0),
             .alpha = SCE_GS_SET_ALPHA_1(SCE_GS_ALPHA_CS, SCE_GS_ALPHA_CD, SCE_GS_ALPHA_FIX, SCE_GS_ALPHA_CD, (u_char)alp),
@@ -3159,23 +3202,31 @@ void SubDither3(/* s0 16 */ int type, /* f27 65 */ float alp, /* f28 66 */ float
         while (cy <   0.0f) cy += 128.0f;
     }
     
-    sd2.clamp_u = (int)((cx + 640.0f) * 16.0f) << 16 | (int)(cx * 16.0f);
-    sd2.clamp_v = (int)((cy + 512.0f) * 16.0f) << 16 | (int)(cy * 16.0f);
-    sd2.alpha = (SgSinf((cnf * PI) / 180.0f) + 1.0f) * alp;
-    
-    SetTexDirectS2(-2, &sd2, &de2, 0);
-    
-    sd2.clamp_u = (int)((cx + 704.0f) * 16.0f) << 16 | (int)((cx + 64.0f) * 16.0f);
-    sd2.clamp_v = (int)((cy + 512.0f) * 16.0f) << 16 | (int)(cy * 16.0f);
-    sd2.alpha = (SgSinf(((cnf + 120.0f) * PI) / 180.0f) + 1.0f) * alp;
-    
-    SetTexDirectS2(-2, &sd2, &de2, 0);
-    
-    sd2.clamp_u = (int)((cx + 640.0f) * 16.0f) << 16 | (int)(cx * 16.0f);
-    sd2.clamp_v = (int)((cy + 576.0f) * 16.0f) << 16 | (int)((cy + 64.0f) * 16.0f);
-    sd2.alpha = (SgSinf(((cnf + 240.0f) * PI) / 180.0f) + 1.0f) * alp;
-    
-    SetTexDirectS2(-2, &sd2, &de2, 0);
+    {
+        float eff_hw, eff_hh;
+        MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+        float full_w = eff_hw * 2.0f;
+        sd2.pos_x = -eff_hw - 0.5f;
+        sd2.size_w = full_w;
+
+        sd2.clamp_u = (int)((cx + full_w) * 16.0f) << 16 | (int)(cx * 16.0f);
+        sd2.clamp_v = (int)((cy + 512.0f) * 16.0f) << 16 | (int)(cy * 16.0f);
+        sd2.alpha = (SgSinf((cnf * PI) / 180.0f) + 1.0f) * alp;
+
+        SetTexDirectS2(-2, &sd2, &de2, 0);
+
+        sd2.clamp_u = (int)((cx + full_w + 64.0f) * 16.0f) << 16 | (int)((cx + 64.0f) * 16.0f);
+        sd2.clamp_v = (int)((cy + 512.0f) * 16.0f) << 16 | (int)(cy * 16.0f);
+        sd2.alpha = (SgSinf(((cnf + 120.0f) * PI) / 180.0f) + 1.0f) * alp;
+
+        SetTexDirectS2(-2, &sd2, &de2, 0);
+
+        sd2.clamp_u = (int)((cx + full_w) * 16.0f) << 16 | (int)(cx * 16.0f);
+        sd2.clamp_v = (int)((cy + 576.0f) * 16.0f) << 16 | (int)((cy + 64.0f) * 16.0f);
+        sd2.alpha = (SgSinf(((cnf + 240.0f) * PI) / 180.0f) + 1.0f) * alp;
+
+        SetTexDirectS2(-2, &sd2, &de2, 0);
+    }
     
     if (stop_effects == 0)
     {
@@ -3350,25 +3401,32 @@ void SubDither4(/* f27 65 */ float alp, /* f28 66 */ float spd)
     
     cx = ((cx + mvx) > 128.0f) ? (cx + mvx) - 128.0f : (((cx + mvx) < 0.0f) ? (cx + mvx) + 128.0f : (cx + mvx));
     cy = ((cy + mvy) > 128.0f) ? (cy + mvy) - 128.0f : (((cy + mvy) < 0.0f) ? (cy + mvy) + 128.0f : (cy + mvy));
-    
-                    // Line 4001
-    sd.clamp_u = (int)((cx + 640.0f) * 16.0f) << 16 | (int)(cx * 16.0f);
-    sd.clamp_v = (int)((cy + 512.0f) * 16.0f) << 16 | (int)(cy * 16.0f);
-    sd.alpha = (SgSinf((cnf * PI) / 180.0f) + 1.0f) * alp;
-    
-    SetTexDirectS2(-2, &sd, &de, 0);
-    
-    sd.clamp_u = (int)((cx + 704.0f) * 16.0f) << 16 | (int)((cx + 64.0f) * 16.0f);
-    sd.clamp_v = (int)((cy + 512.0f) * 16.0f) << 16 | (int)(cy * 16.0f);
-    sd.alpha = (SgSinf(((cnf + 120.0f) * PI) / 180.0f) + 1.0f) * alp;
-    
-    SetTexDirectS2(-2, &sd, &de, 0);
-    
-    sd.clamp_u = (int)((cx + 640.0f) * 16.0f) << 16 | (int)(cx * 16.0f);
-    sd.clamp_v = (int)((cy + 576.0f) * 16.0f) << 16 | (int)((cy + 64.0f) * 16.0f);
-    sd.alpha = (SgSinf(((cnf + 240.0f) * PI) / 180.0f) + 1.0f) * alp;
-    
-    SetTexDirectS2(-2, &sd, &de, 0);
+
+    {
+        float eff_hw, eff_hh;
+        MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+        float full_w = eff_hw * 2.0f;
+        sd.pos_x = -eff_hw - 0.5f;
+        sd.size_w = full_w;
+
+        sd.clamp_u = (int)((cx + full_w) * 16.0f) << 16 | (int)(cx * 16.0f);
+        sd.clamp_v = (int)((cy + 512.0f) * 16.0f) << 16 | (int)(cy * 16.0f);
+        sd.alpha = (SgSinf((cnf * PI) / 180.0f) + 1.0f) * alp;
+
+        SetTexDirectS2(-2, &sd, &de, 0);
+
+        sd.clamp_u = (int)((cx + full_w + 64.0f) * 16.0f) << 16 | (int)((cx + 64.0f) * 16.0f);
+        sd.clamp_v = (int)((cy + 512.0f) * 16.0f) << 16 | (int)(cy * 16.0f);
+        sd.alpha = (SgSinf(((cnf + 120.0f) * PI) / 180.0f) + 1.0f) * alp;
+
+        SetTexDirectS2(-2, &sd, &de, 0);
+
+        sd.clamp_u = (int)((cx + full_w) * 16.0f) << 16 | (int)(cx * 16.0f);
+        sd.clamp_v = (int)((cy + 576.0f) * 16.0f) << 16 | (int)((cy + 64.0f) * 16.0f);
+        sd.alpha = (SgSinf(((cnf + 240.0f) * PI) / 180.0f) + 1.0f) * alp;
+
+        SetTexDirectS2(-2, &sd, &de, 0);
+    }
     
     if (stop_effects == 0)
     {
@@ -3437,9 +3495,17 @@ void SubFadeFrame(/* t8 24 */ u_char alp, /* a1 5 */ u_int pri)
     sd.g_GsTex0 = *(sceGsTex0 *)&effdat[12].tex0;
     sd.g_nTexSizeW = effdat[12].w;
     sd.g_nTexSizeH = effdat[12].h;
+    {
+        float eff_hw, eff_hh;
+        MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+        sd.pos_x = -eff_hw - 0.5f;
+        sd.pos_y = -eff_hh - 0.5f;
+        sd.size_w = eff_hw * 2.0f;
+        sd.size_h = eff_hh * 2.0f;
+    }
     sd.pos_z = 0xfffffff - pri;
     sd.alpha = alp;
-    
+
     SetTexDirectS2(pri, &sd, &de, 0);
 }
 
@@ -4175,7 +4241,11 @@ int SetNowLoading()
         break;
     }
     
-    SetPanel(0x80000, 0.0f, 0.0f, 640.0f, 448.0f, 0, 0, 0, 0x80);
+    {
+        float eff_hw, eff_hh;
+        MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+        SetPanel(0x80000, 320.0f - eff_hw, 224.0f - eff_hh, 320.0f + eff_hw, 224.0f + eff_hh, 0, 0, 0, 0x80);
+    }
 
     SetSprFile3(N_LOAD_PK2_ADDRESS, 0);
     CopySprDToSpr(&ds, sprt_dat);
@@ -4201,8 +4271,12 @@ int SetNowLoading()
     SubBlur(1, 0x32, 1.003f, 180.0f, 220.0f, 112.0f);
     SubBlur(1, 0x32, 1.003f, 180.0f, 420.0f, 112.0f);
     
-    SetPanel(0x10, 0.0f, 0.0f, 640.0f, 448.0f, 0, 0, 0, alp);
-    
+    {
+        float eff_hw, eff_hh;
+        MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+        SetPanel(0x10, 320.0f - eff_hw, 224.0f - eff_hh, 320.0f + eff_hw, 224.0f + eff_hh, 0, 0, 0, alp);
+    }
+
     return now_loading_flow;
 }
 
@@ -4682,17 +4756,25 @@ int SetGameOver()
         blr = 0;
         scl = 0.0f;
         
-        SetPanel2(0x80000, 0.0f, 0.0f, DISP_WIDTH, DISP_HEIGHT, 0, 0, 0, 0, 0x80);
-        
+        {
+            float eff_hw, eff_hh;
+            MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+            SetPanel2(0x80000, 320.0f - eff_hw, 224.0f - eff_hh, 320.0f + eff_hw, 224.0f + eff_hh, 0, 0, 0, 0, 0x80);
+        }
+
         cnt++;
-        
+
         if (cnt >= sec4)
         {
             gameover_flow = 9;
         }
     break;
     case 9:
-        SetPanel2(0x80000, 0.0f, 0.0f, DISP_WIDTH, DISP_HEIGHT, 0, 0, 0, 0, 0x80);
+        {
+            float eff_hw, eff_hh;
+            MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+            SetPanel2(0x80000, 320.0f - eff_hw, 224.0f - eff_hh, 320.0f + eff_hw, 224.0f + eff_hh, 0, 0, 0, 0, 0x80);
+        }
     return 0xff;
     }
     
@@ -4767,7 +4849,11 @@ int SetGameOver()
         }
     }
     
-    SetPanel(0x10, 0.0f, 0.0f, DISP_WIDTH, DISP_HEIGHT, 0xff, 0xff, 0xff, alp3);
+    {
+        float eff_hw, eff_hh;
+        MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+        SetPanel(0x10, 320.0f - eff_hw, 224.0f - eff_hh, 320.0f + eff_hw, 224.0f + eff_hh, 0xff, 0xff, 0xff, alp3);
+    }
     
     // return ret;
 }

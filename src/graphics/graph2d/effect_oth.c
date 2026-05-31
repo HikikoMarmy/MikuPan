@@ -6746,6 +6746,16 @@ void SetHaze_Pond()
         hn[9].mov = vu0Rand() * 0.15f - 0.05f;
     }
 
+    {
+        float eff_hw_val, eff_hh_val;
+        MikuPan_GetFullScreenHalfExtent(&eff_hw_val, &eff_hh_val);
+        for (i = 0; i < 10; i++)
+        {
+            hw[i].x1 = (int)((-eff_hw_val + 2048.0f) * 16.0f);
+            hw[i].x2 = (int)((eff_hw_val + 2048.0f) * 16.0f);
+        }
+    }
+
     for (i = 0; i < 10; i++)
     {
         fx = camera.i[0] - camera.p[0];
@@ -6819,8 +6829,6 @@ void SetHaze_Pond()
         while (wline < 0.0f) wline += 128.0f;
         while (wline >= 128.0f) wline -= 128.0f;
 
-        hw[i].x1 = 0x6c00;
-        hw[i].x2 = 0x9400;
         hw[i].y1 = ivec[1];
         hw[i].y2 = ivec[1] - 0x300;
         hw[i].zz = ivec[2];

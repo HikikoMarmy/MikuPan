@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "main/glob.h"
+#include "mikupan/rendering/mikupan_renderer.h"
 #include "os/system.h"
 #include "os/eeiop/eese.h"
 #include "os/eeiop/se_ev.h"
@@ -1239,7 +1240,11 @@ int SceneFadeOut()
             ret = 1;
         }
 
-        SceneSetSquare(1, 0.0f, 0.0f, 640.0f, 448.0f, 0, 0, 0, 0x80);
+        {
+            float eff_hw, eff_hh;
+            MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+            SceneSetSquare(1, 320.0f - eff_hw, 224.0f - eff_hh, eff_hw * 2.0f, eff_hh * 2.0f, 0, 0, 0, 0x80);
+        }
 
         return ret;
     }
@@ -1275,7 +1280,11 @@ int SceneFadeOut()
         }
     }
 
-    SceneSetSquare(1, 0.0f, 0.0f, 640.0f, 448.0f, 0, 0, 0, alpha);
+    {
+        float eff_hw, eff_hh;
+        MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+        SceneSetSquare(1, 320.0f - eff_hw, 224.0f - eff_hh, eff_hw * 2.0f, eff_hh * 2.0f, 0, 0, 0, alpha);
+    }
 
     return ret;
 }

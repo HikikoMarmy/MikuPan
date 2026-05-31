@@ -25,6 +25,7 @@
 #include "ingame/ig_glob.h"
 #include "ingame/photo/pht_make.h"
 #include "main/glob.h"
+#include "mikupan/rendering/mikupan_renderer.h"
 // #include "ingame/entry/ap_sgost.h" // DO NOT INCLUDE
 
 #include <stdarg.h>
@@ -1539,7 +1540,11 @@ void pblur()
         sd.alpha = dbg_wrk.eff_prtblr_alp;
 
         SetTexDirectS2(0, &sd, &de, 0);
-        SetPanel(0xffff800, 0.0f, 0.0f, 640.0f, 448.0f, 0, 0, 0, 0x80);
+        {
+            float eff_hw, eff_hh;
+            MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+            SetPanel(0xffff800, 320.0f - eff_hw, 224.0f - eff_hh, 320.0f + eff_hw, 224.0f + eff_hh, 0, 0, 0, 0x80);
+        }
         LocalCopyLtoB2(1, ((sys_wrk.count + 1 & 1) * 0x23 << 0x26) >> 0x20);
     }
 }

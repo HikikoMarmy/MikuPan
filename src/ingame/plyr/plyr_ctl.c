@@ -5324,6 +5324,10 @@ void PlayerWarpReq2(u_char dat_no)
     pwarp_wrk.mode = PWARP_MODE_IN_REQ;
     pwarp_wrk.req_no = dat_no;
 
-    SetPanel(0x10, 0.0f, 0.0f, 640.0f, 448.0f, 0, 0, 0, 0x80);
+    {
+        float eff_hw, eff_hh;
+        MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+        SetPanel(0x10, 320.0f - eff_hw, 224.0f - eff_hh, 320.0f + eff_hw, 224.0f + eff_hh, 0, 0, 0, 0x80);
+    }
     SetBlackOut2(1);
 }

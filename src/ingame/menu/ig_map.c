@@ -15,6 +15,7 @@
 #include "ingame/menu/ig_spd_menu.h"
 #include "ingame/menu/item.h"
 #include "main/glob.h"
+#include "mikupan/rendering/mikupan_renderer.h"
 #include "os/eeiop/eese.h"
 
 static void MapCntInit();
@@ -670,7 +671,11 @@ static void MapPrint(short int mov_px, short int mov_py, u_char alp)
         MapPlayer(mov_px, mov_py, alp);
     }
 
-    PolySquareYW(0.0f, 0.0f, 0x280, 0x1c2, 0, 128.0f - yw2d.io_a[6], 1.0f, 1.0f, 0x4b000, 0, 0, 0);
+    {
+        float eff_hw, eff_hh;
+        MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+        PolySquareYW(320.0f - eff_hw, 224.0f - eff_hh, (u_short)(eff_hw * 2.0f), (u_short)(eff_hh * 2.0f), 0, 128.0f - yw2d.io_a[6], 1.0f, 1.0f, 0x4b000, 0, 0, 0);
+    }
     PutSpriteYW(MAP_BACK_MASK1, MAP_BACK_MASK4, 0.0f, 0.0f, 0.0f, 0x808080, 128.0f, 2.6890757f, 2.698795f, 1, 0xff, 1, 0, 0);
 }
 

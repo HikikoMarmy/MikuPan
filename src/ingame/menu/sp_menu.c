@@ -20,6 +20,7 @@
 #include "ingame/menu/sp_menu.h"
 #include "ingame/plyr/plyr_ctl.h"
 #include "main/glob.h"
+#include "mikupan/rendering/mikupan_renderer.h"
 #include "mc/mc_at.h"
 #include "mc/mc_disp.h"
 #include "mc/mc_exec.h"
@@ -1545,8 +1546,11 @@ void DspMemSavePoint(u_char msk, u_char msg, u_char fdt, u_char svp, u_char alt,
 
     if (sv_dsp_sw.msk_alp != 0)
     {
-        PolySquareYW(0.0f, 0.0f, 640, 448, 0, sv_dsp_sw.msk_alp / 100.0f, 1.0f,
-                     1.0f, 0x7d000, 0, 0, 0);
+        {
+            float eff_hw, eff_hh;
+            MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+            PolySquareYW(320.0f - eff_hw, 224.0f - eff_hh, (u_short)(eff_hw * 2.0f), (u_short)(eff_hh * 2.0f), 0, sv_dsp_sw.msk_alp / 100.0f, 1.0f, 1.0f, 0x7d000, 0, 0, 0);
+        }
     }
 
     svp_add = (alp_max / 32) * 100;
@@ -1826,8 +1830,11 @@ static void WarningMsg(u_char msg, u_char csr0, u_char alp, u_char ha)
             sv_dsp_sw.alt_bak_alp = 0;
         }
 
-        PolySquareYW(0.0f, 0.0f, 640, 448, 0, sv_dsp_sw.alt_bak_alp, 1.0f, 1.0f,
-                     0x5000, 0, 0, 0);
+        {
+            float eff_hw, eff_hh;
+            MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+            PolySquareYW(320.0f - eff_hw, 224.0f - eff_hh, (u_short)(eff_hw * 2.0f), (u_short)(eff_hh * 2.0f), 0, sv_dsp_sw.alt_bak_alp, 1.0f, 1.0f, 0x5000, 0, 0, 0);
+        }
     }
     else
     {
@@ -1840,8 +1847,11 @@ static void WarningMsg(u_char msg, u_char csr0, u_char alp, u_char ha)
             sv_dsp_sw.alt_bak_alp = 96;
         }
 
-        PolySquareYW(0.0f, 0.0f, 640, 448, 0, sv_dsp_sw.alt_bak_alp, 1.0f, 1.0f,
-                     0x5000, 0, 0, 0);
+        {
+            float eff_hw, eff_hh;
+            MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+            PolySquareYW(320.0f - eff_hw, 224.0f - eff_hh, (u_short)(eff_hw * 2.0f), (u_short)(eff_hh * 2.0f), 0, sv_dsp_sw.alt_bak_alp, 1.0f, 1.0f, 0x5000, 0, 0, 0);
+        }
 #ifdef BUILD_EU_VERSION
         PolySquareYW(35.0f, 198.0f, 570, 144, 0, alp, 1.0f, 1.0f, 0x4000, 0, 0,
                      0);

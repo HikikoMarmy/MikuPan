@@ -25,6 +25,7 @@ static int g_screen_copy_w = 0;
 static int g_screen_copy_h = 0;
 static float g_screen_copy_uv_offset[2] = {0.0f, 0.0f};
 static float g_screen_copy_uv_scale[2] = {1.0f, 1.0f};
+static float g_screen_copy_content_uv_max[2] = {1.0f, 1.0f};
 static MikuPan_ScreenCopyDebugInfo g_screen_copy_debug = {0};
 
 void MikuPan_Render2DMessage(DISP_SPRT *sprite)
@@ -467,6 +468,13 @@ static int MikuPan_UpdateScreenCopyTexture(sceGsTex0 *tex)
         (viewport_h / (float)render_h) *
         ((float)texture_h / PS2_CENTER_Y);
 
+    g_screen_copy_content_uv_max[0] =
+        g_screen_copy_uv_offset[0] +
+        (PS2_RESOLUTION_X_FLOAT / (float)texture_w) * g_screen_copy_uv_scale[0];
+    g_screen_copy_content_uv_max[1] =
+        g_screen_copy_uv_offset[1] +
+        (PS2_CENTER_Y / (float)texture_h) * g_screen_copy_uv_scale[1];
+
     src_x0 = 0;
     src_x1 = render_w;
     src_y0 = render_h;
@@ -556,6 +564,10 @@ void MikuPan_RenderScreenCopyTriangles3D(sceGsTex0 *tex, float *buffer, int vert
     MikuPan_SetUniform2fToCurrentShader(g_screen_copy_uv_scale[0],
                                         g_screen_copy_uv_scale[1],
                                         "uFramebufferUvScale");
+    MikuPan_SetUniform2fToCurrentShader(g_screen_copy_content_uv_max[0],
+                                        g_screen_copy_content_uv_max[1],
+                                        "uFramebufferContentUvMax");
+    MikuPan_SetUniform1iToCurrentShader(0, "uUseScreenPos");
     MikuPan_PipelineInfo *pipeline = MikuPan_GetPipelineInfo(UV4_COLOUR4_POSITION4);
 
     MikuPan_BindVAO(pipeline->vao);
@@ -587,6 +599,53 @@ void MikuPan_RenderScreenCopyTriangles3D(sceGsTex0 *tex, float *buffer, int vert
         if (v[9] < g_screen_copy_debug.ndc_min[1]) g_screen_copy_debug.ndc_min[1] = v[9];
         if (v[9] > g_screen_copy_debug.ndc_max[1]) g_screen_copy_debug.ndc_max[1] = v[9];
     }
+
+    MikuPan_StreamUploadFull(
+        GL_ARRAY_BUFFER,
+        pipeline->buffers[0].id,
+        (GLsizeiptr)(vertex_count * 12 * (int)sizeof(float)),
+        buffer);
+
+    MikuPan_TimedDrawArrays(GL_TRIANGLES, 0, vertex_count);
+    MikuPan_PerfDrawCall();
+    MikuPan_RestoreParticleTriangleState();
+}
+
+void MikuPan_RenderScreenCopyTriangles3DScreenPos(sceGsTex0 *tex, float *buffer, int vertex_count, int depth_always)
+{
+    if (vertex_count <= 0)
+    {
+        return;
+    }
+
+    MikuPan_FlushTexturedSpriteBatch();
+
+    if (!MikuPan_UpdateScreenCopyTexture(tex))
+    {
+        return;
+    }
+
+    MIKUPAN_PERF_SCOPE(PERF_SECT_SPRITE_RENDER);
+    MikuPan_SetCurrentShaderProgram(HEAT_HAZE_SHADER);
+    MikuPan_SetUniform1iToCurrentShader(0, "uTexture");
+    MikuPan_SetUniform2fToCurrentShader(g_screen_copy_uv_offset[0],
+                                        g_screen_copy_uv_offset[1],
+                                        "uFramebufferUvOffset");
+    MikuPan_SetUniform2fToCurrentShader(g_screen_copy_uv_scale[0],
+                                        g_screen_copy_uv_scale[1],
+                                        "uFramebufferUvScale");
+    MikuPan_SetUniform2fToCurrentShader(g_screen_copy_content_uv_max[0],
+                                        g_screen_copy_content_uv_max[1],
+                                        "uFramebufferContentUvMax");
+    MikuPan_SetUniform1iToCurrentShader(1, "uUseScreenPos");
+    MikuPan_SetUniform2fToCurrentShader((float)g_screen_copy_w,
+                                        (float)g_screen_copy_h,
+                                        "uRenderSize");
+    MikuPan_PipelineInfo *pipeline = MikuPan_GetPipelineInfo(UV4_COLOUR4_POSITION4);
+
+    MikuPan_BindVAO(pipeline->vao);
+    MikuPan_BindTexture2DCached(g_screen_copy_texture);
+    MikuPan_ApplyHeatHazeTriangleState(depth_always);
 
     MikuPan_StreamUploadFull(
         GL_ARRAY_BUFFER,

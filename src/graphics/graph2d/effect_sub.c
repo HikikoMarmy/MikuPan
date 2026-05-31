@@ -200,7 +200,7 @@ static int EffectSubUploadMainFramebufferToGs(int addr)
     return 1;
 }
 
-static void EffectSubRenderTexturedSpriteVertices(sceGsTex0 *tex, float *vertices)
+static void EffectSubRenderTexturedSpriteVertices(sceGsTex0 *tex, float *vertices, int use_screen_pos)
 {
     if (EffectSubIsLiveFramebufferTexture(tex))
     {
@@ -219,7 +219,14 @@ static void EffectSubRenderTexturedSpriteVertices(sceGsTex0 *tex, float *vertice
             }
         }
 
-        MikuPan_RenderScreenCopyTriangles3D(tex, &triangles[0][0], 6, 1, 0);
+        if (use_screen_pos)
+        {
+            MikuPan_RenderScreenCopyTriangles3DScreenPos(tex, &triangles[0][0], 6, 1);
+        }
+        else
+        {
+            MikuPan_RenderScreenCopyTriangles3D(tex, &triangles[0][0], 6, 1, 0);
+        }
         return;
     }
 
@@ -248,7 +255,7 @@ static void EffectSubRenderTexturedSpriteQuad(
     EffectSubWriteTextured2DVertex(vertices[2], u0, v1, x0, y1, 0.0f, r, g, b, a);
     EffectSubWriteTextured2DVertex(vertices[3], u1, v1, x1, y1, 0.0f, r, g, b, a);
 
-    EffectSubRenderTexturedSpriteVertices(tex, &vertices[0][0]);
+    EffectSubRenderTexturedSpriteVertices(tex, &vertices[0][0], 0);
 }
 
 static void EffectSubConvertGSPointToNDC(const sceVu0IVECTOR ivec, float ndc[2])
@@ -361,7 +368,9 @@ int ScreenCtrl(void)
 
     if (sc_col.now_alpha !=  0)
     {
-        SetPanel2(0x10, 0.0, 0.0, 640.0, 448.0, 0, sc_col.col_r, sc_col.col_g, sc_col.col_g, sc_col.now_alpha);
+        float eff_hw, eff_hh;
+        MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+        SetPanel2(0x10, 320.0f - eff_hw, 224.0f - eff_hh, 320.0f + eff_hw, 224.0f + eff_hh, 0, sc_col.col_r, sc_col.col_g, sc_col.col_g, sc_col.now_alpha);
     }
     
     
@@ -2074,7 +2083,7 @@ void SetTexDirectS2(int pri, SPRITE_DATA *sd, DRAW_ENV *de, int type)
         buffer[i][11] = 1.0f;
     }
 
-    EffectSubRenderTexturedSpriteVertices(mikupan_texture_load, &buffer[0][0]);
+    EffectSubRenderTexturedSpriteVertices(mikupan_texture_load, &buffer[0][0], 1);
 
     pbuf[ndpkt].ui32[0] = r;
     pbuf[ndpkt].ui32[1] = g;
@@ -2317,13 +2326,13 @@ void SetTexDirect2(int pri, SPRITE_DATA *sd, DRAW_ENV *de, sceVu0FVECTOR *v)
         buffer[i][11] = 1.0f;
     }
 
-    EffectSubRenderTexturedSpriteVertices(mikupan_texture_load, &buffer[0][0]);
-    
+    EffectSubRenderTexturedSpriteVertices(mikupan_texture_load, &buffer[0][0], 1);
+
     pbuf[ndpkt].ui32[0] = r;
     pbuf[ndpkt].ui32[1] = g;
     pbuf[ndpkt].ui32[2] = b;
     pbuf[ndpkt++].ui32[3] = a;
-    
+
     pbuf[ndpkt].iv[0] = tw[0];
     pbuf[ndpkt].iv[1] = th[0];
     pbuf[ndpkt].iv[2] = 0;
@@ -2615,8 +2624,8 @@ void SetTexDirect(SPRITE_DATA *sd, int atype)
             vertices[i][8], vertices[i][9]);
     }
 
-    EffectSubRenderTexturedSpriteVertices(mikupan_texture_load, &vertices[0][0]);
-    
+    EffectSubRenderTexturedSpriteVertices(mikupan_texture_load, &vertices[0][0], 1);
+
     pbuf[ndpkt].ui32[0] = r;
     pbuf[ndpkt].ui32[1] = g;
     pbuf[ndpkt].ui32[2] = b;

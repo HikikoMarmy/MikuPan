@@ -51,6 +51,7 @@ void MikuPan_DestroyInternalBuffer();
 void MikuPan_UpdateWindowSize(int width, int height);
 int MikuPan_GetWindowWidth();
 int MikuPan_GetWindowHeight();
+void MikuPan_GetFullScreenHalfExtent(float *half_w, float *half_h);
 int MikuPan_GetRenderMode();
 void MikuPan_RenderSetDebugValues();
 void MikuPan_Render2DMessage(DISP_SPRT* sprite);
@@ -65,6 +66,7 @@ void MikuPan_RenderTexturedTriangles3D(sceGsTex0 *tex, float *buffer, int vertex
 void MikuPan_RenderUntexturedTriangles3D(float *buffer, int vertex_count, int depth_always, int additive_blend);
 void MikuPan_RenderTexturedTriangles3DWithState(sceGsTex0 *tex, float *buffer, int vertex_count, int depth_always, int additive_blend);
 void MikuPan_RenderScreenCopyTriangles3D(sceGsTex0 *tex, float *buffer, int vertex_count, int depth_always, int additive_blend);
+void MikuPan_RenderScreenCopyTriangles3DScreenPos(sceGsTex0 *tex, float *buffer, int vertex_count, int depth_always);
 const MikuPan_TextureInfo *MikuPan_GetScreenCopyTextureInfo(void);
 const MikuPan_ScreenCopyDebugInfo *MikuPan_GetScreenCopyDebugInfo(void);
 void MikuPan_SetupFntTexture();

@@ -18,6 +18,7 @@ float fmodf(float x, float y);
 #include "outgame/outgame.h"
 // #include "os/pad.h" // VibrateRequest, VibrateRequest1, VibrateRequest2
 #include "main/glob.h"
+#include "mikupan/rendering/mikupan_renderer.h"
 #include "ingame/ig_init.h"
 #include "graphics/motion/mdlwork.h"
 #include "graphics/motion/motion.h"
@@ -1715,7 +1716,11 @@ void SceneTestEffectTest()
     {
         fed = &scn_eff_ctrl[14].eff_data;
 
-        SceneSetSquare(1, 0.0f, 0.0f, 640.0f, 448.0f, fed->fade_scr.r, fed->fade_scr.g, fed->fade_scr.b, fed->fade_scr.a);
+        {
+            float eff_hw, eff_hh;
+            MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+            SceneSetSquare(1, 320.0f - eff_hw, 224.0f - eff_hh, eff_hw * 2.0f, eff_hh * 2.0f, fed->fade_scr.r, fed->fade_scr.g, fed->fade_scr.b, fed->fade_scr.a);
+        }
     }
 }
 

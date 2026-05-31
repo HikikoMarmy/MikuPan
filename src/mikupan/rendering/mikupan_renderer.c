@@ -637,6 +637,21 @@ int MikuPan_GetWindowHeight()
     return render_back_msaa.texture.height;
 }
 
+void MikuPan_GetFullScreenHalfExtent(float *half_w, float *half_h)
+{
+    float vx, vy, vw, vh, scale;
+    MikuPan_GetPS2Viewport(MikuPan_GetWindowWidth(), MikuPan_GetWindowHeight(),
+                           &vx, &vy, &vw, &vh, &scale);
+    if (scale <= 0.0f)
+    {
+        *half_w = PS2_CENTER_X;
+        *half_h = PS2_CENTER_Y;
+        return;
+    }
+    *half_w = (float) MikuPan_GetWindowWidth() / (2.0f * scale);
+    *half_h = (float) MikuPan_GetWindowHeight() / (2.0f * scale);
+}
+
 int MikuPan_GetRenderMode()
 {
     return MikuPan_IsWireframeRendering() ? GL_LINE_STRIP : GL_TRIANGLE_STRIP;

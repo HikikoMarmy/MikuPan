@@ -964,7 +964,11 @@ void FodSetEffectParam(FOD_EFF_DATA *fed)
     case FOD_EFF_FADE_SCREEN:
         if (fed->fade_scr.a != 0)
         {
-            SceneSetSquare(16, 0.0f, 0.0f, 640.0f, 448.0f, fed->fade_scr.r, fed->fade_scr.g, fed->fade_scr.b, fed->fade_scr.a);
+            {
+                float eff_hw, eff_hh;
+                MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+                SceneSetSquare(16, 320.0f - eff_hw, 224.0f - eff_hh, eff_hw * 2.0f, eff_hh * 2.0f, fed->fade_scr.r, fed->fade_scr.g, fed->fade_scr.b, fed->fade_scr.a);
+            }
         }
     break;
     case FOD_EFF_FADE_MODEL:

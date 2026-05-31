@@ -23,6 +23,7 @@
 #include "ingame/photo/photo.h"
 #include "ingame/plyr/plyr_ctl.h" // FModeScreenEffect
 #include "main/glob.h"
+#include "mikupan/rendering/mikupan_renderer.h"
 
 #define INCLUDING_FROM_PHT_MAKE_C
 #include "ingame/map/furn_ctl.h"// SetFurnAttrEve
@@ -2604,7 +2605,11 @@ void DispPhotoFrame0()
                 }
                 break;
             case 3:
-                SetPanel(0x460, 0.0f, 0.0f, 640.0f, 448.0f, 0, 0, 0, num2 * 12);
+                {
+                    float eff_hw, eff_hh;
+                    MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+                    SetPanel(0x460, 320.0f - eff_hw, 224.0f - eff_hh, 320.0f + eff_hw, 224.0f + eff_hh, 0, 0, 0, num2 * 12);
+                }
                 break;
             case 1:
                 switch (num2)

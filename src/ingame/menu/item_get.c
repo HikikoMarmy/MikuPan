@@ -19,6 +19,7 @@
 
 #include "graphics/motion/mdlwork.h"
 #include "main/glob.h"
+#include "mikupan/rendering/mikupan_renderer.h"
 #include "os/eeiop/adpcm/ea_tape.h"
 #include "os/eeiop/cdvd/eecdvd.h"
 #include "os/eeiop/eese.h"
@@ -961,7 +962,11 @@ static void GetFad(u_char model_type, u_char model_no, u_char fade, u_char time)
     {
         chr = (chr_now << 16) + (chr_now << 8) + chr_now;
 
-        SetPanel2(0x1000, 0.0f, 0.0f, 640.0f, 448.0f, 1, 0, 0, 0, chr_now);
+        {
+            float eff_hw, eff_hh;
+            MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+            SetPanel2(0x1000, 320.0f - eff_hw, 224.0f - eff_hh, 320.0f + eff_hw, 224.0f + eff_hh, 1, 0, 0, 0, chr_now);
+        }
 
         if (model_type == 4)
         {
@@ -976,7 +981,11 @@ static void GetFad(u_char model_type, u_char model_no, u_char fade, u_char time)
             DspItem2D(file2d.tex_addr, -160.0f, 0.0f, chr, file2d.alp, 1.5f, 1.5f, 0x32);
         }
 
-        PolySquareYW(0.0f, 0.0f, 0x280, 0x1c0, 0, ply_now, 1.0f, 1.0f, 0x2d000, 0, 0, 0);
+        {
+            float eff_hw, eff_hh;
+            MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+            PolySquareYW(320.0f - eff_hw, 224.0f - eff_hh, (u_short)(eff_hw * 2.0f), (u_short)(eff_hh * 2.0f), 0, ply_now, 1.0f, 1.0f, 0x2d000, 0, 0, 0);
+        }
     }
 }
 

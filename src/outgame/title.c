@@ -1881,20 +1881,27 @@ void DispOutDither()
     break;
     }
 
-    sd2.clamp_u = SCE_GS_SET_CLAMP_1(SCE_GS_REPEAT, SCE_GS_REPEAT, 0, 0, 40, 0);
-    sd2.clamp_v = SCE_GS_SET_CLAMP_1(SCE_GS_REPEAT, SCE_GS_REPEAT, 0, 0, 32, 0);
-    sd2.alpha = (u_char)((SgSinf(DEG2RAD(out_dither.cnt)) + 1.0f) * out_dither.alp);
-    SetTexDirectS2(-2, &sd2, &de2, 0);
+    {
+        float eff_hw, eff_hh;
+        MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+        sd2.pos_x = -eff_hw - 0.5f;
+        sd2.size_w = eff_hw * 2.0f;
 
-    sd2.clamp_u = SCE_GS_SET_CLAMP_1(SCE_GS_REPEAT, SCE_GS_REPEAT, 64, 0, 44, 0);
-    sd2.clamp_v = SCE_GS_SET_CLAMP_1(SCE_GS_REPEAT, SCE_GS_REPEAT, 0, 0, 32, 0);
-    sd2.alpha = (u_char)((SgSinf(DEG2RAD(out_dither.cnt + 120.0f)) + 1.0f) * out_dither.alp);
-    SetTexDirectS2(-2, &sd2, &de2, 0);
+        sd2.clamp_u = SCE_GS_SET_CLAMP_1(SCE_GS_REPEAT, SCE_GS_REPEAT, 0, 0, 40, 0);
+        sd2.clamp_v = SCE_GS_SET_CLAMP_1(SCE_GS_REPEAT, SCE_GS_REPEAT, 0, 0, 32, 0);
+        sd2.alpha = (u_char)((SgSinf(DEG2RAD(out_dither.cnt)) + 1.0f) * out_dither.alp);
+        SetTexDirectS2(-2, &sd2, &de2, 0);
 
-    sd2.clamp_u = SCE_GS_SET_CLAMP_1(SCE_GS_REPEAT, SCE_GS_REPEAT, 0, 0, 40, 0);
-    sd2.clamp_v = SCE_GS_SET_CLAMP_1(SCE_GS_REPEAT, SCE_GS_REPEAT, 64, 0, 36, 0);
-    sd2.alpha = (u_char)((SgSinf(DEG2RAD(out_dither.cnt + 240.0f)) + 1.0f) * out_dither.alp);
-    SetTexDirectS2(-2, &sd2, &de2, 0);
+        sd2.clamp_u = SCE_GS_SET_CLAMP_1(SCE_GS_REPEAT, SCE_GS_REPEAT, 64, 0, 44, 0);
+        sd2.clamp_v = SCE_GS_SET_CLAMP_1(SCE_GS_REPEAT, SCE_GS_REPEAT, 0, 0, 32, 0);
+        sd2.alpha = (u_char)((SgSinf(DEG2RAD(out_dither.cnt + 120.0f)) + 1.0f) * out_dither.alp);
+        SetTexDirectS2(-2, &sd2, &de2, 0);
+
+        sd2.clamp_u = SCE_GS_SET_CLAMP_1(SCE_GS_REPEAT, SCE_GS_REPEAT, 0, 0, 40, 0);
+        sd2.clamp_v = SCE_GS_SET_CLAMP_1(SCE_GS_REPEAT, SCE_GS_REPEAT, 64, 0, 36, 0);
+        sd2.alpha = (u_char)((SgSinf(DEG2RAD(out_dither.cnt + 240.0f)) + 1.0f) * out_dither.alp);
+        SetTexDirectS2(-2, &sd2, &de2, 0);
+    }
 
     out_dither.cnt += out_dither.spd;
 }

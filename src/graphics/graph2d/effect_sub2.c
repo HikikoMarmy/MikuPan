@@ -2461,7 +2461,11 @@ int CallMissionClear()
     break;
     case 5:
         ResultDisp();
-        PolySquareYW(0.0f, 0.0f, 640, 448, 0x00000000, 60.0f, 1.0f, 1.0f, 0x24000, 0, 0, 0);
+        {
+            float eff_hw, eff_hh;
+            MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+            PolySquareYW(320.0f - eff_hw, 224.0f - eff_hh, (u_short)(eff_hw * 2.0f), (u_short)(eff_hh * 2.0f), 0x00000000, 60.0f, 1.0f, 1.0f, 0x24000, 0, 0, 0);
+        }
         
         if (BtlAnmMain())
         {
@@ -2588,7 +2592,11 @@ uint64_t CallMissionFailed()
     break;
     case 5:
         ResultDisp();
-        PolySquareYW(0.0f, 0.0f, 640, 448, 0x00000000, 60.0f, 1.0f, 1.0f, 0x24000, 0, 0, 0);
+        {
+            float eff_hw, eff_hh;
+            MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+            PolySquareYW(320.0f - eff_hw, 224.0f - eff_hh, (u_short)(eff_hw * 2.0f), (u_short)(eff_hh * 2.0f), 0x00000000, 60.0f, 1.0f, 1.0f, 0x24000, 0, 0, 0);
+        }
         
         if (BtlAnmMain())
         {
@@ -2701,7 +2709,11 @@ int CallMissionAllClear()
     break;
     case 5:
         ResultDisp();
-        PolySquareYW(0.0f, 0.0f, 0x280, 0x1c0, 0, 60.0f, 1.0f, 1.0f, 0x24000, 0, 0, 0);
+        {
+            float eff_hw, eff_hh;
+            MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+            PolySquareYW(320.0f - eff_hw, 224.0f - eff_hh, (u_short)(eff_hw * 2.0f), (u_short)(eff_hh * 2.0f), 0, 60.0f, 1.0f, 1.0f, 0x24000, 0, 0, 0);
+        }
         if (BtlAnmMain())
         {
             anm_init = 7;
@@ -2844,7 +2856,11 @@ int CallStoryClear()
     
     if (!first_clear_flg && (cribo.clear_info & 2) == 0)
     {
-        SetSquareS(0x18000, -320.0f, -224.0f, 320.0f, 224.0f, 0, 0, 0, 1);
+        {
+            float eff_hw, eff_hh;
+            MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+            SetSquareS(0x18000, -eff_hw, -eff_hh, eff_hw, eff_hh, 0, 0, 0, 1);
+        }
     }
     
     if (clear_disp)
@@ -3509,7 +3525,9 @@ void BtlReadyDisp(/* s0 16 */ ANM2D_WRK_TABLE *w_table)
 
 void SimpleMaskDraw(/* a0 4 */ u_char alpha)
 {
-    SetSquareS(0xf000, -320.0f, -224.0f, 320.0f, 224.0f, 0, 0, 0, alpha);
+    float eff_hw, eff_hh;
+    MikuPan_GetFullScreenHalfExtent(&eff_hw, &eff_hh);
+    SetSquareS(0xf000, -eff_hw, -eff_hh, eff_hw, eff_hh, 0, 0, 0, alpha);
 }
 
 void DispSprt2(/* s0 16 */ SPRT_SDAT *ssd, /* a1 5 */ int64_t addr, /* a2 6 */ int sp_no, /* s2 18 */ SPRT_SROT *srot, /* s3 19 */ SPRT_SSCL *sscl, /* t1 9 */ u_char alp_rate)
