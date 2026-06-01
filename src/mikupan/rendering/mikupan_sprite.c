@@ -28,6 +28,41 @@ static float g_screen_copy_uv_scale[2] = {1.0f, 1.0f};
 static float g_screen_copy_content_uv_max[2] = {1.0f, 1.0f};
 static MikuPan_ScreenCopyDebugInfo g_screen_copy_debug = {0};
 
+static void MikuPan_RenderBlackWhiteScreenCopy(int copy_w, int copy_h)
+{
+    float quad[] = {
+        0,1,0,0,   1,1,1,1,   -1,-1,0,1,
+        1,1,0,0,   1,1,1,1,    1,-1,0,1,
+        0,0,0,0,   1,1,1,1,   -1, 1,0,1,
+        1,0,0,0,   1,1,1,1,    1, 1,0,1
+    };
+
+    MikuPan_SetRenderState2D();
+    glad_glDisable(GL_BLEND);
+    MikuPan_SetCurrentShaderProgram(POSTPROCESS_SHADER);
+    MikuPan_SetUniform1iToCurrentShader(0, "uTexture");
+    MikuPan_SetUniform1iToCurrentShader(1, "uBlackWhiteMode");
+    MikuPan_SetUniform1fToCurrentShader(1.0f, "uBrightness");
+    MikuPan_SetUniform1fToCurrentShader(1.0f, "uGamma");
+    MikuPan_SetUniform1iToCurrentShader(0, "uCrtEnabled");
+    MikuPan_SetUniform1fToCurrentShader(0.0f, "uCrtStrength");
+    MikuPan_SetUniform2fToCurrentShader((float)copy_w,
+                                        (float)copy_h,
+                                        "uTextureSize");
+    MikuPan_SetUniform2fToCurrentShader((float)copy_w,
+                                        (float)copy_h,
+                                        "uOutputSize");
+    MikuPan_SetUniform1fToCurrentShader(0.0f, "uTime");
+
+    MikuPan_PipelineInfo *pipeline = MikuPan_GetPipelineInfo(UV4_COLOUR4_POSITION4);
+    MikuPan_BindVAO(pipeline->vao);
+    MikuPan_BindTexture2DCached(render_back_msaa.texture.id);
+    MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[0].id,
+                             (GLsizeiptr)sizeof(quad), quad);
+    glad_glDrawArrays(GL_TRIANGLE_STRIP, 0, 4);
+    MikuPan_ResetRenderStateCache();
+}
+
 void MikuPan_Render2DMessage(DISP_SPRT *sprite)
 {
     MikuPan_Rect dst_rect = {0};
@@ -572,11 +607,18 @@ static int MikuPan_UpdateScreenCopyTexture(sceGsTex0 *tex)
     glad_glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     glad_glClear(GL_COLOR_BUFFER_BIT);
 
-    glad_glBindFramebuffer(GL_READ_FRAMEBUFFER, render_back_msaa.framebuffer.id);
-    glad_glBlitFramebuffer(src_x0, src_y0, src_x1, src_y1,
-                           0, 0, copy_w, copy_h,
-                           GL_COLOR_BUFFER_BIT,
-                           GL_LINEAR);
+    if (MikuPan_IsBlackWhiteModeActive())
+    {
+        MikuPan_RenderBlackWhiteScreenCopy(copy_w, copy_h);
+    }
+    else
+    {
+        glad_glBindFramebuffer(GL_READ_FRAMEBUFFER, render_back_msaa.framebuffer.id);
+        glad_glBlitFramebuffer(src_x0, src_y0, src_x1, src_y1,
+                               0, 0, copy_w, copy_h,
+                               GL_COLOR_BUFFER_BIT,
+                               GL_LINEAR);
+    }
 
     glad_glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_TRUE);
     glad_glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
@@ -642,6 +684,8 @@ void MikuPan_RenderScreenCopyTriangles3D(sceGsTex0 *tex, float *buffer, int vert
     MIKUPAN_PERF_SCOPE(PERF_SECT_SPRITE_RENDER);
     MikuPan_SetCurrentShaderProgram(HEAT_HAZE_SHADER);
     MikuPan_SetUniform1iToCurrentShader(0, "uTexture");
+    MikuPan_SetUniform1iToCurrentShader(MikuPan_IsBlackWhiteModeActive(),
+                                        "uBlackWhiteMode");
     MikuPan_SetUniform2fToCurrentShader(g_screen_copy_uv_offset[0],
                                         g_screen_copy_uv_offset[1],
                                         "uFramebufferUvOffset");
@@ -713,6 +757,8 @@ void MikuPan_RenderScreenCopyTriangles3DScreenPos(sceGsTex0 *tex, float *buffer,
     MIKUPAN_PERF_SCOPE(PERF_SECT_SPRITE_RENDER);
     MikuPan_SetCurrentShaderProgram(HEAT_HAZE_SHADER);
     MikuPan_SetUniform1iToCurrentShader(0, "uTexture");
+    MikuPan_SetUniform1iToCurrentShader(MikuPan_IsBlackWhiteModeActive(),
+                                        "uBlackWhiteMode");
     MikuPan_SetUniform2fToCurrentShader(g_screen_copy_uv_offset[0],
                                         g_screen_copy_uv_offset[1],
                                         "uFramebufferUvOffset");
@@ -761,6 +807,8 @@ void MikuPan_RenderScreenCopyTriangles3DSTQ(sceGsTex0 *tex, float *buffer, int v
     MIKUPAN_PERF_SCOPE(PERF_SECT_SPRITE_RENDER);
     MikuPan_SetCurrentShaderProgram(HEAT_HAZE_SHADER);
     MikuPan_SetUniform1iToCurrentShader(0, "uTexture");
+    MikuPan_SetUniform1iToCurrentShader(MikuPan_IsBlackWhiteModeActive(),
+                                        "uBlackWhiteMode");
     MikuPan_SetUniform2fToCurrentShader(g_screen_copy_uv_offset[0],
                                         g_screen_copy_uv_offset[1],
                                         "uFramebufferUvOffset");

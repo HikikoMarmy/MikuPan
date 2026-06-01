@@ -135,6 +135,17 @@ static float normal_length = 10.0f;
 static float brightness = 1.0f;
 static float gamma_value = 1.0f;
 
+#define MIKUPAN_UI_THEME_COUNT 6
+
+static const char *theme_labels[MIKUPAN_UI_THEME_COUNT] = {
+    "Moonlit Blue",
+    "Ghost Cyan",
+    "Crimson",
+    "FF1 Ritual",
+    "Mist Teal",
+    "Sepia Photo",
+};
+
 #define MIKUPAN_CRT_DEFAULTS \
     {                        \
         0,                   \
@@ -160,6 +171,16 @@ static const MikuPan_ConfigCrt crt_defaults = MIKUPAN_CRT_DEFAULTS;
 static MikuPan_ConfigCrt crt_settings = MIKUPAN_CRT_DEFAULTS;
 
 static void MikuPan_UiStoreRuntimeConfiguration(void);
+
+static int MikuPan_ClampThemeIndex(int theme)
+{
+    if (theme < 0 || theme >= MIKUPAN_UI_THEME_COUNT)
+    {
+        return 0;
+    }
+
+    return theme;
+}
 
 static float MikuPan_ClampFloat(float value, float min_value, float max_value)
 {
@@ -222,6 +243,8 @@ static void MikuPan_UiStoreRuntimeConfiguration(void)
     mikupan_configuration.renderer.msaa_index = msaa_samples;
     mikupan_configuration.renderer.brightness = brightness;
     mikupan_configuration.renderer.gamma = gamma_value;
+    mikupan_configuration.selected_theme =
+        MikuPan_ClampThemeIndex(mikupan_configuration.selected_theme);
     mikupan_configuration.crt = crt_settings;
     mikupan_configuration.input.selected_gamepad_index =
         MikuPan_ControllerGetPreferredGamepadIndex();
@@ -912,7 +935,7 @@ static void MikuPan_PopulateResolutionList(SDL_DisplayID display, const SDL_Disp
     }
 }
 
-static void MikuPan_ApplyFatalFrameStyle(int theme)
+static void MikuPan_LoadUiFont(void)
 {
     ImGuiIO* io = igGetIO_Nil();
 
@@ -922,6 +945,35 @@ static void MikuPan_ApplyFatalFrameStyle(int theme)
         14.0f,
         NULL,
         ImFontAtlas_GetGlyphRangesDefault(io->Fonts));
+}
+
+static void MikuPan_ApplyThemeBaseline(ImVec4 *c)
+{
+    c[ImGuiCol_Separator]                 = (ImVec4){0.22f, 0.24f, 0.28f, 0.55f};
+    c[ImGuiCol_SeparatorHovered]          = (ImVec4){0.40f, 0.45f, 0.52f, 0.85f};
+    c[ImGuiCol_SeparatorActive]           = (ImVec4){0.58f, 0.66f, 0.76f, 1.00f};
+    c[ImGuiCol_ResizeGrip]                = (ImVec4){0.24f, 0.28f, 0.34f, 0.25f};
+    c[ImGuiCol_ResizeGripHovered]         = (ImVec4){0.42f, 0.50f, 0.60f, 0.70f};
+    c[ImGuiCol_ResizeGripActive]          = (ImVec4){0.58f, 0.68f, 0.80f, 0.95f};
+    c[ImGuiCol_TabDimmed]                 = (ImVec4){0.06f, 0.08f, 0.11f, 0.95f};
+    c[ImGuiCol_TabDimmedSelected]         = (ImVec4){0.14f, 0.18f, 0.24f, 1.00f};
+    c[ImGuiCol_TabDimmedSelectedOverline] = (ImVec4){0.36f, 0.48f, 0.62f, 1.00f};
+    c[ImGuiCol_PlotLines]                 = (ImVec4){0.58f, 0.70f, 0.84f, 1.00f};
+    c[ImGuiCol_PlotLinesHovered]          = (ImVec4){0.76f, 0.86f, 0.98f, 1.00f};
+    c[ImGuiCol_PlotHistogram]             = (ImVec4){0.44f, 0.54f, 0.68f, 1.00f};
+    c[ImGuiCol_PlotHistogramHovered]      = (ImVec4){0.64f, 0.76f, 0.92f, 1.00f};
+    c[ImGuiCol_TableRowBg]                = (ImVec4){0.00f, 0.00f, 0.00f, 0.00f};
+    c[ImGuiCol_TableRowBgAlt]             = (ImVec4){0.12f, 0.16f, 0.22f, 0.25f};
+    c[ImGuiCol_DragDropTarget]            = (ImVec4){0.76f, 0.86f, 0.98f, 0.90f};
+    c[ImGuiCol_NavCursor]                 = (ImVec4){0.58f, 0.70f, 0.84f, 1.00f};
+    c[ImGuiCol_NavWindowingHighlight]     = (ImVec4){0.76f, 0.86f, 0.98f, 0.70f};
+    c[ImGuiCol_NavWindowingDimBg]         = (ImVec4){0.03f, 0.04f, 0.06f, 0.55f};
+    c[ImGuiCol_ModalWindowDimBg]          = (ImVec4){0.02f, 0.03f, 0.05f, 0.72f};
+}
+
+static void MikuPan_ApplyFatalFrameStyle(int theme)
+{
+    theme = MikuPan_ClampThemeIndex(theme);
 
     ImGuiStyle *s = igGetStyle();
     ImVec4 *c = s->Colors;
@@ -947,6 +999,11 @@ static void MikuPan_ApplyFatalFrameStyle(int theme)
     s->IndentSpacing     = 18.0f;
     s->ScrollbarSize     = 14.0f;
     s->GrabMinSize       = 10.0f;
+
+    if (theme != 2)
+    {
+        MikuPan_ApplyThemeBaseline(c);
+    }
 
     switch (theme)
     {
@@ -1333,6 +1390,92 @@ static void MikuPan_ApplyFatalFrameStyle(int theme)
             c[ImGuiCol_NavWindowingDimBg]     = (ImVec4){0.025f, 0.050f, 0.055f, 0.55f};
             c[ImGuiCol_ModalWindowDimBg]      = (ImVec4){0.020f, 0.040f, 0.045f, 0.72f};
             break;
+        case 5:
+            // Text: faded photographic paper
+            c[ImGuiCol_Text]                  = (ImVec4){0.86f, 0.80f, 0.68f, 1.00f};
+            c[ImGuiCol_TextDisabled]          = (ImVec4){0.42f, 0.36f, 0.27f, 1.00f};
+
+            // Backgrounds: dark sepia print / aged ink
+            c[ImGuiCol_WindowBg]              = (ImVec4){0.055f, 0.045f, 0.030f, 0.96f};
+            c[ImGuiCol_ChildBg]               = (ImVec4){0.080f, 0.065f, 0.045f, 0.86f};
+            c[ImGuiCol_PopupBg]               = (ImVec4){0.045f, 0.035f, 0.024f, 0.98f};
+
+            // Borders: old varnish / worn frame edges
+            c[ImGuiCol_Border]                = (ImVec4){0.36f, 0.27f, 0.16f, 0.68f};
+            c[ImGuiCol_BorderShadow]          = (ImVec4){0.00f, 0.00f, 0.00f, 0.00f};
+
+            // Frames: cabinet wood and photo album paper
+            c[ImGuiCol_FrameBg]               = (ImVec4){0.120f, 0.090f, 0.055f, 0.95f};
+            c[ImGuiCol_FrameBgHovered]        = (ImVec4){0.230f, 0.170f, 0.095f, 0.96f};
+            c[ImGuiCol_FrameBgActive]         = (ImVec4){0.330f, 0.240f, 0.130f, 1.00f};
+
+            // Titles: dark exposed film
+            c[ImGuiCol_TitleBg]               = (ImVec4){0.060f, 0.045f, 0.030f, 1.00f};
+            c[ImGuiCol_TitleBgActive]         = (ImVec4){0.160f, 0.110f, 0.060f, 1.00f};
+            c[ImGuiCol_TitleBgCollapsed]      = (ImVec4){0.045f, 0.035f, 0.024f, 0.86f};
+
+            c[ImGuiCol_MenuBarBg]             = (ImVec4){0.090f, 0.065f, 0.040f, 1.00f};
+
+            // Scrollbar: dark bronze
+            c[ImGuiCol_ScrollbarBg]           = (ImVec4){0.040f, 0.032f, 0.022f, 0.86f};
+            c[ImGuiCol_ScrollbarGrab]         = (ImVec4){0.230f, 0.165f, 0.090f, 1.00f};
+            c[ImGuiCol_ScrollbarGrabHovered]  = (ImVec4){0.340f, 0.245f, 0.130f, 1.00f};
+            c[ImGuiCol_ScrollbarGrabActive]   = (ImVec4){0.470f, 0.330f, 0.170f, 1.00f};
+
+            // Accent color: amber candlelight on old paper
+            c[ImGuiCol_CheckMark]             = (ImVec4){0.78f, 0.58f, 0.28f, 1.00f};
+            c[ImGuiCol_SliderGrab]            = (ImVec4){0.58f, 0.40f, 0.18f, 1.00f};
+            c[ImGuiCol_SliderGrabActive]      = (ImVec4){0.86f, 0.64f, 0.30f, 1.00f};
+
+            // Buttons: aged wood
+            c[ImGuiCol_Button]                = (ImVec4){0.135f, 0.095f, 0.055f, 0.95f};
+            c[ImGuiCol_ButtonHovered]         = (ImVec4){0.280f, 0.190f, 0.095f, 1.00f};
+            c[ImGuiCol_ButtonActive]          = (ImVec4){0.400f, 0.270f, 0.130f, 1.00f};
+
+            // Headers: photo album separators
+            c[ImGuiCol_Header]                = (ImVec4){0.170f, 0.120f, 0.065f, 0.86f};
+            c[ImGuiCol_HeaderHovered]         = (ImVec4){0.320f, 0.220f, 0.110f, 0.96f};
+            c[ImGuiCol_HeaderActive]          = (ImVec4){0.430f, 0.290f, 0.140f, 1.00f};
+
+            // Separators and grips: warm paper edge highlights
+            c[ImGuiCol_Separator]             = (ImVec4){0.36f, 0.27f, 0.16f, 0.58f};
+            c[ImGuiCol_SeparatorHovered]      = (ImVec4){0.55f, 0.40f, 0.20f, 0.85f};
+            c[ImGuiCol_SeparatorActive]       = (ImVec4){0.78f, 0.58f, 0.28f, 1.00f};
+            c[ImGuiCol_ResizeGrip]            = (ImVec4){0.36f, 0.27f, 0.16f, 0.25f};
+            c[ImGuiCol_ResizeGripHovered]     = (ImVec4){0.55f, 0.40f, 0.20f, 0.70f};
+            c[ImGuiCol_ResizeGripActive]      = (ImVec4){0.78f, 0.58f, 0.28f, 0.95f};
+
+            // Tabs: dark sepia with amber overline
+            c[ImGuiCol_Tab]                   = (ImVec4){0.115f, 0.080f, 0.045f, 0.95f};
+            c[ImGuiCol_TabHovered]            = (ImVec4){0.320f, 0.220f, 0.110f, 0.96f};
+            c[ImGuiCol_TabSelected]           = (ImVec4){0.300f, 0.205f, 0.105f, 1.00f};
+            c[ImGuiCol_TabSelectedOverline]   = (ImVec4){0.78f, 0.58f, 0.28f, 1.00f};
+            c[ImGuiCol_TabDimmed]             = (ImVec4){0.075f, 0.055f, 0.032f, 0.95f};
+            c[ImGuiCol_TabDimmedSelected]     = (ImVec4){0.155f, 0.105f, 0.055f, 1.00f};
+            c[ImGuiCol_TabDimmedSelectedOverline] = (ImVec4){0.45f, 0.32f, 0.16f, 1.00f};
+
+            // Plot colors: readable, warm, restrained
+            c[ImGuiCol_PlotLines]             = (ImVec4){0.78f, 0.58f, 0.28f, 1.00f};
+            c[ImGuiCol_PlotLinesHovered]      = (ImVec4){0.95f, 0.72f, 0.36f, 1.00f};
+            c[ImGuiCol_PlotHistogram]         = (ImVec4){0.54f, 0.34f, 0.16f, 1.00f};
+            c[ImGuiCol_PlotHistogramHovered]  = (ImVec4){0.80f, 0.50f, 0.22f, 1.00f};
+
+            // Tables / misc accents
+            c[ImGuiCol_TableHeaderBg]         = (ImVec4){0.150f, 0.105f, 0.060f, 1.00f};
+            c[ImGuiCol_TableBorderStrong]     = (ImVec4){0.36f, 0.27f, 0.16f, 1.00f};
+            c[ImGuiCol_TableBorderLight]      = (ImVec4){0.230f, 0.165f, 0.090f, 1.00f};
+            c[ImGuiCol_TableRowBg]            = (ImVec4){0.00f, 0.00f, 0.00f, 0.00f};
+            c[ImGuiCol_TableRowBgAlt]         = (ImVec4){0.120f, 0.085f, 0.048f, 0.30f};
+            c[ImGuiCol_TextLink]              = (ImVec4){0.82f, 0.62f, 0.32f, 1.00f};
+            c[ImGuiCol_TextSelectedBg]        = (ImVec4){0.42f, 0.29f, 0.14f, 0.65f};
+            c[ImGuiCol_DragDropTarget]        = (ImVec4){0.95f, 0.72f, 0.36f, 0.90f};
+
+            // Nav / modal
+            c[ImGuiCol_NavCursor]             = (ImVec4){0.82f, 0.62f, 0.32f, 1.00f};
+            c[ImGuiCol_NavWindowingHighlight] = (ImVec4){0.95f, 0.72f, 0.36f, 0.70f};
+            c[ImGuiCol_NavWindowingDimBg]     = (ImVec4){0.035f, 0.026f, 0.018f, 0.55f};
+            c[ImGuiCol_ModalWindowDimBg]      = (ImVec4){0.030f, 0.022f, 0.014f, 0.72f};
+            break;
     }
 }
 
@@ -1342,6 +1485,9 @@ void MikuPan_InitUi(SDL_Window *window, SDL_GLContext renderer)
     ImGuiIO *io = igGetIO_Nil();
     io->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
 
+    mikupan_configuration.selected_theme =
+        MikuPan_ClampThemeIndex(mikupan_configuration.selected_theme);
+    MikuPan_LoadUiFont();
     MikuPan_ApplyFatalFrameStyle(mikupan_configuration.selected_theme);
 
     SDL_DisplayID primary = SDL_GetPrimaryDisplay();
@@ -1715,6 +1861,20 @@ void MikuPan_UiMenuBar(void)
 
         igSliderFloat("Brightness", &brightness,  0.0f, 2.0f, "%.2f", 0);
         igSliderFloat("Gamma",      &gamma_value, 0.1f, 3.0f, "%.2f", 0);
+
+        int selected_theme =
+            MikuPan_ClampThemeIndex(mikupan_configuration.selected_theme);
+        if (selected_theme != mikupan_configuration.selected_theme)
+        {
+            mikupan_configuration.selected_theme = selected_theme;
+        }
+
+        if (igCombo_Str_arr("Theme", &selected_theme, theme_labels,
+                            MIKUPAN_UI_THEME_COUNT, -1))
+        {
+            mikupan_configuration.selected_theme = selected_theme;
+            MikuPan_ApplyFatalFrameStyle(selected_theme);
+        }
 
         if (igMenuItem_Bool("Save Configuration", NULL, false, true))
         {

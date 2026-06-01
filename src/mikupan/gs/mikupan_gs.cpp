@@ -195,6 +195,87 @@ static int MikuPan_GetRawTextureRegion(sceGsTex0 *tex0, int *out_addr, int *out_
     return 1;
 }
 
+static int MikuPan_GetClutRegion(sceGsTex0 *tex0, int *out_addr, int *out_size)
+{
+    int min_addr;
+    int max_addr;
+
+    if (tex0 == nullptr || out_addr == nullptr || out_size == nullptr)
+    {
+        return 0;
+    }
+
+    if (tex0->PSM != PSMT8 && tex0->PSM != PSMT4)
+    {
+        return 0;
+    }
+
+    min_addr = static_cast<int>(gsHelper.mem_.size());
+    max_addr = 0;
+
+    // MikuPan's indexed texture decoder samples a 16x16 PSMCT32 CLUT page.
+    // Include that page in hashes and invalidation so black/white CLUT swaps
+    // cannot keep reusing a stale color GL texture.
+    for (int cy = 0; cy < 16; cy++)
+    {
+        for (int cx = 0; cx < 16; cx++)
+        {
+            const int addr = GetPixelAddressPSMCT32(tex0->CBP, tex0->TBW, cx, cy);
+
+            if (addr < min_addr)
+            {
+                min_addr = addr;
+            }
+
+            if (addr + 4 > max_addr)
+            {
+                max_addr = addr + 4;
+            }
+        }
+    }
+
+    if (min_addr < 0 || max_addr <= min_addr ||
+        max_addr > static_cast<int>(gsHelper.mem_.size()))
+    {
+        return 0;
+    }
+
+    *out_addr = min_addr;
+    *out_size = max_addr - min_addr;
+    return 1;
+}
+
+static int MikuPan_GetTextureInvalidationRegion(sceGsTex0 *tex0,
+                                                int *out_addr,
+                                                int *out_size)
+{
+    int tex_addr;
+    int tex_size;
+    int clut_addr;
+    int clut_size;
+
+    if (!MikuPan_GetRawTextureRegion(tex0, &tex_addr, &tex_size))
+    {
+        return 0;
+    }
+
+    if (MikuPan_GetClutRegion(tex0, &clut_addr, &clut_size))
+    {
+        const int tex_end = tex_addr + tex_size;
+        const int clut_end = clut_addr + clut_size;
+        const int region_addr = tex_addr < clut_addr ? tex_addr : clut_addr;
+        const int region_end = tex_end > clut_end ? tex_end : clut_end;
+
+        *out_addr = region_addr;
+        *out_size = region_end - region_addr;
+        return 1;
+    }
+
+    *out_addr = tex_addr;
+    *out_size = tex_size;
+    return 1;
+}
+
 static int MikuPan_GetUploadRegion(sceGsLoadImage *image_load, int *out_addr, int *out_size)
 {
     int width;
@@ -654,6 +735,8 @@ uint64_t MikuPan_GetTextureHash(sceGsTex0 *tex0)
 {
     int addr;
     int size;
+    int clut_addr;
+    int clut_size;
 
     if (!MikuPan_IsFirstUploadDone())
     {
@@ -666,6 +749,20 @@ uint64_t MikuPan_GetTextureHash(sceGsTex0 *tex0)
     }
 
     XXH64_hash_t hash = XXH3_64bits(&gsHelper.mem_[addr], size);
+
+    if (MikuPan_GetClutRegion(tex0, &clut_addr, &clut_size))
+    {
+        uint64_t tex0_value = 0;
+        const XXH64_hash_t clut_hash =
+            XXH3_64bits(&gsHelper.mem_[clut_addr], clut_size);
+        memcpy(&tex0_value, tex0, sizeof(tex0_value));
+        const uint64_t parts[3] = {
+            tex0_value,
+            static_cast<uint64_t>(hash),
+            static_cast<uint64_t>(clut_hash),
+        };
+        hash = XXH3_64bits(parts, sizeof(parts));
+    }
 
     return hash;
 }
@@ -713,11 +810,10 @@ void MikuPan_GsConsumePendingUploads(
 
 void MikuPan_GetTextureGsRegion(sceGsTex0 *tex0, int *out_addr, int *out_size)
 {
-    // Match MikuPan_GetTextureHash exactly: same address calculation, same
-    // size convention. That way an overlap between this region and a
-    // pending-upload region == "an upload may have changed the bytes the
-    // hash function reads", which is precisely when the L1 entry is stale.
-    if (!MikuPan_GetRawTextureRegion(tex0, out_addr, out_size))
+    // Cover every GS-memory byte that can affect the decoded GL texture. For
+    // indexed textures that includes the CLUT, otherwise black/white CLUT
+    // swaps can leave a stale color texture cached behind the same TEX0.
+    if (!MikuPan_GetTextureInvalidationRegion(tex0, out_addr, out_size))
     {
         *out_addr = 0;
         *out_size = 0;

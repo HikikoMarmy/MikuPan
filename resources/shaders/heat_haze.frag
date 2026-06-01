@@ -11,6 +11,13 @@ uniform vec2 uFramebufferUvScale;
 uniform vec2 uFramebufferContentUvMax;
 uniform int uUseScreenPos;
 uniform vec2 uRenderSize;
+uniform int uBlackWhiteMode;
+
+vec3 ToBlackWhite(vec3 color)
+{
+    float gray = (color.r + color.g + color.b) / 3.0;
+    return vec3(gray);
+}
 
 void main()
 {
@@ -68,12 +75,12 @@ void main()
     float color_strength = max(max(uColor.r, uColor.g), uColor.b);
     float refract_strength = clamp(color_strength, 0.0, 1.0);
     vec3 refracted = mix(dst, src, refract_strength);
+    vec3 out_rgb = resolve_deform ? mix(dst, refracted, mask) : refracted;
 
-    if (resolve_deform)
+    if (uBlackWhiteMode != 0)
     {
-        FragColor = vec4(mix(dst, refracted, mask), 1.0);
-        return;
+        out_rgb = ToBlackWhite(out_rgb);
     }
 
-    FragColor = vec4(refracted, mask);
+    FragColor = vec4(out_rgb, resolve_deform ? 1.0 : mask);
 }

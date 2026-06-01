@@ -124,6 +124,7 @@ u_long GSAlphaToOpenGL(int A, int B, int C, int D, int fix);
 /// MikuPan_GsCaptureFramebuffer (the freeze-frame bridge); kept here
 /// because glad and the FBO struct live in this TU.
 int MikuPan_ReadFramebufferRGBA8TopLeft(int width, int height, unsigned char *out_rgba);
+int MikuPan_IsBlackWhiteModeActive(void);
 
 /// ----- Shadow pass --------------------------------------------------------
 /// PS2-style projector shadow. The original engine (graphics/graph3d/shadow.c)

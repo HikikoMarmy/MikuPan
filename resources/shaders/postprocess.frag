@@ -8,6 +8,7 @@ out vec4 FragColor;
 uniform sampler2D uTexture;
 uniform float uBrightness;
 uniform float uGamma;
+uniform int uBlackWhiteMode;
 
 uniform int uCrtEnabled;
 uniform vec2 uTextureSize;
@@ -41,6 +42,12 @@ vec3 ToneMap(vec3 color)
 {
     color *= uBrightness;
     return pow(max(color, vec3(0.0)), vec3(1.0 / max(uGamma, 0.01)));
+}
+
+vec3 ToBlackWhite(vec3 color)
+{
+    float gray = (color.r + color.g + color.b) / 3.0;
+    return vec3(gray);
 }
 
 vec2 ClampTexelUv(vec2 uv)
@@ -147,6 +154,11 @@ void main()
     if (uCrtEnabled != 0 && uCrtStrength > 0.001)
     {
         color = mix(color, ApplyCrt(vUV), clamp(uCrtStrength, 0.0, 1.0));
+    }
+
+    if (uBlackWhiteMode != 0)
+    {
+        color = ToBlackWhite(color);
     }
 
     FragColor = vec4(clamp(ToneMap(color), 0.0, 1.0), source.a);

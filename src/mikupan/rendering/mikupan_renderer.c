@@ -58,6 +58,28 @@ void MikuPan_StreamUploadFull(GLenum target, GLuint buffer,
     MikuPan_PerfEnd(PERF_SECT_BUFFER_UPLOAD, t0);
 }
 
+int MikuPan_IsBlackWhiteModeActive(void)
+{
+    return loadbw_flg != 0;
+}
+
+static void MikuPan_ConvertRGBA8ToBlackWhite(unsigned char *rgba,
+                                             int width,
+                                             int height)
+{
+    const int pixel_count = width * height;
+
+    for (int i = 0; i < pixel_count; i++)
+    {
+        unsigned char *p = rgba + i * 4;
+        const unsigned int gray =
+            ((unsigned int)p[0] + (unsigned int)p[1] + (unsigned int)p[2]) / 3;
+        p[0] = (unsigned char)gray;
+        p[1] = (unsigned char)gray;
+        p[2] = (unsigned char)gray;
+    }
+}
+
 SDL_AppResult MikuPan_Init()
 {
     MikuPan_LoadConfiguration(NULL);
@@ -360,6 +382,11 @@ int MikuPan_ReadFramebufferRGBA8TopLeft(int width, int height, unsigned char *ou
         if (heap_row != NULL) free(heap_row);
     }
 
+    if (MikuPan_IsBlackWhiteModeActive())
+    {
+        MikuPan_ConvertRGBA8ToBlackWhite(out_rgba, width, height);
+    }
+
     // Restore caller's FBO state and clean up temp resources.
     glad_glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)prev_read_fbo);
     glad_glBindFramebuffer(GL_DRAW_FRAMEBUFFER, (GLuint)prev_draw_fbo);
@@ -541,6 +568,9 @@ void MikuPan_EndFrame()
     MikuPan_SetRenderState2D();
 
     MikuPan_SetCurrentShaderProgram(POSTPROCESS_SHADER);
+    MikuPan_SetUniform1iToCurrentShader(0, "uTexture");
+    MikuPan_SetUniform1iToCurrentShader(MikuPan_IsBlackWhiteModeActive(),
+                                        "uBlackWhiteMode");
     MikuPan_SetUniform1fToCurrentShader(MikuPan_GetBrightness(), "uBrightness");
     MikuPan_SetUniform1fToCurrentShader(MikuPan_GetGamma(),      "uGamma");
     {
