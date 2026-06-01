@@ -136,6 +136,7 @@ static float brightness = 1.0f;
 static float gamma_value = 1.0f;
 
 #define MIKUPAN_UI_THEME_COUNT 6
+#define MIKUPAN_UI_FONT_COUNT 2
 
 static const char *theme_labels[MIKUPAN_UI_THEME_COUNT] = {
     "Moonlit Blue",
@@ -145,6 +146,13 @@ static const char *theme_labels[MIKUPAN_UI_THEME_COUNT] = {
     "Mist Teal",
     "Sepia Photo",
 };
+
+static const char *font_labels[MIKUPAN_UI_FONT_COUNT] = {
+    "ImGui Default Monospace",
+    "Century Old Style",
+};
+
+static ImFont *ui_fonts[MIKUPAN_UI_FONT_COUNT] = {0};
 
 #define MIKUPAN_CRT_DEFAULTS \
     {                        \
@@ -180,6 +188,16 @@ static int MikuPan_ClampThemeIndex(int theme)
     }
 
     return theme;
+}
+
+static int MikuPan_ClampFontIndex(int font)
+{
+    if (font < 0 || font >= MIKUPAN_UI_FONT_COUNT)
+    {
+        return 1;
+    }
+
+    return font;
 }
 
 static float MikuPan_ClampFloat(float value, float min_value, float max_value)
@@ -245,6 +263,8 @@ static void MikuPan_UiStoreRuntimeConfiguration(void)
     mikupan_configuration.renderer.gamma = gamma_value;
     mikupan_configuration.selected_theme =
         MikuPan_ClampThemeIndex(mikupan_configuration.selected_theme);
+    mikupan_configuration.selected_font =
+        MikuPan_ClampFontIndex(mikupan_configuration.selected_font);
     mikupan_configuration.crt = crt_settings;
     mikupan_configuration.input.selected_gamepad_index =
         MikuPan_ControllerGetPreferredGamepadIndex();
@@ -935,16 +955,37 @@ static void MikuPan_PopulateResolutionList(SDL_DisplayID display, const SDL_Disp
     }
 }
 
-static void MikuPan_LoadUiFont(void)
+static void MikuPan_ApplyUiFont(int font)
+{
+    ImGuiIO* io = igGetIO_Nil();
+    font = MikuPan_ClampFontIndex(font);
+
+    if (ui_fonts[font] != NULL)
+    {
+        io->FontDefault = ui_fonts[font];
+    }
+}
+
+static void MikuPan_LoadUiFonts(void)
 {
     ImGuiIO* io = igGetIO_Nil();
 
-    ImFontAtlas_AddFontFromFileTTF(
+    ui_fonts[0] = ImFontAtlas_AddFontDefault(io->Fonts, NULL);
+    ui_fonts[1] = ImFontAtlas_AddFontFromFileTTF(
         io->Fonts,
         "./resources/fonts/CenturyOldStyle.ttf",
         14.0f,
         NULL,
         ImFontAtlas_GetGlyphRangesDefault(io->Fonts));
+
+    if (ui_fonts[1] == NULL)
+    {
+        ui_fonts[1] = ui_fonts[0];
+    }
+
+    mikupan_configuration.selected_font =
+        MikuPan_ClampFontIndex(mikupan_configuration.selected_font);
+    MikuPan_ApplyUiFont(mikupan_configuration.selected_font);
 }
 
 static void MikuPan_ApplyThemeBaseline(ImVec4 *c)
@@ -1487,7 +1528,9 @@ void MikuPan_InitUi(SDL_Window *window, SDL_GLContext renderer)
 
     mikupan_configuration.selected_theme =
         MikuPan_ClampThemeIndex(mikupan_configuration.selected_theme);
-    MikuPan_LoadUiFont();
+    mikupan_configuration.selected_font =
+        MikuPan_ClampFontIndex(mikupan_configuration.selected_font);
+    MikuPan_LoadUiFonts();
     MikuPan_ApplyFatalFrameStyle(mikupan_configuration.selected_theme);
 
     SDL_DisplayID primary = SDL_GetPrimaryDisplay();
@@ -1578,7 +1621,7 @@ void MikuPan_DrawUi(void)
 
     if (show_fps)
     {
-        igBegin("fps", (bool*)&show_fps, ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_AlwaysAutoResize);
+        igBegin("fps", (bool*)&show_fps, ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoInputs);
         igPushFont(igGetFont(), 18.0f);
         igText("FPS %.2f", MikuPan_GetFrameRate());
         igPopFont();
@@ -1874,6 +1917,20 @@ void MikuPan_UiMenuBar(void)
         {
             mikupan_configuration.selected_theme = selected_theme;
             MikuPan_ApplyFatalFrameStyle(selected_theme);
+        }
+
+        int selected_font =
+            MikuPan_ClampFontIndex(mikupan_configuration.selected_font);
+        if (selected_font != mikupan_configuration.selected_font)
+        {
+            mikupan_configuration.selected_font = selected_font;
+        }
+
+        if (igCombo_Str_arr("Font", &selected_font, font_labels,
+                            MIKUPAN_UI_FONT_COUNT, -1))
+        {
+            mikupan_configuration.selected_font = selected_font;
+            MikuPan_ApplyUiFont(selected_font);
         }
 
         if (igMenuItem_Bool("Save Configuration", NULL, false, true))

@@ -114,6 +114,7 @@ typedef struct
     MikuPan_ConfigRenderer renderer;
     MikuPan_ConfigCrt crt;
     int selected_theme;
+    int selected_font;
     MikuPan_ConfigInput input;
 } MikuPan_Config;
 

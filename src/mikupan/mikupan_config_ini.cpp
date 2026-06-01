@@ -114,6 +114,7 @@ bool TryLoadConfigurationFile(const std::filesystem::path& path)
     ApplyValue(ini, "crt", "flicker_strength", mikupan_configuration.crt.flicker_strength);
     ApplyValue(ini, "crt", "glow_strength", mikupan_configuration.crt.glow_strength);
     ApplyValue(ini, "ui", "selected_theme", mikupan_configuration.selected_theme);
+    ApplyValue(ini, "ui", "selected_font", mikupan_configuration.selected_font);
     ApplyValue(ini, "input", "selected_gamepad_index",
                mikupan_configuration.input.selected_gamepad_index);
 
@@ -173,6 +174,7 @@ bool TrySaveConfigurationFile(const std::filesystem::path& path)
     SetValue(ini, "crt", "flicker_strength", mikupan_configuration.crt.flicker_strength);
     SetValue(ini, "crt", "glow_strength", mikupan_configuration.crt.glow_strength);
     SetValue(ini, "ui", "selected_theme", mikupan_configuration.selected_theme);
+    SetValue(ini, "ui", "selected_font", mikupan_configuration.selected_font);
     SetValue(ini, "input", "selected_gamepad_index",
              mikupan_configuration.input.selected_gamepad_index);
 
