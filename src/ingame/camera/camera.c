@@ -58,6 +58,20 @@ float camera_third_person_interest_height = 360.0f;
 float camera_third_person_fov_deg = 51.0f;
 static CAMERA_DEBUG_PATH camera_debug_path = {0};
 
+static int CameraThirdPersonCanOverride(void)
+{
+    switch (plyr_wrk.mode)
+    {
+        case PMODE_FINDER_IN:
+        case PMODE_FINDER:
+        case PMODE_FINDER_END:
+        case PMODE_FIN_CAM:
+            return 0;
+        default:
+            return 1;
+    }
+}
+
 static void CameraThirdPersonFollowCtrl(void)
 {
     MOVE_BOX *mb = &plyr_wrk.move_box;
@@ -1270,7 +1284,7 @@ void CameraMain()
     plyr_wrk.pr_info.camera_btl_old = plyr_wrk.pr_info.camera_btl;
     plyr_wrk.pr_info.camera_drm_old = plyr_wrk.pr_info.camera_drm;
 
-    if (camera_third_person_enabled)
+    if (camera_third_person_enabled && CameraThirdPersonCanOverride())
     {
         CameraThirdPersonFollowCtrl();
     }

@@ -111,10 +111,22 @@ typedef struct
 
 typedef struct
 {
+    int enabled;
+    float distance;
+    float height;
+    float side;
+    float look_ahead;
+    float interest_height;
+    float fov_deg;
+} MikuPan_ConfigThirdPersonCamera;
+
+typedef struct
+{
     MikuPan_ConfigRenderer renderer;
     MikuPan_ConfigCrt crt;
     int selected_theme;
     int selected_font;
+    MikuPan_ConfigThirdPersonCamera third_person_camera;
     MikuPan_ConfigInput input;
 } MikuPan_Config;
 

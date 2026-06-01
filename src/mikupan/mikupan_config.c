@@ -39,6 +39,15 @@ MikuPan_Config mikupan_configuration = {
     2,
     1,
     {
+        0,
+        900.0f,
+        520.0f,
+        120.0f,
+        1100.0f,
+        360.0f,
+        51.0f
+    },
+    {
         -1
     }
 };

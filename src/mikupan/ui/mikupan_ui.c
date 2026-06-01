@@ -236,6 +236,34 @@ static void MikuPan_ClampCrtSettings(MikuPan_ConfigCrt *crt)
     crt->glow_strength = MikuPan_ClampFloat(crt->glow_strength, 0.0f, 0.50f);
 }
 
+static void MikuPan_ClampThirdPersonCameraSettings(
+    MikuPan_ConfigThirdPersonCamera *tps)
+{
+    tps->enabled = tps->enabled ? 1 : 0;
+    tps->distance = MikuPan_ClampFloat(tps->distance, 100.0f, 2500.0f);
+    tps->height = MikuPan_ClampFloat(tps->height, 0.0f, 1400.0f);
+    tps->side = MikuPan_ClampFloat(tps->side, -600.0f, 600.0f);
+    tps->look_ahead = MikuPan_ClampFloat(tps->look_ahead, 100.0f, 2500.0f);
+    tps->interest_height =
+        MikuPan_ClampFloat(tps->interest_height, -400.0f, 1200.0f);
+    tps->fov_deg = MikuPan_ClampFloat(tps->fov_deg, 20.0f, 90.0f);
+}
+
+static void MikuPan_ApplyThirdPersonCameraConfiguration(void)
+{
+    MikuPan_ConfigThirdPersonCamera *tps =
+        &mikupan_configuration.third_person_camera;
+
+    MikuPan_ClampThirdPersonCameraSettings(tps);
+    camera_third_person_enabled = tps->enabled;
+    camera_third_person_distance = tps->distance;
+    camera_third_person_height = tps->height;
+    camera_third_person_side = tps->side;
+    camera_third_person_look_ahead = tps->look_ahead;
+    camera_third_person_interest_height = tps->interest_height;
+    camera_third_person_fov_deg = tps->fov_deg;
+}
+
 static void MikuPan_UiSaveConfiguration(void)
 {
     MikuPan_UiStoreRuntimeConfiguration();
@@ -266,6 +294,22 @@ static void MikuPan_UiStoreRuntimeConfiguration(void)
     mikupan_configuration.selected_font =
         MikuPan_ClampFontIndex(mikupan_configuration.selected_font);
     mikupan_configuration.crt = crt_settings;
+    mikupan_configuration.third_person_camera.enabled =
+        camera_third_person_enabled ? 1 : 0;
+    mikupan_configuration.third_person_camera.distance =
+        camera_third_person_distance;
+    mikupan_configuration.third_person_camera.height =
+        camera_third_person_height;
+    mikupan_configuration.third_person_camera.side =
+        camera_third_person_side;
+    mikupan_configuration.third_person_camera.look_ahead =
+        camera_third_person_look_ahead;
+    mikupan_configuration.third_person_camera.interest_height =
+        camera_third_person_interest_height;
+    mikupan_configuration.third_person_camera.fov_deg =
+        camera_third_person_fov_deg;
+    MikuPan_ClampThirdPersonCameraSettings(
+        &mikupan_configuration.third_person_camera);
     mikupan_configuration.input.selected_gamepad_index =
         MikuPan_ControllerGetPreferredGamepadIndex();
 }
@@ -1552,6 +1596,7 @@ void MikuPan_InitUi(SDL_Window *window, SDL_GLContext renderer)
     crt_settings = mikupan_configuration.crt;
     MikuPan_ClampCrtSettings(&crt_settings);
     mikupan_configuration.crt = crt_settings;
+    MikuPan_ApplyThirdPersonCameraConfiguration();
     MikuPan_ControllerSetPreferredGamepadIndex(
         mikupan_configuration.input.selected_gamepad_index);
     mikupan_configuration.input.selected_gamepad_index =
