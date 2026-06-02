@@ -191,15 +191,20 @@ SDL_AppResult MikuPan_Init()
         mikupan_configuration.renderer.msaa_index = desired_msaa;
     }
 
-    if (desired_render_width <= 0 || desired_render_width > mode->w)
+    /*
+     * The internal render target is allowed to exceed the monitor size for
+     * supersampling/PS2 resolution multiples. Only reject invalid values here;
+     * window dimensions are the ones that must fit the display mode.
+     */
+    if (desired_render_width <= 0)
     {
-        desired_render_width = mode->w;
+        desired_render_width = PS2_RESOLUTION_X_INT;
         mikupan_configuration.renderer.render.width = desired_render_width;
     }
 
-    if (desired_render_height <= 0 || desired_render_height > mode->h)
+    if (desired_render_height <= 0)
     {
-        desired_render_height = mode->h;
+        desired_render_height = PS2_RESOLUTION_Y_INT;
         mikupan_configuration.renderer.render.height = desired_render_height;
     }
 
@@ -680,6 +685,13 @@ static int MikuPan_ClampInt(int value, int min_value, int max_value)
     return value;
 }
 
+static float MikuPan_ClampFloat(float value, float min_value, float max_value)
+{
+    if (value < min_value) return min_value;
+    if (value > max_value) return max_value;
+    return value;
+}
+
 void MikuPan_EnableMirrorScissorFromGsBounds(int xmin, int ymin, int xmax, int ymax)
 {
     const int render_w = render_back_msaa.texture.width;
@@ -745,6 +757,62 @@ void MikuPan_EnableMirrorScissorFromGsBounds(int xmin, int ymin, int xmax, int y
 
     glad_glEnable(GL_SCISSOR_TEST);
     glad_glScissor(sx0, render_h - sy1, width, height);
+    g_mirror_scissor_enabled = 1;
+}
+
+void MikuPan_EnableMirrorScissorFromNdcBounds(float minx, float miny, float maxx, float maxy)
+{
+    const int render_w = render_back_msaa.texture.width;
+    const int render_h = render_back_msaa.texture.height;
+
+    if (render_w <= 0 || render_h <= 0)
+    {
+        glad_glDisable(GL_SCISSOR_TEST);
+        g_mirror_scissor_enabled = 0;
+        return;
+    }
+
+    minx = MikuPan_ClampFloat(minx, -1.0f, 1.0f);
+    maxx = MikuPan_ClampFloat(maxx, -1.0f, 1.0f);
+    miny = MikuPan_ClampFloat(miny, -1.0f, 1.0f);
+    maxy = MikuPan_ClampFloat(maxy, -1.0f, 1.0f);
+
+    if (maxx < minx)
+    {
+        float tmp = minx;
+        minx = maxx;
+        maxx = tmp;
+    }
+
+    if (maxy < miny)
+    {
+        float tmp = miny;
+        miny = maxy;
+        maxy = tmp;
+    }
+
+    int sx0 = (int)(((minx * 0.5f) + 0.5f) * (float)render_w);
+    int sx1 = (int)((((maxx * 0.5f) + 0.5f) * (float)render_w) + 0.999f);
+    int sy0 = (int)(((miny * 0.5f) + 0.5f) * (float)render_h);
+    int sy1 = (int)((((maxy * 0.5f) + 0.5f) * (float)render_h) + 0.999f);
+
+    sx0 = MikuPan_ClampInt(sx0, 0, render_w);
+    sx1 = MikuPan_ClampInt(sx1, 0, render_w);
+    sy0 = MikuPan_ClampInt(sy0, 0, render_h);
+    sy1 = MikuPan_ClampInt(sy1, 0, render_h);
+
+    const int width = sx1 - sx0;
+    const int height = sy1 - sy0;
+
+    if (width <= 0 || height <= 0)
+    {
+        glad_glDisable(GL_SCISSOR_TEST);
+        g_mirror_scissor_enabled = 0;
+        return;
+    }
+
+    glad_glEnable(GL_SCISSOR_TEST);
+    glad_glScissor(sx0, sy0, width, height);
     g_mirror_scissor_enabled = 1;
 }
 

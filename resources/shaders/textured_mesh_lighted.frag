@@ -46,6 +46,7 @@ uniform float     uShadowStrength;
 uniform int disableLighting;
 uniform int staticLighting;
 uniform int uMeshLightingMode; // 0 = per-fragment, 1 = per-vertex
+uniform int uMirrorSurfacePass;
 
 /// Fog uniforms (kept as regular uniforms)
 uniform vec4 uFog;      // x=min, y=max, z=base, w=scale
@@ -251,10 +252,15 @@ void main()
         : CalcPS2LitColor(vNormal, oViewPosition, oVertexColor);
     color.rgb = ApplyGsModulate(color.rgb, ps2LightColor);
 
-    // Fog after lighting
-    float fogFactor = uFog.w * (1.0 / -oViewPosition.z) + uFog.z;
-    fogFactor = clamp(fogFactor, uFog.x, uFog.y);
-    color.rgb = mix(uFogColor.rgb, color.rgb, fogFactor);
+    // Fog after lighting. The final mirror surface is a compositing overlay
+    // over an already-rendered reflection, so fogging it by mirror distance
+    // makes distant mirrors collapse toward black.
+    if (uMirrorSurfacePass == 0)
+    {
+        float fogFactor = uFog.w * (1.0 / -oViewPosition.z) + uFog.z;
+        fogFactor = clamp(fogFactor, uFog.x, uFog.y);
+        color.rgb = mix(uFogColor.rgb, color.rgb, fogFactor);
+    }
 
     // PS2-style projector shadow — sample the silhouette texture using the
     // shadow camera's world-clip-view. Anything outside the [0,1] square of

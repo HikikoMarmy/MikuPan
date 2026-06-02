@@ -16,6 +16,7 @@
 #include "graphics/graph3d/sgsu.h"
 #include "graphics/graph3d/sgsup.h"
 #include "mikupan/rendering/mikupan_renderer.h"
+#include "mikupan/rendering/mikupan_shader.h"
 #include "os/system.h"
 
 #include <math.h>
@@ -28,6 +29,12 @@ static int mymax;
 static int mymin;
 static float mzmax;
 static float mzmin;
+
+sceVu0FMATRIX mir_mtx = {0};
+sceVu0FVECTOR mir_norm = {0};
+sceVu0FVECTOR mir_center = {0};
+sceVu0FVECTOR mirror_lpos[5] = {0};
+sceVu0FVECTOR mirror_cval[5] = {0};
 
 #define GET_MESH_TYPE(intpointer) (((char *) intpointer)[13])
 #define GET_MESH_GLOOPS(intpointer) ((int) ((char *) intpointer)[14])
@@ -160,6 +167,107 @@ static inline void inline_asm__mirror_c_line_120(Q_WORDDATA *base, sceVu0FVECTOR
     base[2].fl32[1] = tmp0[1];
     base[2].fl32[2] = tmp0[2];
     base[2].fl32[3] = tmp0[3];
+}
+
+static float ClampMirrorNdc(float value)
+{
+    if (value < -1.0f) return -1.0f;
+    if (value > 1.0f) return 1.0f;
+    return value;
+}
+
+static void ConvertMirrorClipToGsBounds(sceVu0FVECTOR clip,
+                                        int *xmin, int *ymin,
+                                        int *xmax, int *ymax)
+{
+    float minx = ClampMirrorNdc(clip[0]);
+    float maxx = ClampMirrorNdc(clip[1]);
+    float miny = ClampMirrorNdc(clip[2]);
+    float maxy = ClampMirrorNdc(clip[3]);
+
+    if (maxx < minx)
+    {
+        float tmp = minx;
+        minx = maxx;
+        maxx = tmp;
+    }
+
+    if (maxy < miny)
+    {
+        float tmp = miny;
+        miny = maxy;
+        maxy = tmp;
+    }
+
+    *xmin = (int)((1728.0f + (minx + 1.0f) * 320.0f) * 16.0f);
+    *xmax = (int)((1728.0f + (maxx + 1.0f) * 320.0f) * 16.0f);
+    *ymin = (int)((1936.0f + (1.0f - maxy) * 112.0f) * 16.0f);
+    *ymax = (int)((1936.0f + (1.0f - miny) * 112.0f) * 16.0f);
+}
+
+static void SetMirrorBoundsFromClipValue(sceVu0FVECTOR clip)
+{
+    ConvertMirrorClipToGsBounds(clip, &mxmin, &mymin, &mxmax, &mymax);
+}
+
+static int GetMirrorClipFromCurrentGlCamera(sceVu0FVECTOR out_clip)
+{
+    mat4 model;
+    mat4 world_clip_view;
+    int valid = 0;
+
+    if (mirror_points <= 0)
+    {
+        return 0;
+    }
+
+    glm_mat4_make((float *) &SCRATCHPAD[0x430], model);
+    glm_mat4_make(MikuPan_GetWorldClipView(), world_clip_view);
+
+    out_clip[0] =  1.0f;
+    out_clip[1] = -1.0f;
+    out_clip[2] =  1.0f;
+    out_clip[3] = -1.0f;
+
+    for (int i = 0; i < mirror_points; i++)
+    {
+        vec4 local = {
+            mirror_lpos[i][0],
+            mirror_lpos[i][1],
+            mirror_lpos[i][2],
+            1.0f
+        };
+        vec4 world = {0};
+        vec4 clip = {0};
+        float w;
+        float x;
+        float y;
+
+        glm_mat4_mulv(model, local, world);
+        glm_mat4_mulv(world_clip_view, world, clip);
+
+        w = fabsf(clip[3]);
+        if (w < 0.0001f)
+        {
+            continue;
+        }
+
+        x = clip[0] / w;
+        y = clip[1] / w;
+
+        if (x < out_clip[0]) out_clip[0] = x;
+        if (x > out_clip[1]) out_clip[1] = x;
+        if (y < out_clip[2]) out_clip[2] = y;
+        if (y > out_clip[3]) out_clip[3] = y;
+        valid = 1;
+    }
+
+    if (!valid)
+    {
+        return 0;
+    }
+
+    return 1;
 }
 
 int CheckMirrorModel(void *sgd_top)
@@ -502,7 +610,6 @@ int MakeMirrorEnvironment(u_int *prim)
     switch (mtype)
     {
         case 0x12:
-            MikuPan_RenderMeshType0x32((SGDPROCUNITHEADER*)vuvnprim, (SGDPROCUNITHEADER*)prim);
             vp = (float *) &vuvnprim[14];
 
             for (j = 0; j < gloops; j++)
@@ -552,7 +659,6 @@ int MakeMirrorEnvironment(u_int *prim)
             }
             break;
         case 0x32:
-            MikuPan_RenderMeshType0x32((SGDPROCUNITHEADER *) vuvnprim, (SGDPROCUNITHEADER *) prim);
             vp = (float *) &vuvnprim[14];
             vp = (float *) ((int64_t) vp + ((short *) vuvnprim)[5] * 12);
 
@@ -602,14 +708,9 @@ int MakeMirrorEnvironment(u_int *prim)
                 }
             }
             break;
+        default:
+            return 0;
     }
-
-    /// Removed code because modern PCs are strong enough to render entire room
-    /// in the mirror
-    //if (disp_flg == 0)
-    //{
-    //    return 0;
-    //}
 
     mxmax += 16;
     mxmin -= 16;
@@ -824,15 +925,15 @@ void CalcMirrorMatrix(SgCAMERA *camera)
 void MirrorDraw(SgCAMERA *camera, void *sgd_top,
                 void (*render_func)(/* parameters unknown */))
 {
-    static sceVu0IVECTOR miccolor = {0x80, 0x80, 0x80, 0x80};
-    qword *pedraw_buf;
     int i;
     int num;
     u_int *pk;
     sceVu0FVECTOR clip_value;
+    sceVu0FVECTOR gl_clip_value;
     sceGsScissor bak_scissor;
     sceVu0FVECTOR tmpv;
     HeaderSection *hs;
+    int has_gl_clip;
 
     hs = (HeaderSection *) sgd_top;
 
@@ -882,6 +983,12 @@ void MirrorDraw(SgCAMERA *camera, void *sgd_top,
         }
     }
 
+    if (mirror_points == 0)
+    {
+        CalcMirrorMatrix(camera);
+        return;
+    }
+
     if (clip_value[0] < -1.0f)
     {
         clip_value[0] = -1.0f;
@@ -902,7 +1009,24 @@ void MirrorDraw(SgCAMERA *camera, void *sgd_top,
         clip_value[3] = 1.0f;
     }
 
-    SetClipValue(clip_value[0], clip_value[1], clip_value[2], clip_value[3]);
+    if (mxmax <= mxmin || mymax <= mymin)
+    {
+        SetMirrorBoundsFromClipValue(clip_value);
+    }
+
+    has_gl_clip = GetMirrorClipFromCurrentGlCamera(gl_clip_value);
+
+    if (has_gl_clip)
+    {
+        SetClipValue(ClampMirrorNdc(gl_clip_value[0]),
+                     ClampMirrorNdc(gl_clip_value[1]),
+                     ClampMirrorNdc(gl_clip_value[2]),
+                     ClampMirrorNdc(gl_clip_value[3]));
+    }
+    else
+    {
+        SetClipValue(clip_value[0], clip_value[1], clip_value[2], clip_value[3]);
+    }
 
     bak_scissor = pdrawenv->scissor1;
 
@@ -912,45 +1036,20 @@ void MirrorDraw(SgCAMERA *camera, void *sgd_top,
     pdrawenv->scissor1.SCAY1 = (mymax / 16) + -0x790;
 
     SetEnvironment();
-    MikuPan_EnableMirrorScissorFromGsBounds(mxmin, mymin, mxmax, mymax);
+    if (has_gl_clip)
+    {
+        MikuPan_EnableMirrorScissorFromNdcBounds(gl_clip_value[0],
+                                                gl_clip_value[2],
+                                                gl_clip_value[1],
+                                                gl_clip_value[3]);
+    }
+    else
+    {
+        MikuPan_EnableMirrorScissorFromGsBounds(mxmin, mymin, mxmax, mymax);
+    }
     MirrorRender(camera, render_func);
     MikuPan_ClearMirrorScissorDepth();
     MikuPan_DisableMirrorScissor();
-
-    pedraw_buf = (qword *) getObjWrk() + 1;
-
-    *(u_long *) &pedraw_buf[0][0] =
-        SCE_GIF_SET_TAG(1, SCE_GS_TRUE, SCE_GS_FALSE, 0, SCE_GIF_PACKED, 1);
-    *(u_long *) &pedraw_buf[0][2] = SCE_GIF_PACKED_AD;
-
-    *(u_long *) &pedraw_buf[1][0] =
-        SCE_GS_SET_TEST_1(1, SCE_GS_ALPHA_NEVER, 0, SCE_GS_AFAIL_ZB_ONLY, 0, 0,
-                          1, SCE_GS_DEPTH_ALWAYS);
-    *(u_long *) &pedraw_buf[1][2] = SCE_GS_TEST_1;
-
-    pedraw_buf += 2;
-
-    *(u_long *) &pedraw_buf[0][0] =
-        SCE_GS_SET_SCISSOR_2(0x8002, 0, 0x4000, 0x2027);
-    *(u_long *) &pedraw_buf[0][2] = SCE_GS_SCISSOR_2;
-
-    Vu0CopyVector(*(sceVu0FVECTOR *) &pedraw_buf[1],
-                  *(sceVu0FVECTOR *) &miccolor);
-
-    pedraw_buf[2][0] = mxmin - 16;
-    pedraw_buf[2][1] = mymin - 16;
-    pedraw_buf[2][2] = 0;
-    pedraw_buf[2][3] = 0;
-
-    Vu0CopyVector(*(sceVu0FVECTOR *) &pedraw_buf[3],
-                  *(sceVu0FVECTOR *) miccolor);
-
-    pedraw_buf[4][0] = mxmax + 16;
-    pedraw_buf[4][1] = mymax + 16;
-    pedraw_buf[4][2] = 0;
-    pedraw_buf[4][3] = 0;
-
-    AppendDmaBufferFromEndAddress((qword *) (pedraw_buf + 5));
 
     pdrawenv->scissor1 = bak_scissor;
 
@@ -963,14 +1062,10 @@ void MirrorDraw(SgCAMERA *camera, void *sgd_top,
     ClearMaterialCache((HeaderSection *) sgd_top);
     SetUpSortUnit();
     SetClipValue(-1.0f, 1.0f, -1.0f, 1.0f);
+    MikuPan_SetUniform1iToAllShaders(1, "uMirrorSurfacePass");
     MirrorPrim((u_int *) GetTopProcUnitHeaderPtr(hs, num));
+    MikuPan_SetUniform1iToAllShaders(0, "uMirrorSurfacePass");
 }
-
-sceVu0FMATRIX mir_mtx = {0};
-sceVu0FVECTOR mir_norm = {0};
-sceVu0FVECTOR mir_center = {0};
-sceVu0FVECTOR mirror_lpos[5] = {0};
-sceVu0FVECTOR mirror_cval[5] = {0};
 
 void MirrorRender(SgCAMERA *camera,
                   void (*render_func)(/* parameters unknown */))

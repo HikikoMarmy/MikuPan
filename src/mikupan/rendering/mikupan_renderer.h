@@ -148,6 +148,7 @@ void MikuPan_SetTexture(sceGsTex0 *tex0);
 void MikuPan_SetupCamera(MikuPan_Camera *camera);
 void MikuPan_SetupMirrorMtx(float* wv);
 void MikuPan_EnableMirrorScissorFromGsBounds(int xmin, int ymin, int xmax, int ymax);
+void MikuPan_EnableMirrorScissorFromNdcBounds(float minx, float miny, float maxx, float maxy);
 void MikuPan_ClearMirrorScissorDepth(void);
 void MikuPan_DisableMirrorScissor(void);
 void MikuPan_Setup3D();

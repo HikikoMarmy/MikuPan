@@ -968,6 +968,7 @@ static void MikuPan_PopulateResolutionList(SDL_DisplayID display, const SDL_Disp
     resolution_selected = 0;
 
     MikuPan_AddPs2ResolutionMultiples();
+    MikuPan_AddResolution(render_resolution_width, render_resolution_height);
 
     int n = 0;
     SDL_DisplayMode **modes = SDL_GetFullscreenDisplayModes(display, &n);

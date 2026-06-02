@@ -40,6 +40,7 @@ typedef struct
     GLint uFogColor;      ///< textured_mesh_lighted.frag
     GLint uMeshLightingMode;///< textured_mesh_lighted.* per-fragment/per-vertex toggle
     GLint disableLighting;///< textured_mesh_lighted.frag — UI debug toggle
+    GLint uMirrorSurfacePass;///< textured_mesh_lighted.frag — skip fog on final mirror overlay
 } CachedUniformLocations;
 
 static CachedUniformLocations uniform_loc[MAX_SHADER_PROGRAMS] = {0};
@@ -166,6 +167,8 @@ static GLint GetCachedLocation(int idx, const char *name)
         return u->disableLighting;
     if (strcmp(name, "uMeshLightingMode") == 0)
         return u->uMeshLightingMode;
+    if (strcmp(name, "uMirrorSurfacePass") == 0)
+        return u->uMirrorSurfacePass;
 
     return glad_glGetUniformLocation(shader_list[idx], name);
 }
@@ -227,6 +230,7 @@ static void CacheUniformLocations(int idx, GLuint program)
     uniform_loc[idx].uFogColor =            glad_glGetUniformLocation(program, "uFogColor");
     uniform_loc[idx].disableLighting =      glad_glGetUniformLocation(program, "disableLighting");
     uniform_loc[idx].uMeshLightingMode =    glad_glGetUniformLocation(program, "uMeshLightingMode");
+    uniform_loc[idx].uMirrorSurfacePass =   glad_glGetUniformLocation(program, "uMirrorSurfacePass");
 }
 
 static GLuint CompileStageFromFile(GLenum stage, const char *path,
