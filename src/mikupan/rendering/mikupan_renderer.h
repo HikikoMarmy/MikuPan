@@ -43,6 +43,48 @@ typedef struct
     float ndc_max[2];
 } MikuPan_ScreenCopyDebugInfo;
 
+typedef struct
+{
+    int enabled;
+    int fbo_initialized;
+    int fbo_complete;
+    unsigned int fbo_status;
+    int matrix_valid;
+    unsigned int texture_id;
+    int texture_size;
+
+    int caster_passes;
+    int receiver_passes;
+    int caster_draws;
+    int caster_indices;
+    int receiver_draws;
+    int receiver_indices;
+
+    int caster_type_0;
+    int caster_type_2;
+    int caster_type_80;
+    int caster_type_82;
+    int caster_type_other;
+
+    int caster_draw_type_0;
+    int caster_draw_type_2;
+    int caster_draw_type_80;
+    int caster_draw_type_82;
+    int caster_draw_type_other;
+
+    int receiver_type_0;
+    int receiver_type_10;
+    int receiver_type_12;
+    int receiver_type_32;
+    int receiver_type_other;
+
+    int probe_valid;
+    int probe_nonzero_pixels;
+    int probe_max_value;
+    float probe_coverage;
+    float probe_average;
+} MikuPan_ShadowDebugInfo;
+
 #define MIKUPAN_DEPTH_LEQUAL 0
 #define MIKUPAN_DEPTH_ALWAYS 1
 #define MIKUPAN_DEPTH_GEQUAL 2
@@ -105,12 +147,18 @@ MikuPan_TextureInfo* MikuPan_CreateGLTexture(sceGsTex0 *tex0);
 void MikuPan_SetTexture(sceGsTex0 *tex0);
 void MikuPan_SetupCamera(MikuPan_Camera *camera);
 void MikuPan_SetupMirrorMtx(float* wv);
+void MikuPan_EnableMirrorScissorFromGsBounds(int xmin, int ymin, int xmax, int ymax);
+void MikuPan_ClearMirrorScissorDepth(void);
+void MikuPan_DisableMirrorScissor(void);
 void MikuPan_Setup3D();
 void MikuPan_Shutdown();
 void MikuPan_EndFrame();
 void MikuPan_SetModelTransformMatrix(sceVu0FVECTOR* m);
 void MikuPan_RenderMeshType0x32(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPUHead);
 void MikuPan_RenderMeshType0x82(unsigned int* pVUVN, unsigned int *pPUHead);
+void MikuPan_RenderShadowSilhouettePrepared(unsigned int* pVUVN, unsigned int *pPUHead,
+                                            const float *shadow_positions);
+void MikuPan_RenderShadowSilhouette0x80(unsigned int* pVUVN, unsigned int *pPUHead);
 void MikuPan_RenderMeshType0x2(SGDPROCUNITHEADER* pVUVN, SGDPROCUNITHEADER *pPUHead, float* vertices);
 void MikuPan_FlushTexturedSpriteBatch(void);
 
@@ -132,27 +180,39 @@ int MikuPan_IsBlackWhiteModeActive(void);
 /// light's POV, then projects that texture onto receiver geometry as a
 /// multiplicative decal. This is the GL equivalent: a 256×256 R8 alpha FBO,
 /// an orthographic projection lifted from the PS2 shadow camera, and a
-/// world-space sampling path baked into the regular mesh fragment shader.
+/// receiver-decal pass that reuses the original AssignShadow traversal.
 ///
 /// Lifecycle each frame, called from shadow.c:DrawShadow:
 ///   1. `BeginShadowPass(world_clip_view)` — bind FBO, save matrices, push
 ///      the shadow VP onto the mesh shaders' viewProj/mvp uniforms so any
 ///      caster mesh you draw afterward lands in shadow space.
-///   2. Render caster silhouettes (currently a single fitted ellipse — the
-///      DrawShadowModel iteration is still on the TODO list).
+///   2. Render caster silhouettes through DrawShadowModel using the
+///      regular mesh paths redirected to SHADOW_SILHOUETTE_SHADER.
 ///   3. `EndShadowPass()` — unbind FBO, restore the main camera matrices.
-///   4. Subsequent regular mesh draws sample the shadow texture using the
-///      saved `uShadowMatrix` and darken receiver fragments.
+///   4. `BeginShadowReceiverPass()` / `EndShadowReceiverPass()` bracket the
+///      AssignShadow receiver traversal and draw transparent black decals.
 void MikuPan_BeginShadowPass(float *world_clip_view);
+/// Build a GL-convention orthographic light view-projection (NDC [-1,1]) for the
+/// shadow projector from world-space inputs. Returns a pointer to a static mat4.
+float *MikuPan_ComputeShadowClipView(const float *center,
+                                     const float *light_dir,
+                                     const float *world_bbox8);
 void MikuPan_EndShadowPass(void);
-/// Stub silhouette renderer — fits an ellipse into the shadow camera's
-/// frustum (which SetShadowCamera in shadow.c already sized to the bbox).
-/// Replace with the real DrawShadowModel-equivalent draw loop once the
-/// caster's prim list is wired through MikuPan_RenderMeshType*.
+void MikuPan_BeginShadowReceiverPass(void);
+void MikuPan_EndShadowReceiverPass(void);
+/// Debug fallback silhouette renderer. The normal path draws the caster mesh
+/// through DrawShadowModel; this remains useful for checking receiver sampling.
 void MikuPan_DrawShadowSilhouetteEllipse(void);
 unsigned int MikuPan_GetShadowTexture(void);
 float       *MikuPan_GetShadowMatrix(void);
 int          MikuPan_IsShadowEnabled(void);
+int          MikuPan_IsShadowReceiverPassActive(void);
 void         MikuPan_SetShadowEnabled(int enabled);
+int          MikuPan_IsShadowReceiverDebugViewEnabled(void);
+void         MikuPan_SetShadowReceiverDebugViewEnabled(int enabled);
+const MikuPan_ShadowDebugInfo *MikuPan_GetShadowDebugInfo(void);
+void         MikuPan_ShadowDebugProbeTexture(void);
+void         MikuPan_ShadowDebugRecordCasterMeshType(int mesh_type);
+void         MikuPan_ShadowDebugRecordReceiverMeshType(int mesh_type);
 
 #endif //MIKUPAN_SDL_RENDERER_H

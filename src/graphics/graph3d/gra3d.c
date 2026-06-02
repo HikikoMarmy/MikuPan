@@ -90,6 +90,11 @@ static SgSourceChainTag tag_buffer[2][6144];
 static SgLIGHT lights[16];
 static SgLIGHT slights[16];
 
+static float *GetCurrentCameraZDir(void)
+{
+    return nowcamera != NULL ? nowcamera->zd : camera.zd;
+}
+
 #define PI_HALF 1.5707964f
 #define PI 3.1415927f
 #define PI_alt 3.1415925f
@@ -1390,7 +1395,7 @@ void SceneSortUnit()
     DrawRoom(mir_room_workno);
     DrawFurniture(room_wrk.disp_no[mir_room_workno]);
     DrawGirl(1);
-    SetMyLight(room_wrk.mylight,camera.zd);
+    SetMyLight(room_wrk.mylight, GetCurrentCameraZDir());
 }
 
 void Kagu027Control(void *sgd_top)
@@ -1518,7 +1523,7 @@ void DrawOneRoom(int no)
 
     Vu0CopyVector(room_wrk.mylight[no].ambient, room_ambient_light);
 
-    SetMyLightRoom(&room_wrk.mylight[no], camera.zd);
+    SetMyLightRoom(&room_wrk.mylight[no], GetCurrentCameraZDir());
     SgSortUnitP(mdl_addr, -1);
     AppendSearchModel(mdl_addr, disp_room);
 
@@ -1829,7 +1834,7 @@ void DrawFurniture(int disp_room)
                     }
                     else
                     {
-                        SetMyLightRoom(&furn_wrk[j].mylight, camera.zd);
+                        SetMyLightRoom(&furn_wrk[j].mylight, GetCurrentCameraZDir());
                     }
 
                     if (disp_chodo >= 1000 || (acs_flg & 0xf0) == 0)
@@ -2366,7 +2371,7 @@ void DrawGirl(int in_mirror)
 
     if (((plyr_wrk.sta & 0x10) == 0 || in_mirror != 0) && CheckModelBoundingBox(transmtx, tgirlbox) != 0)
     {
-        SetMyLightObj(&girls_light, &plyr_wrk.mylight, camera.zd, plyr_wrk.bwp);
+        SetMyLightObj(&girls_light, &plyr_wrk.mylight, GetCurrentCameraZDir(), plyr_wrk.bwp);
 
         if (disp3d_girl == 0)
         {
@@ -2607,7 +2612,7 @@ int DrawEnemy(int no)
 
     if (CheckModelBoundingBox(cp[manmdl_dat[mdl_no].waist_id].lwmtx, ebox))
     {
-        SetMyLightObj(&enemy_light, &ene_wrk[j].mylight, camera.zd, ene_wrk[j].mpos.p0);
+        SetMyLightObj(&enemy_light, &ene_wrk[j].mylight, GetCurrentCameraZDir(), ene_wrk[j].mpos.p0);
 
         if(disp3d_enemy != 0)
         {
@@ -2673,7 +2678,7 @@ int DrawFlyMove(int work_no)
     cp->matrix[3][3] = 1.0f;
     CalcCoordinate(cp, hs->blocks - 1);
     ManmdlSetAlpha(tmpModelp, ene_wrk[fly_wrk[work_no].ene].tr_rate);
-    SetMyLightObj(&enemy_light, &ene_wrk[fly_wrk[work_no].ene].mylight, camera.zd, ene_wrk[fly_wrk[work_no].ene].mpos.p0);
+    SetMyLightObj(&enemy_light, &ene_wrk[fly_wrk[work_no].ene].mylight, GetCurrentCameraZDir(), ene_wrk[fly_wrk[work_no].ene].mpos.p0);
     SgSortUnitKind(tmpModelp, -1);
 
     return 1;

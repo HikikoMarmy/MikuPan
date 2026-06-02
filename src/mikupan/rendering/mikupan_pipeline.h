@@ -14,6 +14,8 @@ void MikuPan_SetRenderState3D();
 void MikuPan_SetRenderState3DMirror();
 void MikuPan_SetRenderState2D();
 void MikuPan_SetRenderStateSprite3D();
+void MikuPan_SetRenderStateShadow();
+void MikuPan_SetRenderStateShadowReceiver();
 void MikuPan_SetTriangleStripRestart();
 void MikuPan_ResetRenderStateCache(void);
 

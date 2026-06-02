@@ -30,6 +30,7 @@
 SDL_GLContext gl_context = NULL;
 MikuPan_RenderWindow mikupan_render = {0};
 MikuPan_MsaaBufferObject render_back_msaa = {0};
+static int g_mirror_scissor_enabled = 0;
 
 void MikuPan_StreamUploadFull(GLenum target, GLuint buffer,
                                             GLsizeiptr size, const void *data)
@@ -485,6 +486,7 @@ void MikuPan_CreateInternalBuffer(int w, int h, int msaa)
 void MikuPan_Clear()
 {
     MikuPan_PerfBeginFrame();
+    MikuPan_ShadowDebugBeginFrame();
 
     MikuPan_GsResetFrameMetrics();
     MikuPan_PerfResetFrame();
@@ -669,6 +671,100 @@ int MikuPan_GetWindowWidth()
 int MikuPan_GetWindowHeight()
 {
     return render_back_msaa.texture.height;
+}
+
+static int MikuPan_ClampInt(int value, int min_value, int max_value)
+{
+    if (value < min_value) return min_value;
+    if (value > max_value) return max_value;
+    return value;
+}
+
+void MikuPan_EnableMirrorScissorFromGsBounds(int xmin, int ymin, int xmax, int ymax)
+{
+    const int render_w = render_back_msaa.texture.width;
+    const int render_h = render_back_msaa.texture.height;
+
+    if (render_w <= 0 || render_h <= 0)
+    {
+        glad_glDisable(GL_SCISSOR_TEST);
+        g_mirror_scissor_enabled = 0;
+        return;
+    }
+
+    if (xmax < xmin)
+    {
+        int tmp = xmin;
+        xmin = xmax;
+        xmax = tmp;
+    }
+
+    if (ymax < ymin)
+    {
+        int tmp = ymin;
+        ymin = ymax;
+        ymax = tmp;
+    }
+
+    float viewport_x, viewport_y, viewport_w, viewport_h, scale;
+    MikuPan_GetPS2Viewport(render_w, render_h,
+                           &viewport_x, &viewport_y,
+                           &viewport_w, &viewport_h, &scale);
+
+    if (scale <= 0.0f)
+    {
+        glad_glDisable(GL_SCISSOR_TEST);
+        g_mirror_scissor_enabled = 0;
+        return;
+    }
+
+    const float x0 = ((float)xmin / 16.0f) - 1728.0f;
+    const float x1 = ((float)xmax / 16.0f) - 1728.0f;
+    const float y0 = (((float)ymin / 16.0f) - 1936.0f) * 2.0f;
+    const float y1 = (((float)ymax / 16.0f) - 1936.0f) * 2.0f;
+
+    int sx0 = (int)(viewport_x + x0 * scale);
+    int sx1 = (int)(viewport_x + x1 * scale + 0.999f);
+    int sy0 = (int)(viewport_y + y0 * scale);
+    int sy1 = (int)(viewport_y + y1 * scale + 0.999f);
+
+    sx0 = MikuPan_ClampInt(sx0, 0, render_w);
+    sx1 = MikuPan_ClampInt(sx1, 0, render_w);
+    sy0 = MikuPan_ClampInt(sy0, 0, render_h);
+    sy1 = MikuPan_ClampInt(sy1, 0, render_h);
+
+    const int width = sx1 - sx0;
+    const int height = sy1 - sy0;
+
+    if (width <= 0 || height <= 0)
+    {
+        glad_glDisable(GL_SCISSOR_TEST);
+        g_mirror_scissor_enabled = 0;
+        return;
+    }
+
+    glad_glEnable(GL_SCISSOR_TEST);
+    glad_glScissor(sx0, render_h - sy1, width, height);
+    g_mirror_scissor_enabled = 1;
+}
+
+void MikuPan_ClearMirrorScissorDepth(void)
+{
+    if (!g_mirror_scissor_enabled)
+    {
+        return;
+    }
+
+    glad_glDepthMask(GL_TRUE);
+    glad_glClearDepth(1.0);
+    glad_glClear(GL_DEPTH_BUFFER_BIT);
+    MikuPan_ResetRenderStateCache();
+}
+
+void MikuPan_DisableMirrorScissor(void)
+{
+    glad_glDisable(GL_SCISSOR_TEST);
+    g_mirror_scissor_enabled = 0;
 }
 
 void MikuPan_GetFullScreenHalfExtent(float *half_w, float *half_h)

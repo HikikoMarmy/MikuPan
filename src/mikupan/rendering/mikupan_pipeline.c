@@ -9,7 +9,9 @@ typedef enum
     MIKUPAN_RS_3D,
     MIKUPAN_RS_3D_MIRROR,
     MIKUPAN_RS_2D,
-    MIKUPAN_RS_SPRITE_3D
+    MIKUPAN_RS_SPRITE_3D,
+    MIKUPAN_RS_SHADOW,
+    MIKUPAN_RS_SHADOW_RECEIVER
 } MikuPan_RenderStateMode;
 
 /// GL bind dedup. The driver still validates every glBind*/glActiveTexture/
@@ -196,6 +198,27 @@ void MikuPan_InitPipeline()
 
     glad_glEnableVertexAttribArray(0);
 
+    ///////// SHADOW SILHOUETTE POSITION STREAM /////////
+    curr_pipeline = &pipelines[SHADOW_POSITION4];
+    MikuPan_CreateBufferObjectsInfo(curr_pipeline, 1);
+    glad_glGenVertexArrays(1, &curr_pipeline->vao);
+    glad_glBindVertexArray(curr_pipeline->vao);
+
+    MikuPan_SetBufferObjectInfo(
+        &curr_pipeline->buffers[0],
+        4 * 1024 * 1024, 1);
+    MikuPan_SetVertexBufferAttributeInfo(
+        &curr_pipeline->buffers[0].attributes[0],
+        4, 0,
+        sizeof(float[4]), 0);
+
+    glad_glGenBuffers(1, &curr_pipeline->ibo);
+    glad_glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, curr_pipeline->ibo);
+    glad_glBufferData(GL_ELEMENT_ARRAY_BUFFER, sizeof(u_int) * 1024 * 1024,
+                      NULL, GL_DYNAMIC_DRAW);
+
+    glad_glBindVertexArray(0);
+
     ///////// SPRITE SHADER /////////
     curr_pipeline = &pipelines[UV4_COLOUR4_POSITION4];
     MikuPan_CreateBufferObjectsInfo(curr_pipeline, 1);
@@ -331,6 +354,7 @@ void MikuPan_SetRenderState3D()
     if (g_current_render_state == MIKUPAN_RS_3D) return;
     g_current_render_state = MIKUPAN_RS_3D;
 
+    glad_glDisable(GL_POLYGON_OFFSET_FILL);
     glad_glDepthMask(GL_TRUE);
     glad_glEnable(GL_CULL_FACE);
     //glad_glCullFace(GL_BACK);
@@ -345,6 +369,7 @@ void MikuPan_SetRenderState3DMirror()
     if (g_current_render_state == MIKUPAN_RS_3D_MIRROR) return;
     g_current_render_state = MIKUPAN_RS_3D_MIRROR;
 
+    glad_glDisable(GL_POLYGON_OFFSET_FILL);
     glad_glDepthMask(GL_TRUE);
     glad_glEnable(GL_CULL_FACE);
     glad_glCullFace(GL_FRONT);
@@ -359,6 +384,7 @@ void MikuPan_SetRenderState2D()
     if (g_current_render_state == MIKUPAN_RS_2D) return;
     g_current_render_state = MIKUPAN_RS_2D;
 
+    glad_glDisable(GL_POLYGON_OFFSET_FILL);
     glad_glDisable(GL_CULL_FACE);
     glad_glEnable(GL_BLEND);
     glad_glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -370,11 +396,39 @@ void MikuPan_SetRenderStateSprite3D()
     if (g_current_render_state == MIKUPAN_RS_SPRITE_3D) return;
     g_current_render_state = MIKUPAN_RS_SPRITE_3D;
 
+    glad_glDisable(GL_POLYGON_OFFSET_FILL);
     glad_glDisable(GL_CULL_FACE);
     glad_glEnable(GL_BLEND);
     glad_glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     glad_glEnable(GL_DEPTH_TEST);
     glad_glDepthFunc(GL_LEQUAL);
+}
+
+void MikuPan_SetRenderStateShadow()
+{
+    if (g_current_render_state == MIKUPAN_RS_SHADOW) return;
+    g_current_render_state = MIKUPAN_RS_SHADOW;
+
+    glad_glDisable(GL_POLYGON_OFFSET_FILL);
+    glad_glDepthMask(GL_FALSE);
+    glad_glDisable(GL_CULL_FACE);
+    glad_glDisable(GL_DEPTH_TEST);
+    glad_glDisable(GL_BLEND);
+}
+
+void MikuPan_SetRenderStateShadowReceiver()
+{
+    if (g_current_render_state == MIKUPAN_RS_SHADOW_RECEIVER) return;
+    g_current_render_state = MIKUPAN_RS_SHADOW_RECEIVER;
+
+    glad_glDepthMask(GL_FALSE);
+    glad_glDisable(GL_CULL_FACE);
+    glad_glEnable(GL_DEPTH_TEST);
+    glad_glDepthFunc(GL_LEQUAL);
+    glad_glEnable(GL_POLYGON_OFFSET_FILL);
+    glad_glPolygonOffset(-1.0f, -1.0f);
+    glad_glEnable(GL_BLEND);
+    glad_glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 }
 
 void MikuPan_SetTriangleStripRestart()
@@ -401,6 +455,10 @@ void MikuPan_ApplyRenderStateMode(int mode)
         case MIKUPAN_RS_3D_MIRROR: MikuPan_SetRenderState3DMirror();  break;
         case MIKUPAN_RS_2D:        MikuPan_SetRenderState2D();        break;
         case MIKUPAN_RS_SPRITE_3D: MikuPan_SetRenderStateSprite3D();  break;
+        case MIKUPAN_RS_SHADOW:    MikuPan_SetRenderStateShadow();    break;
+        case MIKUPAN_RS_SHADOW_RECEIVER:
+            MikuPan_SetRenderStateShadowReceiver();
+            break;
         default:                   MikuPan_SetRenderState3D();        break;
     }
 }

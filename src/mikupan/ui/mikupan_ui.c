@@ -109,6 +109,10 @@ static int show_controller_remap = 0;
 static int show_shader_reload = 0;
 static int show_draw_inspector = 0;
 static int show_camera_debug = 0;
+static int show_shadow_debug_window = 0;
+static int shadow_debug_auto_probe = 0;
+static int shadow_debug_flip_y = 1;
+static float shadow_debug_preview_size = 384.0f;
 static char config_save_status[128] = {0};
 
 // Last reload error (per-shader: index 0..MAX-1; index MAX = "reload all")
@@ -1659,6 +1663,185 @@ void MikuPan_StartFrameUi(void)
     igNewFrame();
 }
 
+static void MikuPan_UiShadowDebugWindow(void)
+{
+    if (!show_shadow_debug_window)
+    {
+        return;
+    }
+
+    igSetNextWindowSize((ImVec2) {560.0f, 680.0f}, ImGuiCond_FirstUseEver);
+    if (!igBegin("Shadow Debug", (bool *) &show_shadow_debug_window, 0))
+    {
+        igEnd();
+        return;
+    }
+
+    int shadows_on = MikuPan_IsShadowEnabled();
+    if (igCheckbox("Enable Shadows", (bool *) &shadows_on))
+    {
+        MikuPan_SetShadowEnabled(shadows_on);
+    }
+
+    int receiver_debug_view = MikuPan_IsShadowReceiverDebugViewEnabled();
+    if (igCheckbox("Receiver Debug Colors", (bool *) &receiver_debug_view))
+    {
+        MikuPan_SetShadowReceiverDebugViewEnabled(receiver_debug_view);
+    }
+
+    if (shadow_debug_auto_probe)
+    {
+        MikuPan_ShadowDebugProbeTexture();
+    }
+
+    const MikuPan_ShadowDebugInfo *shadow_debug = MikuPan_GetShadowDebugInfo();
+
+    igText("FBO: %s  status: 0x%04x",
+           shadow_debug->fbo_initialized
+               ? (shadow_debug->fbo_complete ? "complete" : "incomplete")
+               : "not created",
+           shadow_debug->fbo_status);
+    igText("Matrix: %s  texture: %u (%dx%d)",
+           shadow_debug->matrix_valid ? "valid" : "missing",
+           shadow_debug->texture_id,
+           shadow_debug->texture_size,
+           shadow_debug->texture_size);
+
+    igSeparator();
+    igText("Passes: caster %d  receiver %d",
+           shadow_debug->caster_passes,
+           shadow_debug->receiver_passes);
+    igText("Draws:  caster %d (%d indices)  receiver %d (%d indices)",
+           shadow_debug->caster_draws,
+           shadow_debug->caster_indices,
+           shadow_debug->receiver_draws,
+           shadow_debug->receiver_indices);
+    igText("Caster mesh types: 0x00=%d 0x02=%d 0x80=%d 0x82=%d other=%d",
+           shadow_debug->caster_type_0,
+           shadow_debug->caster_type_2,
+           shadow_debug->caster_type_80,
+           shadow_debug->caster_type_82,
+           shadow_debug->caster_type_other);
+    igText("Caster draw types: 0x00=%d 0x02=%d 0x80=%d 0x82=%d other=%d",
+           shadow_debug->caster_draw_type_0,
+           shadow_debug->caster_draw_type_2,
+           shadow_debug->caster_draw_type_80,
+           shadow_debug->caster_draw_type_82,
+           shadow_debug->caster_draw_type_other);
+    igText("Receiver mesh types: 0x00=%d 0x10=%d 0x12=%d 0x32=%d other=%d",
+           shadow_debug->receiver_type_0,
+           shadow_debug->receiver_type_10,
+           shadow_debug->receiver_type_12,
+           shadow_debug->receiver_type_32,
+           shadow_debug->receiver_type_other);
+
+    if (!shadow_debug->fbo_complete && shadow_debug->fbo_initialized)
+    {
+        igTextColored((ImVec4) {1.0f, 0.4f, 0.3f, 1.0f},
+                      "Shadow target is incomplete; caster rendering cannot write.");
+    }
+    else if (shadow_debug->caster_passes == 0)
+    {
+        igTextColored((ImVec4) {1.0f, 0.7f, 0.2f, 1.0f},
+                      "No caster pass this frame.");
+    }
+    else if (shadow_debug->caster_draws == 0 &&
+             (shadow_debug->caster_type_0 != 0 ||
+              shadow_debug->caster_type_80 != 0 ||
+              shadow_debug->caster_type_other != 0))
+    {
+        igTextColored((ImVec4) {1.0f, 0.7f, 0.2f, 1.0f},
+                      "Caster meshes were found, but none reached a GL shadow draw.");
+    }
+    else if (shadow_debug->receiver_passes != 0 &&
+             shadow_debug->receiver_draws == 0)
+    {
+        igTextColored((ImVec4) {1.0f, 0.7f, 0.2f, 1.0f},
+                      "Receiver traversal ran, but no receiver meshes were drawn.");
+    }
+
+    igSeparator();
+    if (igButton("Probe Shadow Map", (ImVec2) {0.0f, 0.0f}))
+    {
+        MikuPan_ShadowDebugProbeTexture();
+        shadow_debug = MikuPan_GetShadowDebugInfo();
+    }
+    igSameLine(0.0f, -1.0f);
+    igCheckbox("Auto Probe", (bool *) &shadow_debug_auto_probe);
+
+    if (shadow_debug->probe_valid)
+    {
+        igText("Map probe: nonzero %d / %d (%.2f%%), max %d, avg %.3f",
+               shadow_debug->probe_nonzero_pixels,
+               shadow_debug->texture_size * shadow_debug->texture_size,
+               shadow_debug->probe_coverage * 100.0f,
+               shadow_debug->probe_max_value,
+               shadow_debug->probe_average);
+
+        if (shadow_debug->caster_draws != 0 &&
+            shadow_debug->probe_nonzero_pixels == 0)
+        {
+            igTextColored((ImVec4) {1.0f, 0.7f, 0.2f, 1.0f},
+                          "Caster draws happened, but the shadow map is empty.");
+        }
+    }
+    else
+    {
+        igTextDisabled("Map probe: not sampled yet");
+    }
+
+    igSeparator();
+    igText("Shadow Map (R8 occlusion, white = caster)");
+    igSliderFloat("Texture Preview Size", &shadow_debug_preview_size,
+                  64.0f, 768.0f, "%.0f", 0);
+    igCheckbox("Flip Y", (bool *) &shadow_debug_flip_y);
+
+    if (shadow_debug->texture_id != 0)
+    {
+        ImVec2 uv0 = shadow_debug_flip_y
+                     ? (ImVec2) {0.0f, 1.0f}
+                     : (ImVec2) {0.0f, 0.0f};
+        ImVec2 uv1 = shadow_debug_flip_y
+                     ? (ImVec2) {1.0f, 0.0f}
+                     : (ImVec2) {1.0f, 1.0f};
+
+        // Draw on a mid-grey background with a visible frame so the 256x256
+        // extent is obvious even when the map is empty (all-black). The R8
+        // channel is swizzled to RGB at texture creation, so this shows the
+        // occlusion silhouette as proper grayscale rather than dark red.
+        ImVec2 img_min = igGetCursorScreenPos();
+        ImVec2 img_size = (ImVec2) {shadow_debug_preview_size,
+                                    shadow_debug_preview_size};
+
+        igImageWithBg(
+            (ImTextureRef_c) {
+                ._TexID = (ImTextureID) (uintptr_t) shadow_debug->texture_id},
+            img_size,
+            uv0,
+            uv1,
+            (ImVec4) {0.15f, 0.15f, 0.18f, 1.0f},  /* bg behind transparent/black */
+            (ImVec4) {1.0f, 1.0f, 1.0f, 1.0f});    /* tint */
+
+        ImDrawList *draw_list = igGetWindowDrawList();
+        ImVec2 img_max = (ImVec2) {img_min.x + img_size.x,
+                                   img_min.y + img_size.y};
+        ImDrawList_AddRect(
+            draw_list,
+            img_min,
+            img_max,
+            igGetColorU32_Vec4((ImVec4) {0.55f, 0.85f, 1.0f, 0.9f}),
+            0.0f,
+            0,
+            1.5f);
+    }
+    else
+    {
+        igTextDisabled("Shadow texture has not been created yet.");
+    }
+
+    igEnd();
+}
+
 void MikuPan_DrawUi(void)
 {
     ImGuiIO *io = igGetIO_Nil();
@@ -1687,6 +1870,7 @@ void MikuPan_DrawUi(void)
     MikuPan_UiShaderReloadWindow();
     MikuPan_UiDrawCallInspector();
     MikuPan_UiCameraDebugWindow();
+    MikuPan_UiShadowDebugWindow();
 
     if (show_fps)
     {
@@ -1735,7 +1919,7 @@ void MikuPan_ShowTextureList(void)
     qsort(tex_list, tex_list_count, sizeof(MikuPan_TextureInfo *),
           CompareTextureById);
 
-    igBegin("OpenGL Texture", NULL, 0);
+    igBegin("Texture List", NULL, 0);
 
     screen_copy = MikuPan_GetScreenCopyTextureInfo();
     if (screen_copy != NULL)
@@ -1847,6 +2031,7 @@ void MikuPan_UiMenuBar(void)
         igCheckbox("Shader Reload", (bool *) &show_shader_reload);
         igCheckbox("Draw Call Inspector", (bool *) &show_draw_inspector);
         igCheckbox("Camera World Info", (bool *) &show_camera_debug);
+        igCheckbox("Shadow Debug", (bool *) &show_shadow_debug_window);
         igSeparator();
         igCheckbox("Third-Person Camera", (bool *) &camera_third_person_enabled);
         if (camera_third_person_enabled)
@@ -1890,6 +2075,7 @@ void MikuPan_UiMenuBar(void)
         {
             MikuPan_SetShadowEnabled(shadows_on);
         }
+        igCheckbox("Shadow Debug Window", (bool *) &show_shadow_debug_window);
 
         igCheckbox("Textures", (bool *) &show_texture_list);
         if (igButton("Clear Texture Cache", (ImVec2) {0.0f, 0.0f}))

@@ -912,7 +912,10 @@ void MirrorDraw(SgCAMERA *camera, void *sgd_top,
     pdrawenv->scissor1.SCAY1 = (mymax / 16) + -0x790;
 
     SetEnvironment();
+    MikuPan_EnableMirrorScissorFromGsBounds(mxmin, mymin, mxmax, mymax);
     MirrorRender(camera, render_func);
+    MikuPan_ClearMirrorScissorDepth();
+    MikuPan_DisableMirrorScissor();
 
     pedraw_buf = (qword *) getObjWrk() + 1;
 

@@ -29,5 +29,14 @@ MikuPan_TextureInfo *MikuPan_GetCurrentFontTexture(void);
 void MikuPan_TextureShutdown(void);
 
 int MikuPan_IsShadowPassActive(void);
+int MikuPan_IsShadowReceiverPassActive(void);
+void MikuPan_SetViewProjectionMatrices(float *view_matrix,
+                                       float *projection_matrix);
+void MikuPan_InvalidateModelTransformCache(void);
+void MikuPan_ShadowDebugBeginFrame(void);
+void MikuPan_ShadowDebugRecordCasterMeshType(int mesh_type);
+void MikuPan_ShadowDebugRecordReceiverMeshType(int mesh_type);
+void MikuPan_ShadowDebugRecordCasterDraw(int mesh_type, int index_count);
+void MikuPan_ShadowDebugRecordReceiverDraw(int mesh_type, int index_count);
 
 #endif // MIKUPAN_RENDERER_INTERNAL_H

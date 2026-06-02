@@ -678,10 +678,12 @@ void SceneMirrorMdlDraw()
     SCN_ANM_MDL *sam;
     HeaderSection *hs;
     SgCOORDUNIT *cp;
+    float *mirror_eye;
     int i;
 
     sc = &scene_ctrl[scn_now_play_id];
     fc = &sc->fod_ctrl;
+    mirror_eye = nowcamera != NULL ? nowcamera->zd : sc->cam->zd;
 
     hs = (HeaderSection *) room_addr_tbl[sc->room_no].near_sgd;
     cp = GetCoordP(hs);
@@ -701,7 +703,7 @@ void SceneMirrorMdlDraw()
 
     CalcCoordinate(cp, hs->blocks - 1);
 
-    FodSetMyLight(&fc->fod_light, "room", sc->cam->zd);
+    FodSetMyLight(&fc->fod_light, "room", mirror_eye);
 
     SgSortUnitKind(hs, -1);
 
@@ -713,7 +715,7 @@ void SceneMirrorMdlDraw()
         if (hs != 0)
         {
             CalcCoordinate(GetCoordP(hs), hs->blocks - 1);
-            FodSetMyLight(&fc->fod_light, sam->prefix, sc->cam->zd);
+            FodSetMyLight(&fc->fod_light, sam->prefix, mirror_eye);
             SgSortUnitKind(sam->mdl_addr, -1);
         }
     }
@@ -726,7 +728,7 @@ void SceneMirrorMdlDraw()
         if (hs != 0)
         {
             CalcCoordinate(GetCoordP(hs), hs->blocks - 1);
-            FodSetMyLight(&fc->fod_light, sam->prefix, sc->cam->zd);
+            FodSetMyLight(&fc->fod_light, sam->prefix, mirror_eye);
             SgSortUnitKind(sam->mdl_addr, -1);
         }
     }
@@ -739,7 +741,7 @@ void SceneMirrorMdlDraw()
         if (hs != 0)
         {
             CalcCoordinate(GetCoordP(hs), hs->blocks - 1);
-            FodSetMyLight(&fc->fod_light, sam->prefix, sc->cam->zd);
+            FodSetMyLight(&fc->fod_light, sam->prefix, mirror_eye);
             SgSortUnitKind(sam->mdl_addr, -1);
         }
     }
@@ -750,7 +752,7 @@ void SceneMirrorMdlDraw()
 
         if (sam->mdl_no == sc->hero_mdl_no)
         {
-            FodSetMyLight(&fc->fod_light, sam->prefix, sc->cam->zd);
+            FodSetMyLight(&fc->fod_light, sam->prefix, mirror_eye);
             SgSortUnitKind(sam->mdl_anm.base_p, -1);
 
             if (sam->mdl_no == 0)

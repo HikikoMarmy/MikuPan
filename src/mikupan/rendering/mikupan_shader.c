@@ -77,6 +77,10 @@ const char *shader_file_name[MAX_SHADER_PROGRAMS][3] = {
     // vertex layout they normally use (location 0 = position).
     {         "./resources/shaders/shadow_silhouette.vert", NULL,
      "./resources/shaders/shadow_silhouette.frag"                                                 },
+    // Shadow receiver decal — projects the generated silhouette texture onto
+    // already-rendered receiver meshes as transparent black.
+    {            "./resources/shaders/shadow_receiver.vert", NULL,
+     "./resources/shaders/shadow_receiver.frag"                                                   },
     {             "./resources/shaders/camera_debug.vert", NULL,
      "./resources/shaders/untextured_coloured_sprite.frag"                                        },
     {                 "./resources/shaders/heat_haze.vert", NULL,
@@ -89,7 +93,8 @@ static const char *kShaderNames[MAX_SHADER_PROGRAMS] = {
     "BOUNDING_BOX",      "SPRITE",
     "NORMALS_0x12",      "NORMALS_0x2",
     "POSTPROCESS",       "SHADOW_BLOB",
-    "SHADOW_SILHOUETTE", "CAMERA_DEBUG",
+    "SHADOW_SILHOUETTE", "SHADOW_RECEIVER",
+    "CAMERA_DEBUG",
     "HEAT_HAZE",
 };
 
@@ -104,6 +109,23 @@ static int FindShaderIndex(GLuint program)
             return i;
     }
     return -1;
+}
+
+static u_int MikuPan_BindShaderProgramIndex(int shader_program)
+{
+    if (shader_program < 0 || shader_program >= MAX_SHADER_PROGRAMS)
+    {
+        return (u_int)-1;
+    }
+
+    GLuint new_program = shader_list[shader_program];
+    if (new_program != current_program)
+    {
+        current_program = new_program;
+        glad_glUseProgram(current_program);
+    }
+
+    return current_program;
 }
 
 static GLint GetCachedLocation(int idx, const char *name)
@@ -429,18 +451,7 @@ u_int MikuPan_SetCurrentShaderProgram(int shader_program)
         shader_program = g_shader_override;
     }
 
-    if (shader_program >= MAX_SHADER_PROGRAMS)
-    {
-        return -1;
-    }
-
-    GLuint new_program = shader_list[shader_program];
-    if (new_program != current_program)
-    {
-        current_program = new_program;
-        glad_glUseProgram(current_program);
-    }
-    return current_program;
+    return MikuPan_BindShaderProgramIndex(shader_program);
 }
 
 void MikuPan_SetShaderOverride(int shader_index)
@@ -467,7 +478,7 @@ void MikuPan_SetUniformMatrix4fvToAllShaders(float *mat, char *name)
         {
             continue;
         }
-        MikuPan_SetCurrentShaderProgram(i);
+        MikuPan_BindShaderProgramIndex(i);
         glad_glUniformMatrix4fv(loc, 1, GL_FALSE, mat);
     }
 }
@@ -482,7 +493,7 @@ void MikuPan_SetUniformMatrix3fvToAllShaders(float *mat, char *name)
             continue;
         }
 
-        MikuPan_SetCurrentShaderProgram(i);
+        MikuPan_BindShaderProgramIndex(i);
         glad_glUniformMatrix3fv(loc, 1, GL_FALSE, mat);
     }
 }
@@ -519,7 +530,7 @@ void MikuPan_SetUniform4fvToAllShaders(float *vector, char *name)
             continue;
         }
 
-        MikuPan_SetCurrentShaderProgram(i);
+        MikuPan_BindShaderProgramIndex(i);
         glad_glUniform4fv(loc, 1, vector);
     }
 }
@@ -547,7 +558,7 @@ void MikuPan_SetUniform1iToAllShaders(int value, char *name)
             continue;
         }
 
-        MikuPan_SetCurrentShaderProgram(i);
+        MikuPan_BindShaderProgramIndex(i);
         glad_glUniform1i(loc, value);
     }
 }
@@ -573,7 +584,7 @@ void MikuPan_SetUniform1fToAllShaders(float value, char *name)
             continue;
         }
 
-        MikuPan_SetCurrentShaderProgram(i);
+        MikuPan_BindShaderProgramIndex(i);
         glad_glUniform1f(loc, value);
     }
 }

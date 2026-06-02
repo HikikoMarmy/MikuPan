@@ -135,6 +135,9 @@ enum MikuPan_PipelineType
     /// BOUNDING BOX SHADER
     POSITION4,
 
+    /// Shadow silhouette position-only stream
+    SHADOW_POSITION4,
+
     /// MESH 0x12 SHADER
     POSITION3_NORMAL3_UV2,
 

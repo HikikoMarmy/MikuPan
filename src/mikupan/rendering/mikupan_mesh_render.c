@@ -2,6 +2,7 @@
 #include "graphics/graph3d/sglib.h"
 #include "graphics/graph3d/sgsu.h"
 #include "mikupan/mikupan_utils.h"
+#include "mikupan/mikupan_logging_c.h"
 #include "mikupan/ui/mikupan_ui.h"
 #include "mikupan_meshcache.h"
 #include "mikupan_pipeline.h"
@@ -41,7 +42,35 @@ static float g_zero_floats[MIKUPAN_MESH_BUFFER_CAPACITY] = {0};
 
 static int MikuPan_GetMeshRenderMode()
 {
+    if (MikuPan_IsShadowPassActive() || MikuPan_IsShadowReceiverPassActive())
+    {
+        return GL_TRIANGLES;
+    }
+
     return MikuPan_IsWireframeRendering() ? GL_LINES : GL_TRIANGLES;
+}
+
+static void MikuPan_SetMeshRenderStateForCurrentPass(void)
+{
+    if (MikuPan_IsShadowReceiverPassActive())
+    {
+        MikuPan_SetRenderStateShadowReceiver();
+    }
+    else if (MikuPan_IsShadowPassActive())
+    {
+        MikuPan_SetRenderStateShadow();
+    }
+    else
+    {
+        MikuPan_SetRenderState3D();
+    }
+}
+
+static int MikuPan_CanUseMeshCacheForCurrentPass(void)
+{
+    return MikuPan_MeshCache_IsEnabled() &&
+           !MikuPan_IsShadowPassActive() &&
+           !MikuPan_IsShadowReceiverPassActive();
 }
 
 static int MikuPan_BuildPresetColorStream(SGDPROCUNITHEADER *pPUHead,
@@ -133,7 +162,9 @@ void MikuPan_RenderMeshType0x32(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPU
     MikuPan_SetCurrentShaderProgram(MESH_0x12_SHADER);
     MikuPan_PerfEnd(PERF_SECT_SC_SHADER, _t);
 
-    if ((int64_t)mesh_tex_reg < (int64_t)pVMCD)
+    if (!MikuPan_IsShadowPassActive() &&
+        !MikuPan_IsShadowReceiverPassActive() &&
+        (int64_t)mesh_tex_reg < (int64_t)pVMCD)
     {
         _t = MikuPan_PerfBegin();
         MikuPan_SetTexture(mesh_tex_reg);
@@ -141,7 +172,7 @@ void MikuPan_RenderMeshType0x32(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPU
     }
 
     _t = MikuPan_PerfBegin();
-    MikuPan_SetRenderState3D();
+    MikuPan_SetMeshRenderStateForCurrentPass();
     MikuPan_PerfEnd(PERF_SECT_SC_RS3D, _t);
     MikuPan_PerfEnd(PERF_SECT_STATE_CHANGE, _sc_t0);
 
@@ -149,7 +180,7 @@ void MikuPan_RenderMeshType0x32(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPU
     /// Static furniture / map geometry: positions, UVs, normals, and indices
     /// can be cached, but preset vertex colours are rewritten by lighting/BW
     /// paths. Refresh only that colour VBO on cache hits.
-    const int cache_on = MikuPan_MeshCache_IsEnabled();
+    const int cache_on = MikuPan_CanUseMeshCacheForCurrentPass();
     MikuPan_MeshCacheEntry *cache_entry = NULL;
 
     if (cache_on)
@@ -171,7 +202,9 @@ void MikuPan_RenderMeshType0x32(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPU
             MikuPan_TimedDrawElements(MikuPan_GetMeshRenderMode(),
                                       cache_entry->index_count, GL_UNSIGNED_INT, (void *)0);
 
-            if (MikuPan_IsNormalsRendering())
+            if (!MikuPan_IsShadowPassActive() &&
+                !MikuPan_IsShadowReceiverPassActive() &&
+                MikuPan_IsNormalsRendering())
             {
                 MikuPan_SetCurrentShaderProgram(NORMALS_0x12_SHADER);
                 MikuPan_TimedDrawElements(GL_TRIANGLES, cache_entry->index_count,
@@ -302,14 +335,234 @@ void MikuPan_RenderMeshType0x32(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPU
         MikuPan_StreamUploadFull(GL_ELEMENT_ARRAY_BUFFER, pipeline->ibo, (GLsizeiptr)(index_write_offset * (int)sizeof(u_int)), g_mesh_buffers_0x32.indices);
     }
 
+    if (MikuPan_IsShadowPassActive())
+    {
+        MikuPan_ShadowDebugRecordCasterDraw(mesh_type, index_write_offset);
+    }
+    else if (MikuPan_IsShadowReceiverPassActive())
+    {
+        MikuPan_ShadowDebugRecordReceiverDraw(mesh_type, index_write_offset);
+    }
+
     MikuPan_PerfDrawCall();
     MikuPan_TimedDrawElements(MikuPan_GetMeshRenderMode(), index_write_offset, GL_UNSIGNED_INT, (void *)0);
 
-    if (MikuPan_IsNormalsRendering())
+    if (!MikuPan_IsShadowPassActive() &&
+        !MikuPan_IsShadowReceiverPassActive() &&
+        MikuPan_IsNormalsRendering())
     {
         MikuPan_SetCurrentShaderProgram(NORMALS_0x12_SHADER);
         MikuPan_TimedDrawElements(GL_TRIANGLES, index_write_offset, GL_UNSIGNED_INT, (void *)0);
     }
+}
+
+/*
+ * Draw a shadow caster from SetVUVNDataShadowModel's compact vec4 positions.
+ * Regular mesh pipelines include normal/UV/color strides; using them here
+ * skips vertices and produces unstable silhouettes.
+ */
+void MikuPan_RenderShadowSilhouettePrepared(unsigned int *pVUVN,
+                                            unsigned int *pPUHead,
+                                            const float *shadow_positions)
+{
+    MIKUPAN_PERF_SCOPE(PERF_SECT_MESH_RENDER);
+
+    if (!MikuPan_IsShadowPassActive())
+    {
+        return;
+    }
+
+    SGDVUMESHPOINTNUM *pMeshInfo =
+        (SGDVUMESHPOINTNUM *) &(((SGDPROCUNITHEADER *) pPUHead)[4]);
+    VUVN_PRIM *v = ((VUVN_PRIM *) &((int *) pVUVN)[2]);
+
+    const int num_mesh = (int) GET_NUM_MESH(pPUHead);
+    const int vnum     = (int) v->vnum;
+    const int mesh_type = (int) GET_MESH_TYPE(pPUHead);
+
+    MikuPan_PipelineInfo *pipeline = MikuPan_GetPipelineInfo(SHADOW_POSITION4);
+    const int pos_stride = pipeline->buffers[0].attributes[0].stride;
+
+    /* Header sanity — bail (logged once) rather than trust a bad parse. */
+    if (shadow_positions == NULL ||
+        num_mesh <= 0 || num_mesh > 256 ||
+        vnum <= 0 || vnum > MIKUPAN_MESH_BUFFER_CAPACITY)
+    {
+        static int logged = 0;
+        if (!logged)
+        {
+            logged = 1;
+            info_log("Shadow silhouette skipped: mtype=0x%x pos=%p num_mesh=%d vnum=%d",
+                     mesh_type, (const void *)shadow_positions, num_mesh, vnum);
+        }
+        return;
+    }
+
+    /* Build positions-only triangle indices from each submesh's strip. */
+    int vertex_offset = 0;
+    int index_write_offset = 0;
+    for (int i = 0; i < num_mesh; i++)
+    {
+        int vertex_count = (int) pMeshInfo[i].uiPointNum;
+        if (vertex_count == 0) continue;
+
+        if (vertex_count < 3 ||
+            vertex_offset + vertex_count > vnum ||
+            (long) index_write_offset + (long) (vertex_count - 2) * 3 >
+                (long) MIKUPAN_MESH_BUFFER_CAPACITY)
+        {
+            static int logged = 0;
+            if (!logged)
+            {
+                logged = 1;
+                info_log("Shadow silhouette skipped: mtype=0x%x submesh %d count=%d off=%d vnum=%d",
+                         mesh_type, i, vertex_count, vertex_offset, vnum);
+            }
+            return;
+        }
+
+        index_write_offset += MikuPan_SetTriangleIndex(
+            g_mesh_buffers_0x82.indices, vertex_count, vertex_offset, index_write_offset);
+        vertex_offset += vertex_count;
+    }
+
+    /* One-time layout diagnostic: if vertex_offset (sum of submesh strip lengths)
+     * is much less than vnum, the per-submesh counts / mesh count are being
+     * under-read and most of the geometry is missing (thin-sliver silhouette).
+     * v->nnum / vif_size / vtype tell us the true vertex format. */
+    {
+        static int diag_count = 0;
+        if (diag_count < 6)
+        {
+            diag_count++;
+            info_log("Shadow silhouette diag: mtype=0x%x num_mesh=%d vnum=%d nnum=%d vif_size=%d vtype=%d sum_counts=%d tris=%d first_counts=[%d,%d,%d,%d]",
+                     mesh_type, num_mesh, vnum, (int) v->nnum,
+                     (int) v->vif_size, (int) v->vtype,
+                     vertex_offset, index_write_offset / 3,
+                     num_mesh > 0 ? (int) pMeshInfo[0].uiPointNum : -1,
+                     num_mesh > 1 ? (int) pMeshInfo[1].uiPointNum : -1,
+                     num_mesh > 2 ? (int) pMeshInfo[2].uiPointNum : -1,
+                     num_mesh > 3 ? (int) pMeshInfo[3].uiPointNum : -1);
+        }
+    }
+
+    if (index_write_offset <= 0)
+    {
+        return;
+    }
+
+    /* The silhouette shader is applied via the shadow-pass shader override, so
+     * this SetCurrentShaderProgram is redirected to SHADOW_SILHOUETTE_SHADER. */
+    MikuPan_FlushTexturedSpriteBatch();
+    MikuPan_SetCurrentShaderProgram(SHADOW_SILHOUETTE_SHADER);
+    MikuPan_SetMeshRenderStateForCurrentPass();
+    MikuPan_BindVAO(pipeline->vao);
+
+    /* Upload positions (interleaved pos+normal; the silhouette shader reads only
+     * location 0 = xyz) and the index list. UV/colour VAO attributes are left
+     * untouched — they are never sampled by the silhouette shader. */
+    MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[0].id,
+        (GLsizeiptr) ((long) vnum * pos_stride), shadow_positions);
+    MikuPan_StreamUploadFull(GL_ELEMENT_ARRAY_BUFFER, pipeline->ibo,
+        (GLsizeiptr) ((long) index_write_offset * (int) sizeof(unsigned int)),
+        g_mesh_buffers_0x82.indices);
+
+    MikuPan_ShadowDebugRecordCasterDraw(mesh_type, index_write_offset);
+
+    MikuPan_PerfDrawCall();
+    MikuPan_TimedDrawElements(MikuPan_GetMeshRenderMode(),
+                              index_write_offset, GL_UNSIGNED_INT, (void *) 0);
+}
+
+/*
+ * 0x80 uses the same inline VUVN position/normal block as 0x82, but has no
+ * ST/texture payload. For the shadow map we only need positions and topology,
+ * so reuse avt2 and avoid the 0x82 UV parser entirely.
+ */
+void MikuPan_RenderShadowSilhouette0x80(unsigned int *pVUVN,
+                                        unsigned int *pPUHead)
+{
+    MIKUPAN_PERF_SCOPE(PERF_SECT_MESH_RENDER);
+
+    if (!MikuPan_IsShadowPassActive())
+    {
+        return;
+    }
+
+    SGDVUVNDATA_PRESET *pVUVNData =
+        (SGDVUVNDATA_PRESET *) &(((SGDPROCUNITHEADER *) pVUVN)[1]);
+    SGDVUMESHPOINTNUM *pMeshInfo =
+        (SGDVUMESHPOINTNUM *) &(((SGDPROCUNITHEADER *) pPUHead)[4]);
+    VUVN_PRIM *v = ((VUVN_PRIM *) &((int *) pVUVN)[2]);
+
+    const int num_mesh = (int) GET_NUM_MESH(pPUHead);
+    const int vnum = (int) v->vnum;
+    const int mesh_type = (int) GET_MESH_TYPE(pPUHead);
+
+    MikuPan_PipelineInfo *pipeline = MikuPan_GetPipelineInfo(POSITION3_NORMAL3_UV2);
+    const int pos_stride = pipeline->buffers[0].attributes[0].stride;
+
+    if (num_mesh <= 0 || num_mesh > 256 ||
+        vnum <= 0 || vnum > MIKUPAN_MESH_BUFFER_CAPACITY)
+    {
+        static int logged = 0;
+        if (!logged)
+        {
+            logged = 1;
+            info_log("Shadow 0x80 silhouette skipped: mtype=0x%x num_mesh=%d vnum=%d",
+                     mesh_type, num_mesh, vnum);
+        }
+        return;
+    }
+
+    int vertex_offset = 0;
+    int index_write_offset = 0;
+    for (int i = 0; i < num_mesh; i++)
+    {
+        int vertex_count = (int) pMeshInfo[i].uiPointNum;
+        if (vertex_count == 0) continue;
+
+        if (vertex_count < 3 ||
+            vertex_offset + vertex_count > vnum ||
+            (long) index_write_offset + (long) (vertex_count - 2) * 3 >
+                (long) MIKUPAN_MESH_BUFFER_CAPACITY)
+        {
+            static int logged = 0;
+            if (!logged)
+            {
+                logged = 1;
+                info_log("Shadow 0x80 silhouette skipped: mtype=0x%x submesh %d count=%d off=%d vnum=%d",
+                         mesh_type, i, vertex_count, vertex_offset, vnum);
+            }
+            return;
+        }
+
+        index_write_offset += MikuPan_SetTriangleIndex(
+            g_mesh_buffers_0x82.indices, vertex_count, vertex_offset, index_write_offset);
+        vertex_offset += vertex_count;
+    }
+
+    if (index_write_offset <= 0)
+    {
+        return;
+    }
+
+    MikuPan_FlushTexturedSpriteBatch();
+    MikuPan_SetCurrentShaderProgram(SHADOW_SILHOUETTE_SHADER);
+    MikuPan_SetMeshRenderStateForCurrentPass();
+    MikuPan_BindVAO(pipeline->vao);
+
+    MikuPan_StreamUploadFull(GL_ARRAY_BUFFER, pipeline->buffers[0].id,
+        (GLsizeiptr) ((long) vnum * pos_stride), pVUVNData->avt2);
+    MikuPan_StreamUploadFull(GL_ELEMENT_ARRAY_BUFFER, pipeline->ibo,
+        (GLsizeiptr) ((long) index_write_offset * (int) sizeof(unsigned int)),
+        g_mesh_buffers_0x82.indices);
+
+    MikuPan_ShadowDebugRecordCasterDraw(mesh_type, index_write_offset);
+
+    MikuPan_PerfDrawCall();
+    MikuPan_TimedDrawElements(MikuPan_GetMeshRenderMode(),
+                              index_write_offset, GL_UNSIGNED_INT, (void *) 0);
 }
 
 void MikuPan_RenderMeshType0x82(unsigned int *pVUVN, unsigned int *pPUHead)
@@ -340,17 +593,20 @@ void MikuPan_RenderMeshType0x82(unsigned int *pVUVN, unsigned int *pPUHead)
     MikuPan_SetCurrentShaderProgram(MESH_0x12_SHADER);
     MikuPan_PerfEnd(PERF_SECT_SC_SHADER, _t);
 
-    _t = MikuPan_PerfBegin();
-    MikuPan_SetTexture(mesh_tex_reg);
-    MikuPan_PerfEnd(PERF_SECT_SC_TEXTURE, _t);
+    if (!MikuPan_IsShadowPassActive() && !MikuPan_IsShadowReceiverPassActive())
+    {
+        _t = MikuPan_PerfBegin();
+        MikuPan_SetTexture(mesh_tex_reg);
+        MikuPan_PerfEnd(PERF_SECT_SC_TEXTURE, _t);
+    }
 
     _t = MikuPan_PerfBegin();
-    MikuPan_SetRenderState3D();
+    MikuPan_SetMeshRenderStateForCurrentPass();
     MikuPan_PerfEnd(PERF_SECT_SC_RS3D, _t);
     MikuPan_PerfEnd(PERF_SECT_STATE_CHANGE, _sc_t0);
 
     /// ── Cache fast path ──
-    const int cache_on = MikuPan_MeshCache_IsEnabled();
+    const int cache_on = MikuPan_CanUseMeshCacheForCurrentPass();
     MikuPan_MeshCacheEntry *cache_entry = NULL;
 
     if (cache_on)
@@ -366,7 +622,9 @@ void MikuPan_RenderMeshType0x82(unsigned int *pVUVN, unsigned int *pPUHead)
             MikuPan_TimedDrawElements(MikuPan_GetMeshRenderMode(),
                                       cache_entry->index_count, GL_UNSIGNED_INT, (void *)0);
 
-            if (MikuPan_IsNormalsRendering())
+            if (!MikuPan_IsShadowPassActive() &&
+                !MikuPan_IsShadowReceiverPassActive() &&
+                MikuPan_IsNormalsRendering())
             {
                 MikuPan_SetCurrentShaderProgram(NORMALS_0x12_SHADER);
                 MikuPan_TimedDrawElements(GL_TRIANGLES, cache_entry->index_count,
@@ -451,11 +709,22 @@ void MikuPan_RenderMeshType0x82(unsigned int *pVUVN, unsigned int *pPUHead)
     }
 
     // ── Draw ──
+    if (MikuPan_IsShadowPassActive())
+    {
+        MikuPan_ShadowDebugRecordCasterDraw(0x82, index_write_offset);
+    }
+    else if (MikuPan_IsShadowReceiverPassActive())
+    {
+        MikuPan_ShadowDebugRecordReceiverDraw(0x82, index_write_offset);
+    }
+
     MikuPan_PerfDrawCall();
     MikuPan_TimedDrawElements(MikuPan_GetMeshRenderMode(),
                               index_write_offset, GL_UNSIGNED_INT, (void *)0);
 
-    if (MikuPan_IsNormalsRendering())
+    if (!MikuPan_IsShadowPassActive() &&
+        !MikuPan_IsShadowReceiverPassActive() &&
+        MikuPan_IsNormalsRendering())
     {
         MikuPan_SetCurrentShaderProgram(NORMALS_0x12_SHADER);
         MikuPan_TimedDrawElements(GL_TRIANGLES,
@@ -500,12 +769,15 @@ void MikuPan_RenderMeshType0x2(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPUH
     MikuPan_SetCurrentShaderProgram(shader);
     MikuPan_PerfEnd(PERF_SECT_SC_SHADER, _t);
 
-    _t = MikuPan_PerfBegin();
-    MikuPan_SetTexture(mesh_tex_reg);
-    MikuPan_PerfEnd(PERF_SECT_SC_TEXTURE, _t);
+    if (!MikuPan_IsShadowPassActive() && !MikuPan_IsShadowReceiverPassActive())
+    {
+        _t = MikuPan_PerfBegin();
+        MikuPan_SetTexture(mesh_tex_reg);
+        MikuPan_PerfEnd(PERF_SECT_SC_TEXTURE, _t);
+    }
 
     _t = MikuPan_PerfBegin();
-    MikuPan_SetRenderState3D();
+    MikuPan_SetMeshRenderStateForCurrentPass();
     MikuPan_PerfEnd(PERF_SECT_SC_RS3D, _t);
     MikuPan_PerfEnd(PERF_SECT_STATE_CHANGE, _sc_t0);
 
@@ -513,7 +785,7 @@ void MikuPan_RenderMeshType0x2(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPUH
     /// 0x2/0xA meshes are CPU-skinned: positions+normals change every frame,
     /// but the triangle topology and UVs are immutable. Cache the static
     /// streams (UV VBO + IBO) and the VAO; stream only pos+norm.
-    const int cache_on = MikuPan_MeshCache_IsEnabled();
+    const int cache_on = MikuPan_CanUseMeshCacheForCurrentPass();
     MikuPan_MeshCacheEntry *cache_entry = NULL;
     int need_static_upload = 0;
 
@@ -619,11 +891,22 @@ void MikuPan_RenderMeshType0x2(SGDPROCUNITHEADER *pVUVN, SGDPROCUNITHEADER *pPUH
     }
 
     // ── Draw ──
+    if (MikuPan_IsShadowPassActive())
+    {
+        MikuPan_ShadowDebugRecordCasterDraw(mesh_type, index_count);
+    }
+    else if (MikuPan_IsShadowReceiverPassActive())
+    {
+        MikuPan_ShadowDebugRecordReceiverDraw(mesh_type, index_count);
+    }
+
     MikuPan_PerfDrawCall();
     MikuPan_TimedDrawElements(MikuPan_GetMeshRenderMode(),
                               index_count, GL_UNSIGNED_INT, (void *)0);
 
-    if (MikuPan_IsNormalsRendering())
+    if (!MikuPan_IsShadowPassActive() &&
+        !MikuPan_IsShadowReceiverPassActive() &&
+        MikuPan_IsNormalsRendering())
     {
         MikuPan_SetCurrentShaderProgram(NORMALS_0x2_SHADER);
         MikuPan_TimedDrawElements(GL_TRIANGLES,

@@ -83,6 +83,23 @@ void MikuPan_SetModelTransformMatrix(sceVu0FVECTOR *m)
     MikuPan_RecomputeAndUploadDerived();
 }
 
+void MikuPan_SetViewProjectionMatrices(float *view_matrix,
+                                       float *projection_matrix)
+{
+    memcpy(WorldView, view_matrix, sizeof(WorldView));
+    memcpy(projection, projection_matrix, sizeof(projection));
+    glm_mat4_mul(projection, WorldView, WorldClipView);
+
+    MikuPan_SetUniformMatrix4fvToAllShaders((float*)WorldView, "view");
+    MikuPan_SetUniformMatrix4fvToAllShaders((float*)projection, "projection");
+    MikuPan_RecomputeAndUploadDerived();
+}
+
+void MikuPan_InvalidateModelTransformCache(void)
+{
+    g_has_cached_model = 0;
+}
+
 void MikuPan_SetupCamera(MikuPan_Camera *mikupan_camera)
 {
     // View -> camera->wv
@@ -170,36 +187,9 @@ void MikuPan_SetupMirrorMtx(float* mtx)
 
     glm_mat4_make(mtx, m);
     glm_mat4_mul(WorldView, m, out);
-    glm_mat4_mul(projection, out, WorldClipView);
+    memcpy(WorldView, out, sizeof(WorldView));
+    glm_mat4_mul(projection, WorldView, WorldClipView);
 
-    MikuPan_SetUniformMatrix4fvToAllShaders((float*)out, "view");
-
-    mat4 mv, mvp, vp;
-    mat3 mv3, view3, normalMatrix3, viewNormalMatrix3;
-
-    if (g_has_cached_model)
-    {
-        glm_mat4_mul(out, g_cached_model_matrix, mv);
-    }
-    else
-    {
-        glm_mat4_copy(out, mv);
-    }
-
-    glm_mat4_mul(projection, mv, mvp);
-    glm_mat4_mul(projection, out, vp);
-
-    glm_mat4_pick3(mv, mv3);
-    glm_mat3_inv(mv3, normalMatrix3);
-    glm_mat3_transpose(normalMatrix3);
-
-    glm_mat4_pick3(out, view3);
-    glm_mat3_inv(view3, viewNormalMatrix3);
-    glm_mat3_transpose(viewNormalMatrix3);
-
-    MikuPan_SetUniformMatrix4fvToAllShaders((float*)mvp,               "mvp");
-    MikuPan_SetUniformMatrix4fvToAllShaders((float*)mv,                "modelView");
-    MikuPan_SetUniformMatrix4fvToAllShaders((float*)vp,                "viewProj");
-    MikuPan_SetUniformMatrix3fvToAllShaders((float*)normalMatrix3,     "normalMatrix");
-    MikuPan_SetUniformMatrix3fvToAllShaders((float*)viewNormalMatrix3, "viewNormalMatrix");
+    MikuPan_SetUniformMatrix4fvToAllShaders((float*)WorldView, "view");
+    MikuPan_RecomputeAndUploadDerived();
 }

@@ -18,6 +18,8 @@
 #define SCRATCHPAD ((u_char *) ps2_virtual_scratchpad)
 
 #include "data/scamera.h"// SgCAMERA scamera;
+#include "mikupan/mikupan_logging_c.h"
+#include "mikupan/mikupan_memory.h"
 #include "mikupan/rendering/mikupan_renderer.h"
 
 static int write_flg = 0;
@@ -289,6 +291,7 @@ static void _CalcWeightedVertexSM(sceVu0FVECTOR dp, sceVu0FVECTOR v)
     //    sqc2            $vf15, 0(%1)             \n\
     //    ": :"r"(v), "r"(dp)
     //);
+    calc_skinned_position(dp, (sceVu0FVECTOR *) v);
 }
 
 static void _CalcWeightedVertexBufferSM(sceVu0FVECTOR dp, sceVu0FVECTOR v)
@@ -312,6 +315,27 @@ static void _CalcWeightedVertexBufferSM(sceVu0FVECTOR dp, sceVu0FVECTOR v)
     //    sqc2            $vf15, 0(%1)             \n\
     //    ": :"r"(v), "r"(dp)
     //);
+    calc_skinned_position(dp, (sceVu0FVECTOR *) v);
+}
+
+static void *GetShadowVuvnHostPointer(u_int ps2_addr, int index, int vtype)
+{
+    int64_t host_addr = MikuPan_GetHostAddress((int) ps2_addr);
+
+    if (host_addr == 0 || host_addr == -1)
+    {
+        static int logged = 0;
+        if (logged < 16)
+        {
+            logged++;
+            info_log("Shadow VUVN pointer invalid: addr=0x%08x index=%d vtype=%d",
+                     ps2_addr, index, vtype);
+        }
+
+        return NULL;
+    }
+
+    return (void *) host_addr;
 }
 
 static void _CalcVertexSM(sceVu0FVECTOR dp, sceVu0FVECTOR v)
@@ -398,8 +422,9 @@ u_int *SetVUVNDataShadowModel(u_int *prim)
 
             for (i = 0; i < vh->vnum; vp++, prim += 2, i++)
             {
-                //Vu0CopyVector(vp[0], *(sceVu0FVECTOR *) *prim);
-                Vu0CopyVector(vp[0], *(sceVu0FVECTOR *) MikuPan_GetHostPointer(*prim));
+                sceVu0FVECTOR *src = GetShadowVuvnHostPointer(*prim, i, vh->vtype);
+                if (src == NULL) return NULL;
+                Vu0CopyVector(vp[0], *src);
             }
             break;
         case 2:
@@ -407,21 +432,24 @@ u_int *SetVUVNDataShadowModel(u_int *prim)
             {
                 for (i = 0; i < vh->vnum; i++, vp++, prim += 2)
                 {
-                    //Vu0CopyVector(vp[0], *(sceVu0FVECTOR *) *prim);
-                    Vu0CopyVector(vp[0], *(sceVu0FVECTOR *) MikuPan_GetHostPointer(*prim));
+                    sceVu0FVECTOR *src = GetShadowVuvnHostPointer(*prim, i, vh->vtype);
+                    if (src == NULL) return NULL;
+                    Vu0CopyVector(vp[0], *src);
                 }
             }
             else
             {
-                cn = (char *) *prim;
+                cn = (char *) GetShadowVuvnHostPointer(*prim, 0, vh->vtype);
+                if (cn == NULL) return NULL;
 
                 _SetLWMatrix0(lcp[cn[0x1c]].workm);
                 _SetLWMatrix1(lcp[cn[0x1d]].workm);
 
                 for (i = 0; i < vh->vnum; i++, vp++, prim += 2)
                 {
-                    //_CalcWeightedVertexSM(*vp, *(sceVu0FVECTOR *) *prim);
-                    _CalcWeightedVertexSM(*vp, *(sceVu0FVECTOR *) MikuPan_GetHostPointer(*prim));
+                    sceVu0FVECTOR *src = GetShadowVuvnHostPointer(*prim, i, vh->vtype);
+                    if (src == NULL) return NULL;
+                    _CalcWeightedVertexSM(*vp, *src);
                 }
             }
             break;
@@ -430,17 +458,20 @@ u_int *SetVUVNDataShadowModel(u_int *prim)
             {
                 for (i = 0; i < vh->vnum; i++, vp++, prim += 2)
                 {
-                    Vu0CopyVector(vp[0], *(sceVu0FVECTOR *) MikuPan_GetHostPointer(*prim));
+                    sceVu0FVECTOR *src = GetShadowVuvnHostPointer(*prim, i, vh->vtype);
+                    if (src == NULL) return NULL;
+                    Vu0CopyVector(vp[0], *src);
                 }
             }
             else
             {
                 for (i = 0; i < vh->vnum; i++)
                 {
-                    cn = (char *) *prim;
+                    cn = (char *) GetShadowVuvnHostPointer(*prim, i, vh->vtype);
+                    if (cn == NULL) return NULL;
                     _SetLWMatrix0(lcp[cn[0x1c]].workm);
                     _SetLWMatrix1(lcp[cn[0x1d]].workm);
-                    _CalcWeightedVertexSM(*vp, *(sceVu0FVECTOR *) MikuPan_GetHostPointer(*prim));
+                    _CalcWeightedVertexSM(*vp, *(sceVu0FVECTOR *) cn);
                     vp++;
                     prim += 2;
                 }
@@ -449,7 +480,9 @@ u_int *SetVUVNDataShadowModel(u_int *prim)
         default:
             for (i = 0; i < vh->vnum; i++, vp++, prim += 2)
             {
-                Vu0CopyVector(*vp, *(sceVu0FVECTOR *) MikuPan_GetHostPointer(*prim));
+                sceVu0FVECTOR *src = GetShadowVuvnHostPointer(*prim, i, vh->vtype);
+                if (src == NULL) return NULL;
+                Vu0CopyVector(*vp, *src);
             }
             break;
     }
@@ -457,20 +490,34 @@ u_int *SetVUVNDataShadowModel(u_int *prim)
     return (u_int *) vp;
 }
 
+static float *GetPreparedShadowPositions(u_int *vuvn_prim, u_int *write_p)
+{
+    VUVN_PRIM *vh = (VUVN_PRIM *) &vuvn_prim[2];
+    return (float *) (write_p - ((int) vh->vnum * 4));
+}
+
 void ShadowModelMesh(u_int *prim)
 {
     int mtype;
     u_int *read_p;
+    u_int *mesh_read_p;
     short *tmp;
 
     tmp = (short *) vuvnprim;
 
     mtype = ((u_char *) prim)[13];
+    MikuPan_ShadowDebugRecordCasterMeshType(mtype);
 
-    switch (mtype & (0x1 | 0x2 | 0x10 | 0x40 | 0x80))// 0xd3
+    switch (mtype & (0x1 | 0x2 | 0x10 | 0x40 | 0x80))
     {
         case 0:
             read_p = SetVUVNDataShadowModel(vuvnprim);
+            if (read_p == NULL)
+            {
+                break;
+            }
+            MikuPan_RenderShadowSilhouettePrepared(
+                vuvnprim, prim, GetPreparedShadowPositions(vuvnprim, read_p));
 
             read_p[0] = 0x14000000 | ((u_int) SHADOWDRAWTYPE0 >> 3);
             read_p[1] = 0x17000000;
@@ -482,13 +529,16 @@ void ShadowModelMesh(u_int *prim)
             FlushModel(0);
             break;
         case 2:
-            read_p = SetVUVNDataShadowModel(vuvnprim);
+            mesh_read_p = SetVUVNData(vuvnprim);
+            MikuPan_RenderMeshType0x2((SGDPROCUNITHEADER *) vuvnprim,
+                                      (SGDPROCUNITHEADER *) prim,
+                                      (float *) mesh_read_p);
 
-            // GL silhouette draw — the shader override set by
-            // MikuPan_BeginShadowPass redirects this onto SHADOW_SILHOUETTE_SHADER
-            // and the shadow-pass-active flag bypasses the user-facing visibility
-            // toggles inside MikuPan_RenderMeshType0x2.
-            MikuPan_RenderMeshType0x2((SGDPROCUNITHEADER*)vuvnprim, (SGDPROCUNITHEADER*)prim, (float*)read_p);
+            read_p = SetVUVNDataShadowModel(vuvnprim);
+            if (read_p == NULL)
+            {
+                break;
+            }
 
             read_p[0] = 0x14000000 | ((u_int) SHADOWDRAWTYPE2 >> 3);
             read_p[1] = 0x17000000;
@@ -500,15 +550,14 @@ void ShadowModelMesh(u_int *prim)
             FlushModel(0);
             break;
         case 0x80:
+            MikuPan_RenderShadowSilhouette0x80(vuvnprim, prim);
+
             AppendDmaTag((u_int) &prim[4], prim[2]);
             AppendDmaTag((u_int) & ((u_char *) vuvnprim)[16],
                          ((u_char *) vuvnprim)[12]);
 
-            // 0x80 is the same NVL-style layout as 0x82 minus the post-VU
-            // dispatch — the GL silhouette is identical, so route through
-            // the same renderer.
-            //MikuPan_RenderMeshType0x82(vuvnprim, prim);
-
+            // 0x80 shares the 0x82 inline VUVN block but has no ST/texture
+            // payload, so the GL shadow draw reads only positions/topology.
             read_p = (u_int *) getObjWrk();
             read_p[0] = 0x14000000 | ((u_int) SHADOWDRAWTYPE0 >> 3);
             read_p[1] = 0x17000000;
@@ -574,6 +623,10 @@ void DrawShadowModelPrim(u_int *prim)
                 break;
             case 4:
                 read_p = (u_int *) getObjWrk();
+                if (MikuPan_IsShadowEnabled())
+                {
+                    MikuPan_SetModelTransformMatrix(lcp[prim[2]].lwmtx);
+                }
 
                 read_p[0] = 0;
                 read_p[1] = 0;
@@ -691,6 +744,7 @@ void ShadowMeshDataVU(u_int *prim)
     u_int *datap;
 
     mtype = ((char *) prim)[13];
+    MikuPan_ShadowDebugRecordReceiverMeshType(mtype);
 
     switch (mtype & (0x40 | 0x10 | 0x2 | 0x1))
     {
@@ -699,7 +753,11 @@ void ShadowMeshDataVU(u_int *prim)
             break;
         case 18:
         case 0x32:
-            //MikuPan_RenderMeshType0x32((SGDPROCUNITHEADER *)vuvnprim, (SGDPROCUNITHEADER *)prim);
+            if (MikuPan_IsShadowReceiverPassActive())
+            {
+                MikuPan_RenderMeshType0x32((SGDPROCUNITHEADER *)vuvnprim,
+                                           (SGDPROCUNITHEADER *)prim);
+            }
 
             AppendDmaTag((u_int) & ((u_char *) vuvnprim)[16],
                          ((u_char *) vuvnprim)[12]);
@@ -989,6 +1047,10 @@ void AssignShadowPrim(u_int *prim)
                 }
 
                 cn = prim[2];
+                if (MikuPan_IsShadowReceiverPassActive())
+                {
+                    MikuPan_SetModelTransformMatrix(lcp[cn].lwmtx);
+                }
 
                 if (ccahe.cache_on == 1 && ccahe.edge_check == edge_check)
                 {
@@ -1493,6 +1555,8 @@ void CalcShadowMatrix(ShadowHandle *shandle, sceVu0FVECTOR center, float ax,
     write_counter = 0;
     write_flg = 0;
 
+    MikuPan_BeginShadowReceiverPass();
+
     for (i = 0; i < shandle->search_num; i++)
     {
         if (shandle->search_model[i] != shandle->source_model)
@@ -1500,6 +1564,8 @@ void CalcShadowMatrix(ShadowHandle *shandle, sceVu0FVECTOR center, float ax,
             AssignShadow(shandle->search_model[i], -1);
         }
     }
+
+    MikuPan_EndShadowReceiverPass();
 }
 
 static void _ftoi0(int *out, float *in)
@@ -1735,12 +1801,11 @@ void DrawShadow(ShadowHandle *shandle, EnvFuncCallback env_func)
     // difference is the bound program and the active FBO.
     if (MikuPan_IsShadowEnabled())
     {
-        MikuPan_BeginShadowPass((float *)scamera.wcv);
-        // Push the shadow camera into the GL renderer so mvp = shadow_proj
-        // * shadow_view * model is correct for every caster mesh draw.
-        // Layouts of SgCAMERA and MikuPan_Camera match (see SgSetRefCamera
-        // in sgcam.c which does the same cast), so the cast is safe.
-        MikuPan_SetupCamera((MikuPan_Camera *)&scamera);
+        // scamera.wcv is a PS2 GS-space matrix and is not a valid GL clip
+        // transform. Build the projector's world->clip matrix in GL conventions
+        // (cglm ortho * lookat, NDC [-1,1]) from world-space inputs instead.
+        MikuPan_BeginShadowPass(
+            MikuPan_ComputeShadowClipView((float *)center, ndirection, (float *)wbbox));
         DrawShadowModel(hs, shandle->smodel_num);
         MikuPan_EndShadowPass();
     }
