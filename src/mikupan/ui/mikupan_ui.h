@@ -44,6 +44,7 @@ float MikuPan_GetBrightness(void);
 float MikuPan_GetGamma(void);
 const MikuPan_ConfigCrt *MikuPan_GetCrtSettings(void);
 int MikuPan_IsFullScreen(void);
+int MikuPan_GetWindowMode(void);
 int MikuPan_IsVsync(void);
 
 #endif // MIKUPAN_IMGUI_WINDOW_H

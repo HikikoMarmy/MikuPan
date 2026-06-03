@@ -487,7 +487,7 @@ u_int *SetVUVNDataShadowModel(u_int *prim)
             break;
     }
 
-    return (u_int *) vp;
+    return (u_int *) vp_bak;
 }
 
 static float *GetPreparedShadowPositions(u_int *vuvn_prim, u_int *write_p)
@@ -516,8 +516,8 @@ void ShadowModelMesh(u_int *prim)
             {
                 break;
             }
-            MikuPan_RenderShadowSilhouettePrepared(
-                vuvnprim, prim, GetPreparedShadowPositions(vuvnprim, read_p));
+
+            //MikuPan_RenderShadowSilhouettePrepared(vuvnprim, prim, GetPreparedShadowPositions(vuvnprim, read_p));
 
             read_p[0] = 0x14000000 | ((u_int) SHADOWDRAWTYPE0 >> 3);
             read_p[1] = 0x17000000;
@@ -529,16 +529,12 @@ void ShadowModelMesh(u_int *prim)
             FlushModel(0);
             break;
         case 2:
-            mesh_read_p = SetVUVNData(vuvnprim);
+            //mesh_read_p = SetVUVNData(vuvnprim);
+            read_p = SetVUVNDataShadowModel(vuvnprim);
+
             MikuPan_RenderMeshType0x2((SGDPROCUNITHEADER *) vuvnprim,
                                       (SGDPROCUNITHEADER *) prim,
-                                      (float *) mesh_read_p);
-
-            read_p = SetVUVNDataShadowModel(vuvnprim);
-            if (read_p == NULL)
-            {
-                break;
-            }
+                                      (float *) read_p);
 
             read_p[0] = 0x14000000 | ((u_int) SHADOWDRAWTYPE2 >> 3);
             read_p[1] = 0x17000000;
@@ -555,9 +551,7 @@ void ShadowModelMesh(u_int *prim)
             AppendDmaTag((u_int) &prim[4], prim[2]);
             AppendDmaTag((u_int) & ((u_char *) vuvnprim)[16],
                          ((u_char *) vuvnprim)[12]);
-
-            // 0x80 shares the 0x82 inline VUVN block but has no ST/texture
-            // payload, so the GL shadow draw reads only positions/topology.
+            
             read_p = (u_int *) getObjWrk();
             read_p[0] = 0x14000000 | ((u_int) SHADOWDRAWTYPE0 >> 3);
             read_p[1] = 0x17000000;
@@ -569,6 +563,7 @@ void ShadowModelMesh(u_int *prim)
             break;
         case 0x82:
             MikuPan_RenderMeshType0x82(vuvnprim, prim);
+
             AppendDmaTag((u_int) & ((u_char *) vuvnprim)[16],
                          ((u_char *) vuvnprim)[12]);
             AppendDmaTag((u_int) &prim[4], prim[2]);
@@ -1785,20 +1780,6 @@ void DrawShadow(ShadowHandle *shandle, EnvFuncCallback env_func)
 
     SetShadowEnvironment();
 
-    // GL shadow pass — replaces the GS-side DrawShadowModel pipeline. The PS2
-    // path here would render the caster's silhouette via DMA + VU; on the host
-    // we render into a small FBO instead. SetShadowCamera filled scamera.wcv
-    // with the projector's world-clip-view, so we hand that to the renderer
-    // both as the caster pass's projection matrix and as the receiver-side
-    // sampling matrix (captured inside MikuPan_BeginShadowPass).
-    //
-    // The caster iteration goes through DrawShadowModel → DrawShadowModelPrim
-    // → ShadowModelMesh, which dispatches each prim to the regular
-    // MikuPan_RenderMeshType* paths. The shader-override mechanism in
-    // MikuPan_BeginShadowPass redirects every shader bind to
-    // SHADOW_SILHOUETTE_SHADER, so the same code that draws the model in the
-    // main pass produces a silhouette in the shadow pass — the only
-    // difference is the bound program and the active FBO.
     if (MikuPan_IsShadowEnabled())
     {
         // scamera.wcv is a PS2 GS-space matrix and is not a valid GL clip

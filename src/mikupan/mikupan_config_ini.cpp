@@ -91,9 +91,11 @@ bool TryLoadConfigurationFile(const std::filesystem::path& path)
     ApplyValue(ini, "renderer.render", "width", mikupan_configuration.renderer.render.width);
     ApplyValue(ini, "renderer.render", "height", mikupan_configuration.renderer.render.height);
     ApplyValue(ini, "renderer", "is_fullscreen", mikupan_configuration.renderer.is_fullscreen);
+    ApplyValue(ini, "renderer", "window_mode", mikupan_configuration.renderer.window_mode);
     ApplyValue(ini, "renderer", "vsync", mikupan_configuration.renderer.vsync);
     ApplyValue(ini, "renderer", "lighting_mode", mikupan_configuration.renderer.lighting_mode);
     ApplyValue(ini, "renderer", "msaa_index", mikupan_configuration.renderer.msaa_index);
+    ApplyValue(ini, "renderer", "shadow_resolution", mikupan_configuration.renderer.shadow_resolution);
     ApplyValue(ini, "renderer", "brightness", mikupan_configuration.renderer.brightness);
     ApplyValue(ini, "renderer", "gamma", mikupan_configuration.renderer.gamma);
     ApplyValue(ini, "crt", "enabled", mikupan_configuration.crt.enabled);
@@ -115,6 +117,7 @@ bool TryLoadConfigurationFile(const std::filesystem::path& path)
     ApplyValue(ini, "crt", "glow_strength", mikupan_configuration.crt.glow_strength);
     ApplyValue(ini, "ui", "selected_theme", mikupan_configuration.selected_theme);
     ApplyValue(ini, "ui", "selected_font", mikupan_configuration.selected_font);
+    ApplyValue(ini, "ui", "font_scale", mikupan_configuration.font_scale);
     ApplyValue(ini, "third_person_camera", "enabled",
                mikupan_configuration.third_person_camera.enabled);
     ApplyValue(ini, "third_person_camera", "distance",
@@ -165,9 +168,11 @@ bool TrySaveConfigurationFile(const std::filesystem::path& path)
     SetValue(ini, "renderer.render", "width", mikupan_configuration.renderer.render.width);
     SetValue(ini, "renderer.render", "height", mikupan_configuration.renderer.render.height);
     SetValue(ini, "renderer", "is_fullscreen", mikupan_configuration.renderer.is_fullscreen);
+    SetValue(ini, "renderer", "window_mode", mikupan_configuration.renderer.window_mode);
     SetValue(ini, "renderer", "vsync", mikupan_configuration.renderer.vsync);
     SetValue(ini, "renderer", "lighting_mode", mikupan_configuration.renderer.lighting_mode);
     SetValue(ini, "renderer", "msaa_index", mikupan_configuration.renderer.msaa_index);
+    SetValue(ini, "renderer", "shadow_resolution", mikupan_configuration.renderer.shadow_resolution);
     SetValue(ini, "renderer", "brightness", mikupan_configuration.renderer.brightness);
     SetValue(ini, "renderer", "gamma", mikupan_configuration.renderer.gamma);
     SetValue(ini, "crt", "enabled", mikupan_configuration.crt.enabled);
@@ -189,6 +194,7 @@ bool TrySaveConfigurationFile(const std::filesystem::path& path)
     SetValue(ini, "crt", "glow_strength", mikupan_configuration.crt.glow_strength);
     SetValue(ini, "ui", "selected_theme", mikupan_configuration.selected_theme);
     SetValue(ini, "ui", "selected_font", mikupan_configuration.selected_font);
+    SetValue(ini, "ui", "font_scale", mikupan_configuration.font_scale);
     SetValue(ini, "third_person_camera", "enabled",
              mikupan_configuration.third_person_camera.enabled);
     SetValue(ini, "third_person_camera", "distance",

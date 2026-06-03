@@ -123,6 +123,7 @@ static char config_save_status[128] = {0};
 static char last_reload_error[1280] = {0};
 
 static int is_fullscreen = 0;
+static int window_mode = 0; /* MikuPan_WindowMode: 0=windowed, 1=fullscreen, 2=borderless */
 static int is_vsync = 0;
 static int disable_gs_uploads = 0;
 static int show_bounding_boxes = 0;
@@ -340,10 +341,13 @@ static void MikuPan_UiStoreRuntimeConfiguration(void)
 {
     mikupan_configuration.renderer.render.width = render_resolution_width;
     mikupan_configuration.renderer.render.height = render_resolution_height;
+    mikupan_configuration.renderer.window_mode = window_mode;
+    is_fullscreen = (window_mode != MIKUPAN_WINDOW_WINDOWED);
     mikupan_configuration.renderer.is_fullscreen = is_fullscreen;
     mikupan_configuration.renderer.vsync = is_vsync;
     mikupan_configuration.renderer.lighting_mode = mesh_lighting_mode;
     mikupan_configuration.renderer.msaa_index = msaa_samples;
+    mikupan_configuration.renderer.shadow_resolution = MikuPan_GetShadowResolution();
     mikupan_configuration.renderer.brightness = brightness;
     mikupan_configuration.renderer.gamma = gamma_value;
     mikupan_configuration.selected_theme =
@@ -1066,6 +1070,24 @@ static void MikuPan_ApplyUiFont(int font)
     }
 }
 
+static float MikuPan_ClampFontScale(float scale)
+{
+    if (scale < 0.5f) return 0.5f;
+    if (scale > 3.0f) return 3.0f;
+    return scale;
+}
+
+/* Apply the user font-size multiplier to the whole UI. FontScaleMain is the
+ * ImGui 1.92 dynamic global font scale (in ImGuiStyle), so this stays crisp at
+ * any size. */
+static void MikuPan_ApplyUiFontScale(void)
+{
+    ImGuiStyle *style = igGetStyle();
+    mikupan_configuration.font_scale =
+        MikuPan_ClampFontScale(mikupan_configuration.font_scale);
+    style->FontScaleMain = mikupan_configuration.font_scale;
+}
+
 static void MikuPan_LoadUiFonts(void)
 {
     ImGuiIO* io = igGetIO_Nil();
@@ -1652,6 +1674,7 @@ void MikuPan_InitUi(SDL_Window *window, SDL_GLContext renderer)
         MikuPan_ClampFontIndex(mikupan_configuration.selected_font);
     ui_display_scale = MikuPan_CalculateUiDisplayScale(window);
     MikuPan_LoadUiFonts();
+    MikuPan_ApplyUiFontScale();
     MikuPan_ApplyFatalFrameStyle(mikupan_configuration.selected_theme);
 
     SDL_DisplayID primary = SDL_GetPrimaryDisplay();
@@ -1667,9 +1690,28 @@ void MikuPan_InitUi(SDL_Window *window, SDL_GLContext renderer)
     msaa_samples = mikupan_configuration.renderer.msaa_index;
     brightness = mikupan_configuration.renderer.brightness;
     gamma_value = mikupan_configuration.renderer.gamma;
-    is_fullscreen = mikupan_configuration.renderer.is_fullscreen;
+    window_mode = mikupan_configuration.renderer.window_mode;
+    /* Migrate legacy is_fullscreen-only configs to the windowed/fullscreen mode. */
+    if (window_mode == MIKUPAN_WINDOW_WINDOWED &&
+        mikupan_configuration.renderer.is_fullscreen)
+    {
+        window_mode = MIKUPAN_WINDOW_FULLSCREEN;
+    }
+    if (window_mode < MIKUPAN_WINDOW_WINDOWED || window_mode > MIKUPAN_WINDOW_BORDERLESS)
+    {
+        window_mode = MIKUPAN_WINDOW_WINDOWED;
+    }
+    mikupan_configuration.renderer.window_mode = window_mode;
+    is_fullscreen = (window_mode != MIKUPAN_WINDOW_WINDOWED);
+    mikupan_configuration.renderer.is_fullscreen = is_fullscreen;
     mesh_lighting_mode = mikupan_configuration.renderer.lighting_mode;
     is_vsync = mikupan_configuration.renderer.vsync;
+
+    if (mikupan_configuration.renderer.shadow_resolution <= 0)
+    {
+        mikupan_configuration.renderer.shadow_resolution = 256;
+    }
+    MikuPan_SetShadowResolution(mikupan_configuration.renderer.shadow_resolution);
     crt_settings = mikupan_configuration.crt;
     MikuPan_ClampCrtSettings(&crt_settings);
     mikupan_configuration.crt = crt_settings;
@@ -1736,6 +1778,36 @@ static void MikuPan_UiShadowDebugWindow(void)
     if (igCheckbox("Receiver Debug Colors", (bool *) &receiver_debug_view))
     {
         MikuPan_SetShadowReceiverDebugViewEnabled(receiver_debug_view);
+    }
+
+    /* Caster-model inspector: orbit the shadow projector around the caster so
+     * its silhouette can be viewed from any angle in the preview below. */
+    int inspect = MikuPan_IsShadowInspectEnabled();
+    if (igCheckbox("Inspect Caster (orbit camera)", (bool *) &inspect))
+    {
+        MikuPan_SetShadowInspectEnabled(inspect);
+    }
+    if (inspect)
+    {
+        float yaw = 0.0f, pitch = 0.0f;
+        MikuPan_GetShadowInspectAngles(&yaw, &pitch);
+        int changed = 0;
+        changed |= igSliderFloat("Yaw", &yaw, -3.14159f, 3.14159f, "%.2f", 0);
+        changed |= igSliderFloat("Pitch", &pitch, -1.55f, 1.55f, "%.2f", 0);
+        if (changed)
+        {
+            MikuPan_SetShadowInspectAngles(yaw, pitch);
+        }
+
+        int wireframe = MikuPan_IsShadowInspectWireframe();
+        if (igCheckbox("Wireframe", (bool *) &wireframe))
+        {
+            MikuPan_SetShadowInspectWireframe(wireframe);
+        }
+
+        igTextDisabled("Orbits the shadow camera; the preview shows the");
+        igTextDisabled("caster model from this angle (cast shadow is");
+        igTextDisabled("overridden while this is on).");
     }
 
     if (shadow_debug_auto_probe)
@@ -2067,6 +2139,28 @@ void MikuPan_UiHandleShortcuts(void)
     }
 }
 
+/* Shared shadow-map resolution dropdown (used in both Display and
+ * Rendering > Shadows). Reads/writes the runtime size, which is persisted to
+ * mikupan_configuration.renderer.shadow_resolution on Save Configuration. */
+static void MikuPan_UiShadowResolutionCombo(const char *label)
+{
+    static const int   res_values[] = { 128, 256, 512, 1024, 2048 };
+    static const char *res_labels[] = { "128", "256", "512", "1024", "2048" };
+    const int count = (int) (sizeof(res_values) / sizeof(res_values[0]));
+
+    int cur = MikuPan_GetShadowResolution();
+    int idx = 1; /* default 256 */
+    for (int i = 0; i < count; i++)
+    {
+        if (res_values[i] == cur) { idx = i; break; }
+    }
+
+    if (igCombo_Str_arr(label, &idx, res_labels, count, -1))
+    {
+        MikuPan_SetShadowResolution(res_values[idx]);
+    }
+}
+
 void MikuPan_UiMenuBar(void)
 {
     if (!show_menu_bar || !igBeginMainMenuBar())
@@ -2074,108 +2168,23 @@ void MikuPan_UiMenuBar(void)
         return;
     }
 
-    if (igBeginMenu("Debug", 1))
-    {
-        igCheckbox("Ingame Debug Menu", (bool *) &dbg_wrk.mode_on);
-        igCheckbox("Shader Reload", (bool *) &show_shader_reload);
-        igCheckbox("Draw Call Inspector", (bool *) &show_draw_inspector);
-        igCheckbox("Camera World Info", (bool *) &show_camera_debug);
-        igCheckbox("Shadow Debug", (bool *) &show_shadow_debug_window);
-
-        igEndMenu();
-    }
-
-    if (igBeginMenu("Cheats", 1))
-    {
-        igCheckbox("Tofu Mode", (bool *) &cheat_tofu_mode);
-        igColorEdit3("Tofu Color", cheat_tofu_color, 0);
-
-        igSeparator();
-        igCheckbox("Third-Person Camera", (bool *) &camera_third_person_enabled);
-        if (camera_third_person_enabled)
-        {
-            igSliderFloat("TPS Distance", &camera_third_person_distance,
-                          100.0f, 2500.0f, "%.0f", 0);
-            igSliderFloat("TPS Height", &camera_third_person_height,
-                          0.0f, 1400.0f, "%.0f", 0);
-            igSliderFloat("TPS Side", &camera_third_person_side,
-                          -600.0f, 600.0f, "%.0f", 0);
-            igSliderFloat("TPS Look Ahead", &camera_third_person_look_ahead,
-                          100.0f, 2500.0f, "%.0f", 0);
-            igSliderFloat("TPS Interest Height",
-                          &camera_third_person_interest_height,
-                          -400.0f, 1200.0f, "%.0f", 0);
-            igSliderFloat("TPS FOV", &camera_third_person_fov_deg,
-                          20.0f, 90.0f, "%.0f", 0);
-        }
-
-        igEndMenu();
-    }
-
-    if (igBeginMenu("Rendering", 1))
-    {
-        igCheckbox("Wireframe", (bool *) &render_wireframe);
-        igCheckbox("Disable Lighting", (bool *) &disable_lighting);
-        igCheckbox("Static Lighting", (bool *) &show_static_lighting);
-        const char *lighting_modes[] = {"Per-Fragment", "Per-Vertex"};
-        igCombo_Str_arr("Lighting Mode", &mesh_lighting_mode, lighting_modes, 2, -1);
-
-        igCheckbox("Normals", (bool *) &render_normals);
-        if (render_normals)
-        {
-            igSliderFloat("Normal Length", &normal_length, 0.1f, 100.0f, "%.1f", 0);
-        }
-
-        igCheckbox("GS Uploads", (bool *) &disable_gs_uploads);
-
-        int shadows_on = MikuPan_IsShadowEnabled();
-        if (igCheckbox("Shadows", (bool *) &shadows_on))
-        {
-            MikuPan_SetShadowEnabled(shadows_on);
-        }
-        igCheckbox("Shadow Debug Window", (bool *) &show_shadow_debug_window);
-
-        igCheckbox("Textures", (bool *) &show_texture_list);
-        if (igButton("Clear Texture Cache", (ImVec2) {0.0f, 0.0f}))
-        {
-            MikuPan_RequestFlushTextureCache();
-        }
-
-        igCheckbox("BoundingBox", (bool *) &show_bounding_boxes);
-
-        if (igBeginMenu("Meshes", 1))
-        {
-            igCheckbox("Mesh 0x82", (bool *) &show_mesh_0x82);
-            igCheckbox("Mesh 0x32", (bool *) &show_mesh_0x32);
-            igCheckbox("Mesh 0x12", (bool *) &show_mesh_0x12);
-            igCheckbox("Mesh 0x10", (bool *) &show_mesh_0x10);
-            igCheckbox("Mesh 0x2", (bool *) &show_mesh_0x2);
-            igEndMenu();
-        }
-
-        int mesh_cache_on = MikuPan_MeshCache_IsEnabled();
-        if (igCheckbox("Mesh Cache", (bool *) &mesh_cache_on))
-        {
-            MikuPan_MeshCache_SetEnabled(mesh_cache_on);
-        }
-
-        if (igButton("Clear Mesh Cache", (ImVec2) {0.0f, 0.0f}))
-        {
-            MikuPan_MeshCache_Flush();
-        }
-
-        if (igMenuItem_Bool("Take Screenshot (F12)", "F12", false, true))
-        {
-            MikuPan_ScreenshotRequest();
-        }
-
-        igEndMenu();
-    }
-
+    /* ---------------------------------------------------------------- Display */
     if (igBeginMenu("Display", 1))
     {
-        igCheckbox("Fullscreen", (bool*)&is_fullscreen);
+        const char *window_modes[] =
+            {"Windowed", "Fullscreen", "Borderless Fullscreen"};
+        if (igCombo_Str_arr("Display Mode", &window_mode, window_modes, 3, -1))
+        {
+            if (window_mode < MIKUPAN_WINDOW_WINDOWED ||
+                window_mode > MIKUPAN_WINDOW_BORDERLESS)
+            {
+                window_mode = MIKUPAN_WINDOW_WINDOWED;
+            }
+            is_fullscreen = (window_mode != MIKUPAN_WINDOW_WINDOWED);
+        }
         igCheckbox("VSync", (bool*)&is_vsync);
+
+        igSeparator();
 
         char msaa_dropdown_list[32];
         snprintf(msaa_dropdown_list, sizeof(msaa_dropdown_list), "%d", msaa_list[msaa_samples]);
@@ -2215,9 +2224,17 @@ void MikuPan_UiMenuBar(void)
             igEndCombo();
         }
 
+        MikuPan_UiShadowResolutionCombo("Shadow Resolution");
+
+        igSeparator();
         igSliderFloat("Brightness", &brightness,  0.0f, 2.0f, "%.2f", 0);
         igSliderFloat("Gamma",      &gamma_value, 0.1f, 3.0f, "%.2f", 0);
 
+        const char *display_lighting_modes[] = {"Per-Fragment", "Per-Vertex"};
+        igCombo_Str_arr("Lighting Mode", &mesh_lighting_mode,
+                        display_lighting_modes, 2, -1);
+
+        igSeparator();
         int selected_theme =
             MikuPan_ClampThemeIndex(mikupan_configuration.selected_theme);
         if (selected_theme != mikupan_configuration.selected_theme)
@@ -2246,24 +2263,105 @@ void MikuPan_UiMenuBar(void)
             MikuPan_ApplyUiFont(selected_font);
         }
 
+        float font_scale = mikupan_configuration.font_scale;
+        if (igSliderFloat("Font Size", &font_scale, 0.5f, 3.0f, "%.2fx", 0))
+        {
+            mikupan_configuration.font_scale = font_scale;
+            MikuPan_ApplyUiFontScale();
+        }
+
+        igSeparator();
+        if (igMenuItem_Bool("Take Screenshot", "F12", false, true))
+        {
+            MikuPan_ScreenshotRequest();
+        }
         if (igMenuItem_Bool("Save Configuration", NULL, false, true))
         {
             MikuPan_UiSaveConfiguration();
         }
-
         if (config_save_status[0] != '\0')
         {
             igTextDisabled("%s", config_save_status);
         }
 
-        if (igMenuItem_Bool("Take Screenshot (F12)", NULL, false, true))
+        igEndMenu();
+    }
+
+    /* -------------------------------------------------------------- Rendering */
+    if (igBeginMenu("Rendering", 1))
+    {
+        /* Scene visualization overlays */
+        igCheckbox("Wireframe", (bool *) &render_wireframe);
+        igCheckbox("Bounding Boxes", (bool *) &show_bounding_boxes);
+        igCheckbox("Normals", (bool *) &render_normals);
+        if (render_normals)
         {
-            MikuPan_ScreenshotRequest();
+            igSliderFloat("Normal Length", &normal_length, 0.1f, 100.0f, "%.1f", 0);
         }
+
+        igSeparator();
+
+        if (igBeginMenu("Lighting", 1))
+        {
+            igCheckbox("Disable Lighting", (bool *) &disable_lighting);
+            igCheckbox("Static Lighting", (bool *) &show_static_lighting);
+            const char *lighting_modes[] = {"Per-Fragment", "Per-Vertex"};
+            igCombo_Str_arr("Lighting Mode", &mesh_lighting_mode, lighting_modes, 2, -1);
+            igEndMenu();
+        }
+
+        if (igBeginMenu("Shadows", 1))
+        {
+            int shadows_on = MikuPan_IsShadowEnabled();
+            if (igCheckbox("Enable Shadows", (bool *) &shadows_on))
+            {
+                MikuPan_SetShadowEnabled(shadows_on);
+            }
+
+            MikuPan_UiShadowResolutionCombo("Resolution");
+
+            igCheckbox("Shadow Debug Window", (bool *) &show_shadow_debug_window);
+            igEndMenu();
+        }
+
+        if (igBeginMenu("Meshes", 1))
+        {
+            igCheckbox("Mesh 0x82", (bool *) &show_mesh_0x82);
+            igCheckbox("Mesh 0x32", (bool *) &show_mesh_0x32);
+            igCheckbox("Mesh 0x12", (bool *) &show_mesh_0x12);
+            igCheckbox("Mesh 0x10", (bool *) &show_mesh_0x10);
+            igCheckbox("Mesh 0x2", (bool *) &show_mesh_0x2);
+
+            igSeparator();
+            int mesh_cache_on = MikuPan_MeshCache_IsEnabled();
+            if (igCheckbox("Mesh Cache", (bool *) &mesh_cache_on))
+            {
+                MikuPan_MeshCache_SetEnabled(mesh_cache_on);
+            }
+            if (igButton("Clear Mesh Cache", (ImVec2) {0.0f, 0.0f}))
+            {
+                MikuPan_MeshCache_Flush();
+            }
+            igEndMenu();
+        }
+
+        if (igBeginMenu("Textures", 1))
+        {
+            igCheckbox("Texture List", (bool *) &show_texture_list);
+            if (igButton("Clear Texture Cache", (ImVec2) {0.0f, 0.0f}))
+            {
+                MikuPan_RequestFlushTextureCache();
+            }
+            igEndMenu();
+        }
+
+        igSeparator();
+        igCheckbox("GS Uploads", (bool *) &disable_gs_uploads);
 
         igEndMenu();
     }
 
+    /* -------------------------------------------------------------------- CRT */
     if (igBeginMenu("CRT", 1))
     {
         igCheckbox("Enabled", (bool *) &crt_settings.enabled);
@@ -2323,6 +2421,32 @@ void MikuPan_UiMenuBar(void)
         igEndMenu();
     }
 
+    /* ----------------------------------------------------------------- Camera */
+    if (igBeginMenu("Camera", 1))
+    {
+        igCheckbox("Third-Person Camera", (bool *) &camera_third_person_enabled);
+        if (camera_third_person_enabled)
+        {
+            igSeparator();
+            igSliderFloat("Distance", &camera_third_person_distance,
+                          100.0f, 2500.0f, "%.0f", 0);
+            igSliderFloat("Height", &camera_third_person_height,
+                          0.0f, 1400.0f, "%.0f", 0);
+            igSliderFloat("Side", &camera_third_person_side,
+                          -600.0f, 600.0f, "%.0f", 0);
+            igSliderFloat("Look Ahead", &camera_third_person_look_ahead,
+                          100.0f, 2500.0f, "%.0f", 0);
+            igSliderFloat("Interest Height",
+                          &camera_third_person_interest_height,
+                          -400.0f, 1200.0f, "%.0f", 0);
+            igSliderFloat("FOV", &camera_third_person_fov_deg,
+                          20.0f, 90.0f, "%.0f", 0);
+        }
+
+        igEndMenu();
+    }
+
+    /* ------------------------------------------------------------ Performance */
     if (igBeginMenu("Performance", 1))
     {
         igCheckbox("FPS Counter", (bool *) &show_fps);
@@ -2330,6 +2454,7 @@ void MikuPan_UiMenuBar(void)
         igEndMenu();
     }
 
+    /* ------------------------------------------------------------------ Input */
     if (igBeginMenu("Input", 1))
     {
         MikuPan_ControllerDrawDeviceSelectorUi();
@@ -2341,6 +2466,29 @@ void MikuPan_UiMenuBar(void)
         {
             MikuPan_ControllerResetBindings();
         }
+
+        igEndMenu();
+    }
+
+    /* ------------------------------------------------------------------ Debug */
+    if (igBeginMenu("Debug", 1))
+    {
+        igCheckbox("Ingame Debug Menu", (bool *) &dbg_wrk.mode_on);
+
+        igSeparator();
+        igCheckbox("Shader Reload", (bool *) &show_shader_reload);
+        igCheckbox("Draw Call Inspector", (bool *) &show_draw_inspector);
+        igCheckbox("Camera World Info", (bool *) &show_camera_debug);
+        igTextDisabled("(Shadow Debug: Rendering > Shadows)");
+
+        igEndMenu();
+    }
+
+    /* ----------------------------------------------------------------- Cheats */
+    if (igBeginMenu("Cheats", 1))
+    {
+        igCheckbox("Tofu Mode", (bool *) &cheat_tofu_mode);
+        igColorEdit3("Tofu Color", cheat_tofu_color, 0);
 
         igEndMenu();
     }
@@ -2456,6 +2604,11 @@ const MikuPan_ConfigCrt *MikuPan_GetCrtSettings(void)
 int MikuPan_IsFullScreen(void)
 {
     return is_fullscreen;
+}
+
+int MikuPan_GetWindowMode(void)
+{
+    return window_mode;
 }
 
 int MikuPan_IsVsync(void)

@@ -75,13 +75,22 @@ typedef struct
 {
     MikuPan_Resolution window;
     MikuPan_Resolution render;
-    int is_fullscreen;
+    int is_fullscreen;   /* legacy; kept in sync with window_mode != windowed */
+    int window_mode;     /* 0 = windowed, 1 = fullscreen, 2 = borderless */
     int vsync;
     int lighting_mode;
     int msaa_index;
+    int shadow_resolution;
     float brightness;
     float gamma;
 } MikuPan_ConfigRenderer;
+
+enum MikuPan_WindowMode
+{
+    MIKUPAN_WINDOW_WINDOWED = 0,
+    MIKUPAN_WINDOW_FULLSCREEN = 1,
+    MIKUPAN_WINDOW_BORDERLESS = 2,
+};
 
 typedef struct
 {
@@ -126,6 +135,7 @@ typedef struct
     MikuPan_ConfigCrt crt;
     int selected_theme;
     int selected_font;
+    float font_scale;
     MikuPan_ConfigThirdPersonCamera third_person_camera;
     MikuPan_ConfigInput input;
 } MikuPan_Config;

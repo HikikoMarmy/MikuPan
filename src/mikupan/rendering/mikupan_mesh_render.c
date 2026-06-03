@@ -489,10 +489,8 @@ void MikuPan_RenderShadowSilhouette0x80(unsigned int *pVUVN,
         return;
     }
 
-    SGDVUVNDATA_PRESET *pVUVNData =
-        (SGDVUVNDATA_PRESET *) &(((SGDPROCUNITHEADER *) pVUVN)[1]);
-    SGDVUMESHPOINTNUM *pMeshInfo =
-        (SGDVUMESHPOINTNUM *) &(((SGDPROCUNITHEADER *) pPUHead)[4]);
+    SGDVUVNDATA_PRESET *pVUVNData = (SGDVUVNDATA_PRESET *) &(((SGDPROCUNITHEADER *) pVUVN)[1]);
+    SGDVUMESHPOINTNUM *pMeshInfo = (SGDVUMESHPOINTNUM *) &(((SGDPROCUNITHEADER *) pPUHead)[4]);
     VUVN_PRIM *v = ((VUVN_PRIM *) &((int *) pVUVN)[2]);
 
     const int num_mesh = (int) GET_NUM_MESH(pPUHead);
@@ -561,7 +559,7 @@ void MikuPan_RenderShadowSilhouette0x80(unsigned int *pVUVN,
     MikuPan_ShadowDebugRecordCasterDraw(mesh_type, index_write_offset);
 
     MikuPan_PerfDrawCall();
-    MikuPan_TimedDrawElements(MikuPan_GetMeshRenderMode(),
+    MikuPan_TimedDrawElements(GL_TRIANGLE_STRIP,
                               index_write_offset, GL_UNSIGNED_INT, (void *) 0);
 }
 

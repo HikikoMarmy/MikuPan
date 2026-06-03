@@ -5,14 +5,18 @@
 #include "mikupan/mikupan_logging_c.h"
 #include <string.h>
 
-#define SHADOW_FBO_SIZE 256
+/* Shadow map is square. The runtime size is g_shadow_fbo_size (changeable from
+ * the UI); SHADOW_FBO_MAX_SIZE bounds it and sizes the probe readback buffer. */
+#define SHADOW_FBO_MAX_SIZE 2048
+static int g_shadow_fbo_size = 256;
+static int g_shadow_resize_pending = 0;
 
 static GLuint g_shadow_fbo  = 0;
 static GLuint g_shadow_tex  = 0;
 static GLuint g_shadow_depth = 0;
 static int    g_shadow_init = 0;
 static GLenum g_shadow_fbo_status = 0;
-static int    g_shadow_enabled = 0;
+static int    g_shadow_enabled = 1;
 static GLint  g_shadow_saved_fbo      = 0;
 static int    g_shadow_saved_viewport[4] = {0};
 static mat4   g_shadow_saved_world_view;
@@ -22,6 +26,14 @@ static int    g_shadow_matrix_valid = 0;
 static int    g_shadow_pass_active = 0;
 static int    g_shadow_receiver_pass_active = 0;
 static int    g_shadow_receiver_debug_view = 0;
+
+/* Caster-model inspection: override the shadow projector with a free orbit
+ * camera so the silhouette can be viewed from any angle in the preview. */
+static int    g_shadow_inspect = 0;
+static int    g_shadow_inspect_wireframe = 0;
+static float  g_shadow_inspect_yaw   = 0.6f;
+static float  g_shadow_inspect_pitch = 0.6f;
+
 static MikuPan_ShadowDebugInfo g_shadow_debug = {0};
 
 static void MikuPan_UpdateShadowDebugStaticFields(void)
@@ -32,7 +44,7 @@ static void MikuPan_UpdateShadowDebugStaticFields(void)
     g_shadow_debug.fbo_status = g_shadow_fbo_status;
     g_shadow_debug.matrix_valid = g_shadow_matrix_valid;
     g_shadow_debug.texture_id = g_shadow_tex;
-    g_shadow_debug.texture_size = SHADOW_FBO_SIZE;
+    g_shadow_debug.texture_size = g_shadow_fbo_size;
 }
 
 void MikuPan_ShadowDebugBeginFrame(void)
@@ -141,15 +153,27 @@ int MikuPan_IsShadowReceiverPassActive(void)
 
 static void MikuPan_EnsureShadowFbo(void)
 {
-    if (g_shadow_init)
+    if (g_shadow_init && !g_shadow_resize_pending)
     {
         return;
     }
 
+    /* Resolution changed: tear down the old objects so they're rebuilt below. */
+    if (g_shadow_init)
+    {
+        glad_glDeleteFramebuffers(1, &g_shadow_fbo);
+        glad_glDeleteTextures(1, &g_shadow_tex);
+        glad_glDeleteRenderbuffers(1, &g_shadow_depth);
+        g_shadow_init = 0;
+    }
+    g_shadow_resize_pending = 0;
+
+    const int size = g_shadow_fbo_size;
+
     glad_glGenTextures(1, &g_shadow_tex);
     MikuPan_BindTexture2DCached(g_shadow_tex);
     glad_glTexImage2D(GL_TEXTURE_2D, 0, GL_R8,
-                      SHADOW_FBO_SIZE, SHADOW_FBO_SIZE, 0,
+                      size, size, 0,
                       GL_RED, GL_UNSIGNED_BYTE, NULL);
     glad_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
     glad_glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
@@ -174,7 +198,7 @@ static void MikuPan_EnsureShadowFbo(void)
     glad_glGenRenderbuffers(1, &g_shadow_depth);
     glad_glBindRenderbuffer(GL_RENDERBUFFER, g_shadow_depth);
     glad_glRenderbufferStorage(GL_RENDERBUFFER, GL_DEPTH_COMPONENT24,
-                               SHADOW_FBO_SIZE, SHADOW_FBO_SIZE);
+                               size, size);
     glad_glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_ATTACHMENT,
                                    GL_RENDERBUFFER, g_shadow_depth);
 
@@ -232,12 +256,30 @@ float *MikuPan_ComputeShadowClipView(const float *center,
      * resulting projection casts onto receivers away from that source. */
     const float dist = 5000.0f;
     vec3 eye;
-    glm_vec3_scale(dir, dist, eye);
-    glm_vec3_add(c, eye, eye);
+    if (g_shadow_inspect)
+    {
+        /* Inspection: free orbit around the caster centre instead of the light
+         * direction, so the silhouette can be examined from any angle in the
+         * preview. (This overrides the real cast direction while enabled.) */
+        float cp = cosf(g_shadow_inspect_pitch);
+        vec3 odir = { cosf(g_shadow_inspect_yaw) * cp,
+                      sinf(g_shadow_inspect_pitch),
+                      sinf(g_shadow_inspect_yaw) * cp };
+        glm_vec3_scale(odir, dist, eye);
+        glm_vec3_add(c, eye, eye);
+    }
+    else
+    {
+        glm_vec3_scale(dir, dist, eye);
+        glm_vec3_add(c, eye, eye);
+    }
 
-    /* Avoid a degenerate up vector for a near-vertical projection. */
+    /* Avoid a degenerate up vector for a near-vertical view. */
+    vec3 view_dir;
+    glm_vec3_sub(c, eye, view_dir);
+    glm_vec3_normalize(view_dir);
     vec3 up = { 0.0f, 1.0f, 0.0f };
-    float dup = glm_vec3_dot(dir, up);
+    float dup = glm_vec3_dot(view_dir, up);
     if (dup > 0.99f || dup < -0.99f)
     {
         up[0] = 0.0f; up[1] = 0.0f; up[2] = 1.0f;
@@ -293,8 +335,15 @@ void MikuPan_BeginShadowPass(float *world_clip_view)
     memcpy(g_shadow_saved_projection, projection, sizeof(g_shadow_saved_projection));
 
     glad_glBindFramebuffer(GL_FRAMEBUFFER, g_shadow_fbo);
-    MikuPan_SetViewportCached(0, 0, SHADOW_FBO_SIZE, SHADOW_FBO_SIZE);
+    MikuPan_SetViewportCached(0, 0, g_shadow_fbo_size, g_shadow_fbo_size);
     MikuPan_SetRenderStateShadow();
+
+    /* Inspection wireframe: draw caster silhouettes as edges so the mesh
+     * topology (spikes, bridging, winding) is visible in the preview. */
+    if (g_shadow_inspect && g_shadow_inspect_wireframe)
+    {
+        glad_glPolygonMode(GL_FRONT_AND_BACK, GL_LINE);
+    }
 
     glad_glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
     glad_glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
@@ -333,7 +382,7 @@ void MikuPan_DrawShadowSilhouetteEllipse(void)
     GLuint prog = MikuPan_GetCurrentShaderProgram();
     GLint sz_loc = glad_glGetUniformLocation(prog, "uShadowSize");
     GLint dk_loc = glad_glGetUniformLocation(prog, "uShadowDarkness");
-    if (sz_loc >= 0) glad_glUniform2f(sz_loc, (float)SHADOW_FBO_SIZE, (float)SHADOW_FBO_SIZE);
+    if (sz_loc >= 0) glad_glUniform2f(sz_loc, (float)g_shadow_fbo_size, (float)g_shadow_fbo_size);
     if (dk_loc >= 0) glad_glUniform1f(dk_loc, 0.6f);
 
     // Need additive/normal blending so the ellipse alpha isn't clobbered.
@@ -351,6 +400,10 @@ void MikuPan_DrawShadowSilhouetteEllipse(void)
 
 void MikuPan_EndShadowPass(void)
 {
+    /* Always restore fill mode (the inspection wireframe toggle may have set
+     * GL_LINE for the caster pass). */
+    glad_glPolygonMode(GL_FRONT_AND_BACK, GL_FILL);
+
     // Drop the override + active flag *before* we start pushing scene-side
     // uniforms below — those uniform pushes go through SetCurrentShaderProgram
     // internally and would otherwise route into the silhouette shader.
@@ -441,6 +494,56 @@ void MikuPan_SetShadowEnabled(int enabled)
     g_shadow_enabled = enabled ? 1 : 0;
 }
 
+int MikuPan_IsShadowInspectEnabled(void)
+{
+    return g_shadow_inspect;
+}
+
+void MikuPan_SetShadowInspectEnabled(int enabled)
+{
+    g_shadow_inspect = enabled ? 1 : 0;
+}
+
+void MikuPan_GetShadowInspectAngles(float *yaw, float *pitch)
+{
+    if (yaw)   *yaw   = g_shadow_inspect_yaw;
+    if (pitch) *pitch = g_shadow_inspect_pitch;
+}
+
+void MikuPan_SetShadowInspectAngles(float yaw, float pitch)
+{
+    g_shadow_inspect_yaw   = yaw;
+    g_shadow_inspect_pitch = pitch;
+}
+
+int MikuPan_IsShadowInspectWireframe(void)
+{
+    return g_shadow_inspect_wireframe;
+}
+
+void MikuPan_SetShadowInspectWireframe(int enabled)
+{
+    g_shadow_inspect_wireframe = enabled ? 1 : 0;
+}
+
+int MikuPan_GetShadowResolution(void)
+{
+    return g_shadow_fbo_size;
+}
+
+void MikuPan_SetShadowResolution(int size)
+{
+    if (size < 64)                   size = 64;
+    if (size > SHADOW_FBO_MAX_SIZE)  size = SHADOW_FBO_MAX_SIZE;
+
+    if (size != g_shadow_fbo_size)
+    {
+        g_shadow_fbo_size = size;
+        /* Rebuilt lazily on the GL thread by MikuPan_EnsureShadowFbo(). */
+        g_shadow_resize_pending = 1;
+    }
+}
+
 int MikuPan_IsShadowReceiverDebugViewEnabled(void)
 {
     return g_shadow_receiver_debug_view;
@@ -453,7 +556,8 @@ void MikuPan_SetShadowReceiverDebugViewEnabled(int enabled)
 
 void MikuPan_ShadowDebugProbeTexture(void)
 {
-    unsigned char pixels[SHADOW_FBO_SIZE * SHADOW_FBO_SIZE];
+    /* Static (not stack) so the largest resolution doesn't overflow the stack. */
+    static unsigned char pixels[SHADOW_FBO_MAX_SIZE * SHADOW_FBO_MAX_SIZE];
     GLint saved_read_fbo = 0;
     int nonzero = 0;
     int max_value = 0;
@@ -461,13 +565,16 @@ void MikuPan_ShadowDebugProbeTexture(void)
 
     MikuPan_EnsureShadowFbo();
 
+    const int size = g_shadow_fbo_size;
+    const int total = size * size;
+
     glad_glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &saved_read_fbo);
     glad_glBindFramebuffer(GL_READ_FRAMEBUFFER, g_shadow_fbo);
-    glad_glReadPixels(0, 0, SHADOW_FBO_SIZE, SHADOW_FBO_SIZE,
+    glad_glReadPixels(0, 0, size, size,
                       GL_RED, GL_UNSIGNED_BYTE, pixels);
     glad_glBindFramebuffer(GL_READ_FRAMEBUFFER, (GLuint)saved_read_fbo);
 
-    for (int i = 0; i < SHADOW_FBO_SIZE * SHADOW_FBO_SIZE; i++)
+    for (int i = 0; i < total; i++)
     {
         int value = pixels[i];
         if (value != 0)
@@ -485,7 +592,7 @@ void MikuPan_ShadowDebugProbeTexture(void)
     g_shadow_debug.probe_nonzero_pixels = nonzero;
     g_shadow_debug.probe_max_value = max_value;
     g_shadow_debug.probe_coverage =
-        (float)nonzero / (float)(SHADOW_FBO_SIZE * SHADOW_FBO_SIZE);
+        (float)nonzero / (float)total;
     g_shadow_debug.probe_average =
-        (float)sum / (float)(SHADOW_FBO_SIZE * SHADOW_FBO_SIZE * 255);
+        (float)sum / (float)(total * 255);
 }

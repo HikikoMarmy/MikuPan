@@ -11,9 +11,11 @@ MikuPan_Config mikupan_configuration = {
             448
         },
         0,
+        0,
         1,
         0,
         2,
+        256,
         1.0f,
         1.0f
     },
@@ -38,6 +40,7 @@ MikuPan_Config mikupan_configuration = {
     },
     2,
     1,
+    1.0f,
     {
         0,
         900.0f,

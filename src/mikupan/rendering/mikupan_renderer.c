@@ -17,6 +17,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+static void MikuPan_ApplyWindowMode(int mode);
+
 #define GLAD_GL_IMPLEMENTATION
 #include "graphics/graph3d/sglib.h"
 #include "main/glob.h"
@@ -128,13 +130,32 @@ SDL_AppResult MikuPan_Init()
 
     int config_window_flags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_OPENGL;
 
-    if (mikupan_configuration.renderer.is_fullscreen > 0 && mikupan_configuration.renderer.is_fullscreen)
+    /* Resolve the saved display mode (migrating the legacy is_fullscreen flag). */
+    int startup_window_mode = mikupan_configuration.renderer.window_mode;
+    if (startup_window_mode == MIKUPAN_WINDOW_WINDOWED &&
+        mikupan_configuration.renderer.is_fullscreen)
+    {
+        startup_window_mode = MIKUPAN_WINDOW_FULLSCREEN;
+    }
+    if (startup_window_mode < MIKUPAN_WINDOW_WINDOWED ||
+        startup_window_mode > MIKUPAN_WINDOW_BORDERLESS)
+    {
+        startup_window_mode = MIKUPAN_WINDOW_WINDOWED;
+    }
+    mikupan_configuration.renderer.window_mode = startup_window_mode;
+    mikupan_configuration.renderer.is_fullscreen =
+        (startup_window_mode != MIKUPAN_WINDOW_WINDOWED);
+
+    /* Create with the matching flag up front (avoids a windowed flash); the
+     * exact sub-mode is finalized with MikuPan_ApplyWindowMode() after creation.
+     * Borderless is a plain borderless window, NOT SDL fullscreen. */
+    if (startup_window_mode == MIKUPAN_WINDOW_FULLSCREEN)
     {
         config_window_flags |= SDL_WINDOW_FULLSCREEN;
     }
-    else
+    else if (startup_window_mode == MIKUPAN_WINDOW_BORDERLESS)
     {
-        mikupan_configuration.renderer.is_fullscreen = 0;
+        config_window_flags |= SDL_WINDOW_BORDERLESS;
     }
 
     mikupan_render.window = SDL_CreateWindow(
@@ -149,6 +170,8 @@ SDL_AppResult MikuPan_Init()
         info_log("Error creating the SDL window %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
+
+    MikuPan_ApplyWindowMode(startup_window_mode);
 
     SDL_GetWindowSize(mikupan_render.window, &mikupan_render.width, &mikupan_render.height);
     mikupan_configuration.renderer.window.width = mikupan_render.width;
@@ -488,6 +511,79 @@ void MikuPan_CreateInternalBuffer(int w, int h, int msaa)
     MikuPan_SetViewportCached(0, 0, render_back_msaa.texture.width, render_back_msaa.texture.height);
 }
 
+/* Apply a window display mode to the SDL window.
+ *   Windowed   - leave fullscreen, restore the window border.
+ *   Fullscreen - exclusive fullscreen using the display's desktop mode.
+ *   Borderless - a normal borderless WINDOW sized to fill the display (NOT SDL
+ *                fullscreen), so alt-tab stays instant and other windows can
+ *                overlap. */
+static int g_applied_window_mode = MIKUPAN_WINDOW_WINDOWED;
+static int g_saved_win_w = 0, g_saved_win_h = 0, g_saved_win_x = 0, g_saved_win_y = 0;
+
+static void MikuPan_ApplyWindowMode(int mode)
+{
+    SDL_Window *win = mikupan_render.window;
+    if (win == NULL)
+    {
+        return;
+    }
+
+    /* Remember the windowed size/position before leaving windowed mode so we
+     * can restore it instead of staying screen-sized after borderless/fullscreen. */
+    if (g_applied_window_mode == MIKUPAN_WINDOW_WINDOWED &&
+        mode != MIKUPAN_WINDOW_WINDOWED)
+    {
+        SDL_GetWindowSize(win, &g_saved_win_w, &g_saved_win_h);
+        SDL_GetWindowPosition(win, &g_saved_win_x, &g_saved_win_y);
+    }
+
+    switch (mode)
+    {
+        case MIKUPAN_WINDOW_FULLSCREEN:
+        {
+            SDL_DisplayID disp = SDL_GetDisplayForWindow(win);
+            const SDL_DisplayMode *dm = SDL_GetDesktopDisplayMode(disp);
+            SDL_SetWindowFullscreenMode(win, dm);
+            SDL_SetWindowFullscreen(win, true);
+            break;
+        }
+        case MIKUPAN_WINDOW_BORDERLESS:
+        {
+            /* Plain borderless window covering the display — never SDL
+             * fullscreen, so it behaves like any other window for alt-tab. */
+            SDL_SetWindowFullscreen(win, false);
+            SDL_SetWindowBordered(win, false);
+
+            SDL_DisplayID disp = SDL_GetDisplayForWindow(win);
+            SDL_Rect bounds;
+            if (SDL_GetDisplayBounds(disp, &bounds))
+            {
+                SDL_SetWindowPosition(win, bounds.x, bounds.y);
+                /* +1px height: an exact-screen-size borderless window at (0,0)
+                 * makes Windows promote it to exclusive "fullscreen
+                 * optimizations" (taskbar hidden, slow alt-tab). The extra row
+                 * sits just below the screen edge and is invisible, but keeps
+                 * this a true composited windowed surface with instant alt-tab. */
+                SDL_SetWindowSize(win, bounds.w, bounds.h + 1);
+            }
+            break;
+        }
+
+        case MIKUPAN_WINDOW_WINDOWED:
+        default:
+            SDL_SetWindowFullscreen(win, false);
+            SDL_SetWindowBordered(win, true);
+            if (g_saved_win_w > 0 && g_saved_win_h > 0)
+            {
+                SDL_SetWindowSize(win, g_saved_win_w, g_saved_win_h);
+                SDL_SetWindowPosition(win, g_saved_win_x, g_saved_win_y);
+            }
+            break;
+    }
+
+    g_applied_window_mode = mode;
+}
+
 void MikuPan_Clear()
 {
     MikuPan_PerfBeginFrame();
@@ -518,10 +614,12 @@ void MikuPan_Clear()
 
     glad_glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
 
-    if (mikupan_configuration.renderer.is_fullscreen != MikuPan_IsFullScreen())
+    if (mikupan_configuration.renderer.window_mode != MikuPan_GetWindowMode())
     {
-        SDL_SetWindowFullscreen(mikupan_render.window, MikuPan_IsFullScreen());
-        mikupan_configuration.renderer.is_fullscreen = MikuPan_IsFullScreen();
+        MikuPan_ApplyWindowMode(MikuPan_GetWindowMode());
+        mikupan_configuration.renderer.window_mode = MikuPan_GetWindowMode();
+        mikupan_configuration.renderer.is_fullscreen =
+            (MikuPan_GetWindowMode() != MIKUPAN_WINDOW_WINDOWED);
     }
 
     if (mikupan_configuration.renderer.vsync != MikuPan_IsVsync())
