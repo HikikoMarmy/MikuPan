@@ -25,12 +25,18 @@ jobs:
     # The codebase uses GCC-only extensions (__attribute__((mode(TI))),
     # ((optimize)), ((aligned))) plus the -static link flag, and links the
     # prebuilt MinGW FFmpeg import libs in extern/ffmpeg. It cannot build with
-    # MSVC, so the Windows runner must use the MinGW toolchain.
-    - name: Set up MinGW (Windows)
+    # MSVC, so the Windows runner builds with MinGW via MSYS2.
+    - name: Set up MSYS2 (Windows)
       if: ${{ matrix.os == 'windows-latest' }}
-      uses: egor-tensin/setup-mingw@v2
+      uses: msys2/setup-msys2@v2
       with:
-        platform: x64
+        msystem: MINGW64
+        update: true
+        install: >-
+          git
+          mingw-w64-x86_64-gcc
+          mingw-w64-x86_64-cmake
+          mingw-w64-x86_64-ninja
 
     - name: Install Dependencies
       if: ${{ matrix.os == 'ubuntu-latest' }}
@@ -40,14 +46,16 @@ jobs:
           sudo apt update
           sudo apt upgrade
 
-    - name: Configure CMake (Windows / MinGW)
+    - name: Build (Windows / MinGW)
       if: ${{ matrix.os == 'windows-latest' }}
-      run: cmake -B ${{github.workspace}}/build -G "MinGW Makefiles" -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
-
-    - name: Configure CMake (Unix)
-      if: ${{ matrix.os != 'windows-latest' }}
-      run: cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
-
-    - name: Build
+      shell: msys2 {0}
       run: |
-        cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}} --target MikuPan
+        git config --global --add safe.directory '*'
+        cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+        cmake --build build --target MikuPan
+
+    - name: Build (Unix)
+      if: ${{ matrix.os != 'windows-latest' }}
+      run: |
+        cmake -B build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+        cmake --build build --config ${{ env.BUILD_TYPE }} --target MikuPan
