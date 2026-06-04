@@ -1,0 +1,113 @@
+name: Nightly
+
+on:
+  schedule:
+    # 06:00 UTC every day — builds the latest commit on main.
+    - cron: '0 6 * * *'
+  workflow_dispatch:        # allow manual nightly runs too
+
+# Only one nightly at a time; let an in-flight build finish rather than waste it.
+concurrency:
+  group: nightly
+  cancel-in-progress: false
+
+env:
+  BUILD_TYPE: Release
+  BUILD_STATIC: true
+
+jobs:
+  build:
+    # Don't run the schedule on forks.
+    if: ${{ github.repository == 'Mikompilation/MikuPan' }}
+    runs-on: ${{ matrix.sys.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        sys:
+          - { os: windows-latest, shell: pwsh, name: windows }
+          - { os: ubuntu-latest,  shell: bash, name: linux  }
+          - { os: macos-latest,   shell: bash, name: macos  }
+    defaults:
+      run:
+        shell: ${{ matrix.sys.shell }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          submodules: 'recursive'
+          fetch-depth: 0   # full history + tags so the version header resolves
+
+      # GCC-only codebase — Windows builds with MinGW via MSYS2, not MSVC.
+      - name: Set up MSYS2 (Windows)
+        if: ${{ matrix.sys.os == 'windows-latest' }}
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            git
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-cmake
+            mingw-w64-x86_64-ninja
+
+      - name: Install Dependencies
+        if: ${{ matrix.sys.os == 'ubuntu-latest' }}
+        run: |
+          sudo apt update
+          sudo apt install zip libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl1-mesa-dev libglu1-mesa-dev build-essential git make pkg-config cmake ninja-build gnome-desktop-testing libasound2-dev libpulse-dev libaudio-dev libfribidi-dev libjack-dev libsndio-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev libxkbcommon-dev libdrm-dev libgbm-dev libgl1-mesa-dev libgles2-mesa-dev libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev libudev-dev libthai-dev libusb-1.0-0-dev
+          sudo apt update
+          sudo apt upgrade
+
+      - name: Build (Windows / MinGW)
+        if: ${{ matrix.sys.os == 'windows-latest' }}
+        shell: msys2 {0}
+        run: |
+          git config --global --add safe.directory '*'
+          cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DBUILD_STATIC=${{ env.BUILD_STATIC }}
+          cmake --build build -j 12 --target MikuPan
+
+      - name: Build (Unix)
+        if: ${{ matrix.sys.os != 'windows-latest' }}
+        run: |
+          cmake -B ${{github.workspace}}/build -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}} -DBUILD_STATIC=${{env.BUILD_STATIC}}
+          cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}} -j 12 --target MikuPan
+
+      - name: Zip Windows App
+        if: ${{ matrix.sys.os == 'windows-latest' }}
+        working-directory: build
+        shell: pwsh
+        run: |
+          Compress-Archive -Path MikuPan/* -DestinationPath MikuPan_${{ matrix.sys.name }}_nightly.zip
+
+      - name: Zip OSX App
+        if: ${{ matrix.sys.os == 'macos-latest' }}
+        working-directory: build
+        run: |
+          zip -r MikuPan_${{ matrix.sys.name }}_nightly.zip MikuPan/*
+
+      - name: Zip Ubuntu App
+        if: ${{ matrix.sys.os == 'ubuntu-latest' }}
+        working-directory: build
+        run: |
+          zip -r MikuPan_${{ matrix.sys.name }}_nightly.zip MikuPan/*
+
+      - name: Publish nightly release
+        uses: ncipollo/release-action@a2e71bdd4e7dab70ca26a852f29600c98b33153e
+        with:
+          tag: nightly
+          name: "Nightly Build"
+          body: |
+            Automated nightly build of the latest `main`.
+
+            Commit: ${{ github.sha }}
+
+            > Pre-release / unstable — built every day at 06:00 UTC.
+          prerelease: true
+          makeLatest: false
+          allowUpdates: true
+          removeArtifacts: false
+          replacesArtifacts: true
+          # Move the rolling `nightly` tag to the commit that was built.
+          commit: ${{ github.sha }}
+          artifacts: build/MikuPan_${{ matrix.sys.name }}_nightly.zip
