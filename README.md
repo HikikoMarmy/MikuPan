@@ -4,6 +4,9 @@ MikuPan is an in progress port of Fatal Frame 1 PS2 to PC running natively, no e
 
 ![logo](resources/mikupan.png)
 
+[![Discord](https://badgen.net/badge/icon/discord?icon=discord&label)](https://discord.gg/Ap4Sfcmwd9)
+![Downloads](https://img.shields.io/github/downloads/Mikompilation/MikuPan/total)
+
 # Build
 For now, building in `debug` is highly recommended due to issues related to the `release` build. The build process was made to automatically fetch all required dependencies of the project.
 
