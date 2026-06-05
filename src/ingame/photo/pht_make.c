@@ -2003,10 +2003,10 @@ enum
     PHOTO_CAPTURE_H = 256,
     PHOTO_CAPTURE_FIELD_H = PHOTO_CAPTURE_H / 2,
     PHOTO_CAPTURE_PITCH = 384,
-    PHOTO_NEGATIVE_PROTECT_X = 122,
-    PHOTO_NEGATIVE_PROTECT_Y = 74,
-    PHOTO_NEGATIVE_PROTECT_W = 396,
-    PHOTO_NEGATIVE_PROTECT_H = 326,
+    PHOTO_NEGATIVE_PROTECT_X = PHOTO_CAPTURE_X,
+    PHOTO_NEGATIVE_PROTECT_Y = PHOTO_CAPTURE_Y,
+    PHOTO_NEGATIVE_PROTECT_W = PHOTO_CAPTURE_W,
+    PHOTO_NEGATIVE_PROTECT_H = PHOTO_CAPTURE_H,
 };
 
 static u_short g_photo_capture_555[PHOTO_CAPTURE_PITCH * PHOTO_CAPTURE_FIELD_H];
@@ -2168,6 +2168,11 @@ static void ActivatePhotoFrameModernOverlays(void)
 
 static void RenderResolvedPhotoPreviewInFrame(void)
 {
+    if (g_photo_preview_drawn_this_game_frame)
+    {
+        return;
+    }
+
     DrawAll2D();
 
     if (MikuPan_RenderPhotoPreviewOverlayForFrame())
@@ -3373,8 +3378,12 @@ int DispPhotoFrame1(int fl)
 
             RenderResolvedPhotoPreviewInFrame();
 
-            SubFadeFrame(0x60, 0x400);
+            if (!UseResolvedPhotoFrameOverlay())
+            {
+                SubFadeFrame(0x60, 0x400);
+            }
 
+            if (!UseResolvedPhotoFrameOverlay())
             {
                 float fh;
                 float szw;
@@ -3520,19 +3529,25 @@ void DispPhotoFrame2()
 
     RenderResolvedPhotoPreviewInFrame();
 
-    SubFadeFrame(0x60, 0x400);
+    if (!UseResolvedPhotoFrameOverlay())
+    {
+        SubFadeFrame(0x60, 0x400);
+    }
 
     f26 = 2.0f;
     f25 = 6.0f;
 
-    SetPanel(0x3c0, x - f25 + f26, y - f25 + 1.0f, x + 384 + f25 - f26,
-             y + 1.0f, 0xff, 0xff, 0xff, 0x80);
-    SetPanel(0x3c0, x - f25 + f26, y + 256 - 1.0f, x + 384 + f25 - f26,
-             y + 256 + f25 - 1.0f, 0xff, 0xff, 0xff, 0x80);
-    SetPanel(0x3c0, x - f25 + f26, y + 1.0f, x + f26, y + 256 - 1.0f, 0xff,
-             0xff, 0xff, 0x80);
-    SetPanel(0x3c0, x + 384 - f26, y + 1.0f, x + 384 + f25 - f26,
-             y + 256 - 1.0f, 0xff, 0xff, 0xff, 0x80);
+    if (!UseResolvedPhotoFrameOverlay())
+    {
+        SetPanel(0x3c0, x - f25 + f26, y - f25 + 1.0f, x + 384 + f25 - f26,
+                 y + 1.0f, 0xff, 0xff, 0xff, 0x80);
+        SetPanel(0x3c0, x - f25 + f26, y + 256 - 1.0f, x + 384 + f25 - f26,
+                 y + 256 + f25 - 1.0f, 0xff, 0xff, 0xff, 0x80);
+        SetPanel(0x3c0, x - f25 + f26, y + 1.0f, x + f26, y + 256 - 1.0f,
+                 0xff, 0xff, 0xff, 0x80);
+        SetPanel(0x3c0, x + 384 - f26, y + 1.0f, x + 384 + f25 - f26,
+                 y + 256 - 1.0f, 0xff, 0xff, 0xff, 0x80);
+    }
 }
 
 void DispPhotoFrame2_2(int type)
@@ -3642,8 +3657,12 @@ void DispPhotoFrame2_2(int type)
 
     SetNegaFilter(type == 0 ? 0 : (type == 1 ? 3 : ers_type));
 
-    SubFadeFrame(0x60, 0x400);
+    if (!UseResolvedPhotoFrameOverlay())
+    {
+        SubFadeFrame(0x60, 0x400);
+    }
 
+    if (!UseResolvedPhotoFrameOverlay())
     {
         float szw;
         float szh;
@@ -3888,8 +3907,12 @@ void DispPhotoFrame2_3(int type)
 
             SetNegaFilter(type == 0 ? 0 : (type == 1 ? 3 : ers_type));
 
-            SubFadeFrame(0x60, 0x400);
+            if (!UseResolvedPhotoFrameOverlay())
+            {
+                SubFadeFrame(0x60, 0x400);
+            }
 
+            if (!UseResolvedPhotoFrameOverlay())
             {
                 float szw;
                 float szh;

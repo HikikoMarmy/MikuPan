@@ -652,6 +652,47 @@ static void MikuPan_RenderPhotoNegativeDebugLayer(void)
     g_photo_debug.negative_debug_layer_count++;
 }
 
+static void MikuPan_RenderPhotoPreviewFrameBorder(int enabled)
+{
+    const int border = 6;
+    const float r = 0xcf / 255.0f;
+    const float g = 0xbd / 255.0f;
+    const float b = 0xa1 / 255.0f;
+
+    if (!enabled ||
+        g_photo_preview_texture.id == 0 ||
+        g_photo_preview_w <= 0 ||
+        g_photo_preview_h <= 0)
+    {
+        return;
+    }
+
+    MikuPan_RenderPhotoDebugRect(
+        g_photo_preview_x - border,
+        g_photo_preview_y - border,
+        g_photo_preview_w + border * 2,
+        border,
+        r, g, b, 1.0f);
+    MikuPan_RenderPhotoDebugRect(
+        g_photo_preview_x - border,
+        g_photo_preview_y + g_photo_preview_h,
+        g_photo_preview_w + border * 2,
+        border,
+        r, g, b, 1.0f);
+    MikuPan_RenderPhotoDebugRect(
+        g_photo_preview_x - border,
+        g_photo_preview_y,
+        border,
+        g_photo_preview_h,
+        r, g, b, 1.0f);
+    MikuPan_RenderPhotoDebugRect(
+        g_photo_preview_x + g_photo_preview_w,
+        g_photo_preview_y,
+        border,
+        g_photo_preview_h,
+        r, g, b, 1.0f);
+}
+
 void MikuPan_RenderQueuedPhotoPreviewTexture(void)
 {
     int rendered_preview = 0;
@@ -680,10 +721,7 @@ void MikuPan_RenderQueuedPhotoPreviewTexture(void)
 
     if (!rendered_preview &&
         !g_photo_debug.force_negative_preview_enabled &&
-        !g_photo_debug.negative_overlay_drawn_in_game &&
-        ((g_photo_debug.force_opaque_preview_enabled && preview_context) ||
-         (g_photo_debug.effect_overlay_active &&
-          !g_photo_debug.effect_overlay_drawn_in_game)) &&
+        preview_context &&
         g_photo_preview_texture.id != 0 &&
         g_photo_preview_w > 0 &&
         g_photo_preview_h > 0)
@@ -696,6 +734,7 @@ void MikuPan_RenderQueuedPhotoPreviewTexture(void)
             0xff);
     }
 
+    MikuPan_RenderPhotoPreviewFrameBorder(preview_context || rendered_preview);
     MikuPan_RenderPhotoNegativeDebugLayer();
     MikuPan_RenderPhotoDebugTargetRect();
     g_photo_debug.effect_overlay_active = 0;
