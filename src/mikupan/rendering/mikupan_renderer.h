@@ -171,6 +171,7 @@ void MikuPan_SetPhotoPreviewOverlayActiveForFrame(int x, int y, int w, int h,
                                                   u_char alpha);
 void MikuPan_SetPhotoNegativeOverlayActiveForFrame(int x, int y, int w, int h,
                                                    float strength);
+void MikuPan_ClearPhotoPreviewOverlay(void);
 void MikuPan_ClearPhotoNegativeOverlay(void);
 void MikuPan_RenderPhotoPreviewTexture(int x, int y, int w, int h,
                                        u_char alpha);

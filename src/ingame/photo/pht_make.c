@@ -2012,6 +2012,7 @@ enum
 static u_short g_photo_capture_555[PHOTO_CAPTURE_PITCH * PHOTO_CAPTURE_FIELD_H];
 static unsigned char g_photo_preview_rgba[PHOTO_CAPTURE_W * PHOTO_CAPTURE_H * 4];
 static int g_photo_capture_valid = 0;
+static int g_photo_frame_overlay_active = 0;
 static int g_photo_preview_drawn_this_game_frame = 0;
 
 static void ActivateResolvedPhotoNegative(void);
@@ -2022,6 +2023,7 @@ static int CaptureResolvedPhotoForLater(void)
     unsigned char *rgba = (unsigned char *)GetEmptyBuffer(0);
 
     g_photo_capture_valid = 0;
+    g_photo_frame_overlay_active = 0;
 
     if (!MikuPan_ReadResolvedFramebufferRGBA8TopLeft(
             PHOTO_CAPTURE_SCREEN_W,
@@ -2162,8 +2164,23 @@ static void ActivateResolvedPhotoNegative(void)
 static void ActivatePhotoFrameModernOverlays(void)
 {
     g_photo_preview_drawn_this_game_frame = 0;
+    g_photo_frame_overlay_active = g_photo_capture_valid != 0;
     ActivateResolvedPhotoPreview();
     ActivateResolvedPhotoNegative();
+}
+
+static void ClearResolvedPhotoFrameOverlay(void)
+{
+    g_photo_frame_overlay_active = 0;
+    g_photo_preview_drawn_this_game_frame = 0;
+    MikuPan_ClearPhotoPreviewOverlay();
+    MikuPan_ClearPhotoNegativeOverlay();
+}
+
+static void ResetResolvedPhotoFrameOverlay(void)
+{
+    g_photo_capture_valid = 0;
+    ClearResolvedPhotoFrameOverlay();
 }
 
 static void RenderResolvedPhotoPreviewInFrame(void)
@@ -2189,7 +2206,7 @@ static void RenderResolvedPhotoNegativeInFrame(void)
 
 static int UseResolvedPhotoFrameOverlay(void)
 {
-    return g_photo_capture_valid != 0;
+    return g_photo_capture_valid != 0 && g_photo_frame_overlay_active != 0;
 }
 
 static void ActivatePhotoNegativeFromSetNegaFilter(int type, float y12,
@@ -4198,23 +4215,24 @@ void PhotoMake()
 
     if (plyr_wrk.mode != 1)
     {
-        MikuPan_ClearPhotoNegativeOverlay();
+        ResetResolvedPhotoFrameOverlay();
         return;
     }
 
     if (photo_wrk.mode >= PHOTO_MODE_MAKE_DISP &&
-        photo_wrk.mode <= PHOTO_MODE_END)
+        photo_wrk.mode < PHOTO_MODE_END)
     {
         ActivatePhotoFrameModernOverlays();
     }
     else
     {
-        MikuPan_ClearPhotoNegativeOverlay();
+        ClearResolvedPhotoFrameOverlay();
     }
 
     switch (photo_wrk.mode)
     {
         case 4:
+            ClearResolvedPhotoFrameOverlay();
             photo_wrk.adr_no = GetSavePhotoNo();
             break;
         case 5:
@@ -4460,7 +4478,7 @@ void PhotoMake()
             QueueResolvedPhotoPreview();
             break;
         case 9:
-            MikuPan_ClearPhotoNegativeOverlay();
+            ClearResolvedPhotoFrameOverlay();
             break;
     }
 }
@@ -4481,23 +4499,24 @@ void PhotoMake_EneDead()
 
     if (plyr_wrk.mode != 1)
     {
-        MikuPan_ClearPhotoNegativeOverlay();
+        ResetResolvedPhotoFrameOverlay();
         return;
     }
 
     if (photo_wrk.mode >= PHOTO_MODE_MAKE_DISP &&
-        photo_wrk.mode <= PHOTO_MODE_END)
+        photo_wrk.mode < PHOTO_MODE_END)
     {
         ActivatePhotoFrameModernOverlays();
     }
     else
     {
-        MikuPan_ClearPhotoNegativeOverlay();
+        ClearResolvedPhotoFrameOverlay();
     }
 
     switch (photo_wrk.mode)
     {
         case 4:
+            ClearResolvedPhotoFrameOverlay();
             photo_wrk.adr_no = GetSavePhotoNo();
 
             stop_effects = 1;
@@ -4597,7 +4616,7 @@ void PhotoMake_EneDead()
             SetBlurOff();
             break;
         case 9:
-            MikuPan_ClearPhotoNegativeOverlay();
+            ClearResolvedPhotoFrameOverlay();
             stop_effects = 0;
             break;
     }
@@ -4606,6 +4625,7 @@ void PhotoMake_EneDead()
 void PhotoMakeSaveInit()
 {
     pic_save_flag = 0;
+    ResetResolvedPhotoFrameOverlay();
 }
 
 void DrawPicture(int pri, int addr, int n, float x, float y, float szw,
@@ -4645,7 +4665,7 @@ void PhotoMakeSave2()
                 asm("");// what the ???
                 break;
             case 9:
-                MikuPan_ClearPhotoNegativeOverlay();
+                ClearResolvedPhotoFrameOverlay();
                 FModeScreenEffect();
                 DispPhotoFrame00(0);
                 DrawAll2D();

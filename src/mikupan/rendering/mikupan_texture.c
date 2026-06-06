@@ -423,6 +423,16 @@ void MikuPan_SetPhotoNegativeOverlayActiveForFrame(int x, int y, int w, int h,
     g_photo_debug.negative_strength = strength;
 }
 
+void MikuPan_ClearPhotoPreviewOverlay(void)
+{
+    g_photo_preview_queued = 0;
+    g_photo_preview_negative_strength = 0.0f;
+    g_photo_debug.queued = 0;
+    g_photo_debug.effect_overlay_active = 0;
+    g_photo_debug.effect_overlay_drawn_in_game = 0;
+    g_photo_debug.negative_overlay_drawn_in_game = 0;
+}
+
 void MikuPan_ClearPhotoNegativeOverlay(void)
 {
     g_photo_debug.negative_overlay_active = 0;
