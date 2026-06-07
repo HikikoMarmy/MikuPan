@@ -4,8 +4,8 @@
 #include "typedefs.h"
 
 typedef struct {
-	sceVu0FVECTOR p;
-	sceVu0FVECTOR i;
+	sceVu0FVECTOR p; /// Position: Literal location in 3D space "global postion"
+	sceVu0FVECTOR i; /// Interest: Visual interest, what the camera is facing not a set interest anchor.
 	float roll;
 	float fov;
 	float nearz;
