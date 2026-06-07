@@ -2482,6 +2482,8 @@ void DrawPhotoHinttex2(u_int sw, u_int pri, int num)
     SQAR_DAT sq;
     DISP_SQAR dq;
     int i;
+    float scale_w;
+    float scale_h;
 
     if (hint_rea != 0)
     {
@@ -2602,24 +2604,36 @@ void DrawPhotoHinttex2(u_int sw, u_int pri, int num)
     ds.z = 0xfffffff - ds.pri;
 
     ds.alpha = alp;
+    scale_w = sd->w > 0 ? 384.0f / (float)sd->w : 1.0f;
+    scale_h = sd->h > 0 ? 256.0f / (float)sd->h : 1.0f;
+    ds.scw = scale_w;
+    ds.sch = scale_h;
 
-    ds.x = (int) ((384 - sd->w) / 2) + 128 - pos;
-    ds.y = (int) ((256 - sd->h) / 2) + 80 - pos;
-
-    DispSprD(&ds);
-
-    ds.x = (int) ((384 - sd->w) / 2) + 128 - pos;
-    ds.y = (int) ((256 - sd->h) / 2) + 80 + pos;
-
-    DispSprD(&ds);
-
-    ds.x = (int) ((384 - sd->w) / 2) + 128 + pos;
-    ds.y = (int) ((256 - sd->h) / 2) + 80 - pos;
+    ds.x = 128.0f - pos;
+    ds.y = 80.0f - pos;
+    ds.csx = ds.x;
+    ds.csy = ds.y;
 
     DispSprD(&ds);
 
-    ds.x = (int) ((384 - sd->w) / 2) + 128 + pos;
-    ds.y = (int) ((256 - sd->h) / 2) + 80 + pos;
+    ds.x = 128.0f - pos;
+    ds.y = 80.0f + pos;
+    ds.csx = ds.x;
+    ds.csy = ds.y;
+
+    DispSprD(&ds);
+
+    ds.x = 128.0f + pos;
+    ds.y = 80.0f - pos;
+    ds.csx = ds.x;
+    ds.csy = ds.y;
+
+    DispSprD(&ds);
+
+    ds.x = 128.0f + pos;
+    ds.y = 80.0f + pos;
+    ds.csx = ds.x;
+    ds.csy = ds.y;
 
     DispSprD(&ds);
 }

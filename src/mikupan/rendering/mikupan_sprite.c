@@ -410,8 +410,8 @@ void MikuPan_RenderSprite(MikuPan_Rect src, MikuPan_Rect dst, u_char r,
     }
 
     float ndc[4] = {0};
-    MikuPan_ConvertPs2ScreenCoordToNDCMaintainAspectRatio(ndc, (float)MikuPan_GetWindowWidth(), (float)MikuPan_GetWindowHeight(), dst.x, dst.y);
-    MikuPan_ConvertPs2ScreenCoordToNDCMaintainAspectRatio(&ndc[2], (float)MikuPan_GetWindowWidth(), (float)MikuPan_GetWindowHeight(), dst.x + src.w, dst.y + src.h);
+    MikuPan_ConvertPs2ScreenCoordToNDCMaintainAspectRatio(ndc, (float)MikuPan_GetRenderResolutionWidth(), (float)MikuPan_GetRenderResolutionHeight(), dst.x, dst.y);
+    MikuPan_ConvertPs2ScreenCoordToNDCMaintainAspectRatio(&ndc[2], (float)MikuPan_GetRenderResolutionWidth(), (float)MikuPan_GetRenderResolutionHeight(), dst.x + src.w, dst.y + src.h);
 
     float texW = (float) (texture_info->width);
     float texH = (float) (texture_info->height);

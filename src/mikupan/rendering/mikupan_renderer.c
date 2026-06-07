@@ -881,10 +881,21 @@ void MikuPan_EndFrame()
      * texture. Draw it after the final scene pass so the original photo frame
      * and negative overlays cannot cover it.
     */
-    MikuPan_SetViewportCached(0, 0, mikupan_render.width, mikupan_render.height);
+    /*
+     * The photo preview/border, the late 2D overlays (message box), and the
+     * message text are authored in PS2 screen space and convert against the
+     * render resolution, matching the composited scene. Draw them into the same
+     * letterboxed region the scene was blitted to (offset_output) so they line
+     * up with it instead of stretching across the whole window. Restore the
+     * full-window viewport afterwards for anything drawn later (UI, screenshot
+     * capture).
+     */
+    MikuPan_SetViewportCached(offset_output[0], offset_output[1],
+                              offset_output[2], offset_output[3]);
     MikuPan_RenderQueuedPhotoPreviewTexture();
     MikuPan_FlushLate2DOverlayQueue();
     MikuPan_Flush2DMessageQueue();
+    MikuPan_SetViewportCached(0, 0, mikupan_render.width, mikupan_render.height);
 
     int screenshot_width = 0, screenshot_height = 0;
     SDL_GetWindowSizeInPixels(mikupan_render.window, &screenshot_width, &screenshot_height);

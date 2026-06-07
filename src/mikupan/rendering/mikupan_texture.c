@@ -3,6 +3,7 @@
 #include "mikupan/gs/mikupan_gs_c.h"
 #include "mikupan/gs/mikupan_texture_manager_c.h"
 #include "mikupan/mikupan_utils.h"
+#include "mikupan/ui/mikupan_ui.h"
 #include "mikupan_pipeline.h"
 #include "mikupan_profiler.h"
 #include "mikupan_shader.h"
@@ -453,14 +454,14 @@ void MikuPan_RenderPhotoPreviewTexture(int x, int y, int w, int h,
     float br[4] = {0};
     MikuPan_ConvertPs2ScreenCoordToNDCMaintainAspectRatio(
         tl,
-        (float)MikuPan_GetWindowWidth(),
-        (float)MikuPan_GetWindowHeight(),
+        (float)MikuPan_GetRenderResolutionWidth(),
+        (float)MikuPan_GetRenderResolutionHeight(),
         (float)x,
         (float)y);
     MikuPan_ConvertPs2ScreenCoordToNDCMaintainAspectRatio(
         br,
-        (float)MikuPan_GetWindowWidth(),
-        (float)MikuPan_GetWindowHeight(),
+        (float)MikuPan_GetRenderResolutionWidth(),
+        (float)MikuPan_GetRenderResolutionHeight(),
         (float)(x + w),
         (float)(y + h));
 
@@ -548,14 +549,14 @@ static void MikuPan_RenderPhotoDebugRect(int x, int y, int w, int h,
 
     MikuPan_ConvertPs2ScreenCoordToNDCMaintainAspectRatio(
         tl,
-        (float)MikuPan_GetWindowWidth(),
-        (float)MikuPan_GetWindowHeight(),
+        (float)MikuPan_GetRenderResolutionWidth(),
+        (float)MikuPan_GetRenderResolutionHeight(),
         (float)x,
         (float)y);
     MikuPan_ConvertPs2ScreenCoordToNDCMaintainAspectRatio(
         br,
-        (float)MikuPan_GetWindowWidth(),
-        (float)MikuPan_GetWindowHeight(),
+        (float)MikuPan_GetRenderResolutionWidth(),
+        (float)MikuPan_GetRenderResolutionHeight(),
         (float)(x + w),
         (float)(y + h));
 

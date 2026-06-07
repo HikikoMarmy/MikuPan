@@ -13,6 +13,7 @@
 #include "graphics/graph3d/sglib.h"
 #include "mikupan/mikupan_utils.h"
 #include "mikupan/rendering/mikupan_renderer.h"
+#include "mikupan/ui/mikupan_ui.h"
 
 #include <stdlib.h>
 
@@ -2119,7 +2120,7 @@ void DispSprD(DISP_SPRT *s)
         pbuf[ndpkt++].fl32[3] = (float) ma / 128.0f;
 
         MikuPan_ConvertPs2HalfScreenCoordToNDCMaintainAspectRatio(ndc,
-            (float)MikuPan_GetWindowWidth(), (float)MikuPan_GetWindowHeight(),
+            (float)MikuPan_GetRenderResolutionWidth(), (float)MikuPan_GetRenderResolutionHeight(),
             x2[i], y2[i]);
 
         pbuf[ndpkt].fl32[0] = ndc[0];
@@ -2468,7 +2469,7 @@ void DispSqrD(DISP_SQAR *s)
         pbuf[ndpkt++].fl32[3] = MikuPan_ConvertScaleColor(ma);
 
         MikuPan_ConvertPs2HalfScreenCoordToNDCMaintainAspectRatio(ndc,
-            (float)MikuPan_GetWindowWidth(), (float)MikuPan_GetWindowHeight(),
+            (float)MikuPan_GetRenderResolutionWidth(), (float)MikuPan_GetRenderResolutionHeight(),
             x2[i], y2[i]);
 
         pbuf[ndpkt].fl32[0] = ndc[0];
