@@ -158,6 +158,7 @@ typedef struct
     int show_fps;
     MikuPan_ConfigThirdPersonCamera third_person_camera;
     MikuPan_ConfigInput input;
+    char data_folder[512];
 } MikuPan_Config;
 
 enum MikuPan_PipelineType

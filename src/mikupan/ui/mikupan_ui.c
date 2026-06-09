@@ -20,6 +20,8 @@
 
 #include "mikupan/mikupan_config.h"
 
+#include "SDL3/SDL_dialog.h"
+
 #include "mikupan_version.h"
 
 #include <math.h>
@@ -120,6 +122,7 @@ static int shadow_debug_flip_y = 1;
 static float shadow_debug_preview_size = 384.0f;
 static float photo_debug_preview_size = 256.0f;
 static char config_save_status[128] = {0};
+static SDL_Window *ui_window = NULL;
 
 // Last reload error (per-shader: index 0..MAX-1; index MAX = "reload all")
 // — kept around so the user can read why the last reload failed without it
@@ -1713,6 +1716,7 @@ static void MikuPan_ApplyFatalFrameStyle(int theme)
 
 void MikuPan_InitUi(SDL_Window *window, SDL_GLContext renderer)
 {
+    ui_window = window;
     igCreateContext(NULL);
     ImGuiIO *io = igGetIO_Nil();
     io->ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard | ImGuiConfigFlags_NavEnableGamepad;
@@ -2371,6 +2375,23 @@ static void MikuPan_UiShadowResolutionCombo(const char *label)
     }
 }
 
+static void MikuPan_DataFolderSelected(void *userdata,
+                                       const char *const *filelist, int filter)
+{
+    (void) userdata;
+    (void) filter;
+
+    if (filelist == NULL || filelist[0] == NULL)
+    {
+        return;
+    }
+
+    strncpy(mikupan_configuration.data_folder, filelist[0],
+            sizeof(mikupan_configuration.data_folder) - 1);
+    mikupan_configuration.data_folder
+        [sizeof(mikupan_configuration.data_folder) - 1] = '\0';
+}
+
 void MikuPan_UiMenuBar(void)
 {
     if (!show_menu_bar || !igBeginMainMenuBar())
@@ -2477,6 +2498,18 @@ void MikuPan_UiMenuBar(void)
         {
             mikupan_configuration.font_scale = font_scale;
             MikuPan_ApplyUiFontScale();
+        }
+
+        igSeparatorText("Save / Game Data Folder");
+        igInputText("Folder", mikupan_configuration.data_folder,
+                    sizeof(mikupan_configuration.data_folder), 0, NULL, NULL);
+        if (igButton("Browse...", (ImVec2) {0.0f, 0.0f}))
+        {
+            const char *start = mikupan_configuration.data_folder[0] != '\0'
+                                    ? mikupan_configuration.data_folder
+                                    : NULL;
+            SDL_ShowOpenFolderDialog(MikuPan_DataFolderSelected, NULL,
+                                     ui_window, start, false);
         }
 
         igSeparator();

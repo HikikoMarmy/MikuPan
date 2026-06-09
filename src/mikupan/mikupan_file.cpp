@@ -1,5 +1,6 @@
 #include "typedefs.h"
 #include "mikupan_file.h"
+#include "mikupan_config.h"
 #include "gs/mikupan_texture_manager.h"
 #include "mikupan_logging.h"
 #include "spdlog/spdlog.h"
@@ -17,9 +18,21 @@ extern "C" {
 
 static inline std::vector<int> file_loaded_address;
 
+static std::filesystem::path MikuPan_GetDataRoot()
+{
+    const char *folder = mikupan_configuration.data_folder;
+    if (folder != nullptr && folder[0] != '\0')
+    {
+        return std::filesystem::path(folder);
+    }
+
+    return std::filesystem::path(".");
+}
+
 void MikuPan_LoadImgHdFile()
 {
-    return MikuPan_ReadFullFile("./IMG_HD.BIN",
+    const auto path = (MikuPan_GetDataRoot() / "IMG_HD.BIN").generic_string();
+    MikuPan_ReadFullFile(path.c_str(),
         static_cast<char *>(MikuPan_GetHostPointer(ImgHdAddress)));
 }
 
@@ -45,7 +58,8 @@ void MikuPan_ReadFullFile(const char *filename, char *buffer)
 
 void MikuPan_ReadFileInArchive(int sector, int size, u_int *address)
 {
-    if (!std::filesystem::exists("./IMG_BD.BIN"))
+    const auto archive = MikuPan_GetDataRoot() / "IMG_BD.BIN";
+    if (!std::filesystem::exists(archive))
     {
         spdlog::critical("IMG_BD.BIN not found!");
         return;
@@ -75,7 +89,7 @@ void MikuPan_ReadFileInArchive(int sector, int size, u_int *address)
     file_loaded_address.push_back(ps2_address);
     info_log("PS2 Address 0x%x", ps2_address);
 
-    std::ifstream infile("./IMG_BD.BIN", std::ios::binary);
+    std::ifstream infile(archive, std::ios::binary);
     infile.seekg(sector * 0x800, std::ios::beg);
     infile.read(reinterpret_cast<char *>(address), size);
 
@@ -84,7 +98,8 @@ void MikuPan_ReadFileInArchive(int sector, int size, u_int *address)
 
 void MikuPan_BufferFile(int sector, int size, int64_t address)
 {
-    if (!std::filesystem::exists("./IMG_BD.BIN"))
+    const auto archive = MikuPan_GetDataRoot() / "IMG_BD.BIN";
+    if (!std::filesystem::exists(archive))
     {
         return;
     }
@@ -103,7 +118,7 @@ void MikuPan_BufferFile(int sector, int size, int64_t address)
 
     *((int64_t *) address) = (int64_t) file_ptr;
 
-    std::ifstream infile("./IMG_BD.BIN", std::ios::binary);
+    std::ifstream infile(archive, std::ios::binary);
     infile.seekg(sector * 0x800, std::ios::beg);
     infile.read(static_cast<char *>(file_ptr), size);
 
@@ -188,18 +203,19 @@ bool MikuPan_ResolveCdPath(const char* path, char* buffer, size_t buffer_size)
     
     std::replace(s.begin(), s.end(), '\\', '/');
     
-    if (s.rfind("./", 0) != 0) {
-        if (auto colon = s.find(':'); colon != std::string::npos) {
-            s.erase(0, colon + 1);
-            if (!s.empty() && s.front() == '/') {
-                s.erase(0, 1);
-            }
-        }
-        if (!s.empty()) {
-            s.insert(0, "./");
+    if (s.rfind("./", 0) == 0) {
+        s.erase(0, 2);
+    } else if (auto colon = s.find(':'); colon != std::string::npos) {
+        s.erase(0, colon + 1);
+        if (!s.empty() && s.front() == '/') {
+            s.erase(0, 1);
         }
     }
-    
+
+    if (!s.empty()) {
+        s = (MikuPan_GetDataRoot() / s).generic_string();
+    }
+
     if (s.length() + 1 > buffer_size) {
         spdlog::error("MikuPan_ResolveCdPath: Buffer too small. Need {} bytes, got {}", 
                       s.length() + 1, buffer_size);
@@ -260,6 +276,6 @@ int MikuPan_GetListFiles(const char *folder, MikuPan_McTblGetDir *table)
 
 std::string MikuPan_GetRelativePath(const char *path)
 {
-    auto relative_path = std::filesystem::path(path);
-    return relative_path.relative_path().generic_u8string();
+    auto relative_path = std::filesystem::path(path).relative_path();
+    return (MikuPan_GetDataRoot() / relative_path).generic_u8string();
 }

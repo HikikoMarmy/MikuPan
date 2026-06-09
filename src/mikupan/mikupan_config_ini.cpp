@@ -2,6 +2,7 @@
 
 #include "mikupan_logging.h"
 
+#include <cstring>
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
@@ -55,6 +56,25 @@ void ApplyValue(const Ini& ini, const char *section, const char *key, T& dst)
     {
         info_log("Invalid config value ignored: [%s] %s", section, key);
     }
+}
+
+void ApplyString(const Ini& ini, const char *section, const char *key,
+                 char *dst, size_t dst_size)
+{
+    const auto sec = ini.sections.find(section);
+    if (sec == ini.sections.end())
+    {
+        return;
+    }
+
+    const auto entry = sec->second.find(key);
+    if (entry == sec->second.end())
+    {
+        return;
+    }
+
+    std::strncpy(dst, entry->second.c_str(), dst_size - 1);
+    dst[dst_size - 1] = '\0';
 }
 
 bool TryLoadConfigurationFile(const std::filesystem::path& path)
@@ -160,6 +180,9 @@ bool TryLoadConfigurationFile(const std::filesystem::path& path)
                    mikupan_configuration.input.stick_kb_pos[i]);
     }
 
+    ApplyString(ini, "paths", "data_folder", mikupan_configuration.data_folder,
+                sizeof(mikupan_configuration.data_folder));
+
     info_log("Loaded configuration from %s", path.generic_string().c_str());
     return true;
 }
@@ -264,6 +287,8 @@ bool TrySaveConfigurationFile(const std::filesystem::path& path)
                      mikupan_configuration.input.stick_kb_pos[i]);
         }
     }
+
+    ini.sections["paths"]["data_folder"] = mikupan_configuration.data_folder;
 
     ini.generate(stream);
     if (!stream.good())
