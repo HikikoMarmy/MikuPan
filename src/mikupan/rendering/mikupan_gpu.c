@@ -94,6 +94,10 @@ static SDL_GPUTexture *g_target_color = NULL;
 static SDL_GPUTexture *g_target_depth = NULL;
 static SDL_GPUTextureFormat g_target_color_format = SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
 static SDL_GPUTextureFormat g_target_depth_format = SDL_GPU_TEXTUREFORMAT_D24_UNORM;
+/* The depth-target format actually supported by this device. D24_UNORM is not
+ * universally available (e.g. many Vulkan/AMD drivers on Linux reject it), so
+ * it is resolved at init via SDL_GPUTextureSupportsFormat. */
+static SDL_GPUTextureFormat g_depth_format = SDL_GPU_TEXTUREFORMAT_D24_UNORM;
 static int g_target_width = 0;
 static int g_target_height = 0;
 static int g_target_clear = 0;
@@ -426,6 +430,8 @@ int MikuPan_GPUInit(SDL_Window *window, int vsync)
     }
 
     g_swapchain_format = SDL_GetGPUSwapchainTextureFormat(g_device, g_window);
+    g_depth_format = PickSupportedDepthFormat();
+    g_target_depth_format = g_depth_format;
     MikuPan_GPUSetVsync(vsync);
     CreateFallbackTexture();
     SetDefaultUniforms();
@@ -545,6 +551,26 @@ static GPUBufferEntry *BufferEntry(unsigned int id)
     return &g_buffers[id];
 }
 
+static SDL_GPUTextureFormat PickSupportedDepthFormat(void)
+{
+    const SDL_GPUTextureFormat candidates[] = {
+        SDL_GPU_TEXTUREFORMAT_D24_UNORM,
+        SDL_GPU_TEXTUREFORMAT_D32_FLOAT,
+        SDL_GPU_TEXTUREFORMAT_D16_UNORM,
+    };
+    for (unsigned int i = 0; i < sizeof(candidates) / sizeof(candidates[0]); i++)
+    {
+        if (SDL_GPUTextureSupportsFormat(g_device, candidates[i],
+                                         SDL_GPU_TEXTURETYPE_2D,
+                                         SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET))
+        {
+            return candidates[i];
+        }
+    }
+    /* D16_UNORM is guaranteed to be supported by SDL_GPU. */
+    return SDL_GPU_TEXTUREFORMAT_D16_UNORM;
+}
+
 static void CreateDepthTexture(int width, int height)
 {
     if (g_scene_depth_id != 0)
@@ -561,7 +587,7 @@ static void CreateDepthTexture(int width, int height)
 
     SDL_GPUTextureCreateInfo info = {0};
     info.type = SDL_GPU_TEXTURETYPE_2D;
-    info.format = SDL_GPU_TEXTUREFORMAT_D24_UNORM;
+    info.format = g_depth_format;
     info.usage = SDL_GPU_TEXTUREUSAGE_DEPTH_STENCIL_TARGET;
     info.width = (Uint32)width;
     info.height = (Uint32)height;
@@ -1450,7 +1476,7 @@ void MikuPan_GPUSetTarget(MikuPan_GPUTarget target, int clear)
         g_target_color = scene ? scene->texture : NULL;
         g_target_depth = depth ? depth->texture : NULL;
         g_target_color_format = scene ? scene->format : SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM;
-        g_target_depth_format = depth ? depth->format : SDL_GPU_TEXTUREFORMAT_D24_UNORM;
+        g_target_depth_format = depth ? depth->format : g_depth_format;
         g_target_width = scene ? scene->width : 1;
         g_target_height = scene ? scene->height : 1;
         g_target_has_depth = 1;
