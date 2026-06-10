@@ -2400,8 +2400,10 @@ void MikuPan_UiMenuBar(void)
         return;
     }
 
-    if (igBeginMenu("Display", 1))
+    if (igBeginMenu("Settings", 1))
     {
+        if (igBeginMenu("Display", 1))
+        {
         const char *window_modes[] =
             {"Windowed", "Fullscreen", "Borderless Fullscreen"};
         if (igCombo_Str_arr("Display Mode", &window_mode, window_modes, 3, -1))
@@ -2528,10 +2530,100 @@ void MikuPan_UiMenuBar(void)
         }
 
         igEndMenu();
+        }
+
+        if (igBeginMenu("CRT", 1))
+        {
+        igCheckbox("Enabled", (bool *) &crt_settings.enabled);
+        igSliderFloat("Strength", &crt_settings.strength, 0.0f, 1.0f, "%.2f", 0);
+        igSliderFloat("Curvature", &crt_settings.curvature, 0.0f, 0.30f, "%.3f", 0);
+        igSliderFloat("Overscan", &crt_settings.overscan, 0.0f, 0.12f, "%.3f", 0);
+
+        igSeparator();
+        igSliderFloat("Scanline Strength", &crt_settings.scanline_strength,
+                      0.0f, 1.0f, "%.2f", 0);
+        igSliderFloat("Scanline Scale", &crt_settings.scanline_scale,
+                      0.25f, 3.0f, "%.2f", 0);
+        igSliderFloat("Scanline Thickness", &crt_settings.scanline_thickness,
+                      0.5f, 4.0f, "%.2f", 0);
+
+        igSeparator();
+        igSliderFloat("Mask Strength", &crt_settings.mask_strength,
+                      0.0f, 1.0f, "%.2f", 0);
+        igSliderFloat("Mask Scale", &crt_settings.mask_scale,
+                      0.5f, 4.0f, "%.2f", 0);
+
+        igSeparator();
+        igSliderFloat("Vignette Strength", &crt_settings.vignette_strength,
+                      0.0f, 1.0f, "%.2f", 0);
+        igSliderFloat("Vignette Size", &crt_settings.vignette_size,
+                      0.25f, 1.25f, "%.2f", 0);
+        igSliderFloat("Chroma Offset", &crt_settings.chroma_offset,
+                      0.0f, 3.0f, "%.2f", 0);
+        igSliderFloat("Blend Strength", &crt_settings.blend_strength,
+                      0.0f, 1.0f, "%.2f", 0);
+        igSliderFloat("Blend Radius", &crt_settings.blend_radius,
+                      0.0f, 3.0f, "%.2f", 0);
+        igSliderFloat("Noise", &crt_settings.noise_strength,
+                      0.0f, 0.15f, "%.3f", 0);
+        igSliderFloat("Flicker", &crt_settings.flicker_strength,
+                      0.0f, 0.10f, "%.3f", 0);
+        igSliderFloat("Glow", &crt_settings.glow_strength,
+                      0.0f, 0.50f, "%.2f", 0);
+
+        MikuPan_ClampCrtSettings(&crt_settings);
+
+        if (igButton("Reset CRT", (ImVec2) {0.0f, 0.0f}))
+        {
+            crt_settings = crt_defaults;
+        }
+
+        if (igMenuItem_Bool("Save Configuration", NULL, false, true))
+        {
+            MikuPan_UiSaveConfiguration();
+        }
+
+        if (config_save_status[0] != '\0')
+        {
+            igTextDisabled("%s", config_save_status);
+        }
+
+        igEndMenu();
+        }
+
+        if (igBeginMenu("Input", 1))
+        {
+        MikuPan_ControllerDrawDeviceSelectorUi();
+        igSeparator();
+
+        igCheckbox("Controller / Joystick Mapping", (bool *)&show_controller_remap);
+
+        if (igMenuItem_Bool("Reset Bindings to Defaults", NULL, false, true))
+        {
+            MikuPan_ControllerResetBindings();
+        }
+
+        igEndMenu();
+        }
+
+        igEndMenu();
     }
 
-    if (igBeginMenu("Rendering", 1))
+    if (igBeginMenu("Debug", 1))
     {
+        igCheckbox("Ingame Debug Menu", (bool *) &dbg_wrk.mode_on);
+
+        igSeparator();
+        igCheckbox("Shader Reload", (bool *) &show_shader_reload);
+        igCheckbox("Draw Call Inspector", (bool *) &show_draw_inspector);
+        igCheckbox("Camera World Info", (bool *) &show_camera_debug);
+        igCheckbox("Photo Debug Window", (bool *) &show_photo_debug_window);
+        igTextDisabled("(Shadow Debug: Rendering > Shadows)");
+
+        igSeparator();
+
+        if (igBeginMenu("Rendering", 1))
+        {
         /* Scene visualization overlays */
         igCheckbox("Wireframe", (bool *) &render_wireframe);
         igCheckbox("Bounding Boxes", (bool *) &show_bounding_boxes);
@@ -2601,69 +2693,10 @@ void MikuPan_UiMenuBar(void)
         igCheckbox("GS Uploads", (bool *) &disable_gs_uploads);
 
         igEndMenu();
-    }
-
-    if (igBeginMenu("CRT", 1))
-    {
-        igCheckbox("Enabled", (bool *) &crt_settings.enabled);
-        igSliderFloat("Strength", &crt_settings.strength, 0.0f, 1.0f, "%.2f", 0);
-        igSliderFloat("Curvature", &crt_settings.curvature, 0.0f, 0.30f, "%.3f", 0);
-        igSliderFloat("Overscan", &crt_settings.overscan, 0.0f, 0.12f, "%.3f", 0);
-
-        igSeparator();
-        igSliderFloat("Scanline Strength", &crt_settings.scanline_strength,
-                      0.0f, 1.0f, "%.2f", 0);
-        igSliderFloat("Scanline Scale", &crt_settings.scanline_scale,
-                      0.25f, 3.0f, "%.2f", 0);
-        igSliderFloat("Scanline Thickness", &crt_settings.scanline_thickness,
-                      0.5f, 4.0f, "%.2f", 0);
-
-        igSeparator();
-        igSliderFloat("Mask Strength", &crt_settings.mask_strength,
-                      0.0f, 1.0f, "%.2f", 0);
-        igSliderFloat("Mask Scale", &crt_settings.mask_scale,
-                      0.5f, 4.0f, "%.2f", 0);
-
-        igSeparator();
-        igSliderFloat("Vignette Strength", &crt_settings.vignette_strength,
-                      0.0f, 1.0f, "%.2f", 0);
-        igSliderFloat("Vignette Size", &crt_settings.vignette_size,
-                      0.25f, 1.25f, "%.2f", 0);
-        igSliderFloat("Chroma Offset", &crt_settings.chroma_offset,
-                      0.0f, 3.0f, "%.2f", 0);
-        igSliderFloat("Blend Strength", &crt_settings.blend_strength,
-                      0.0f, 1.0f, "%.2f", 0);
-        igSliderFloat("Blend Radius", &crt_settings.blend_radius,
-                      0.0f, 3.0f, "%.2f", 0);
-        igSliderFloat("Noise", &crt_settings.noise_strength,
-                      0.0f, 0.15f, "%.3f", 0);
-        igSliderFloat("Flicker", &crt_settings.flicker_strength,
-                      0.0f, 0.10f, "%.3f", 0);
-        igSliderFloat("Glow", &crt_settings.glow_strength,
-                      0.0f, 0.50f, "%.2f", 0);
-
-        MikuPan_ClampCrtSettings(&crt_settings);
-
-        if (igButton("Reset CRT", (ImVec2) {0.0f, 0.0f}))
-        {
-            crt_settings = crt_defaults;
         }
 
-        if (igMenuItem_Bool("Save Configuration", NULL, false, true))
+        if (igBeginMenu("Camera", 1))
         {
-            MikuPan_UiSaveConfiguration();
-        }
-
-        if (config_save_status[0] != '\0')
-        {
-            igTextDisabled("%s", config_save_status);
-        }
-
-        igEndMenu();
-    }
-
-    if (igBeginMenu("Camera", 1))
-    {
         igCheckbox("Third-Person Camera", (bool *) &camera_third_person_enabled);
         if (camera_third_person_enabled)
         {
@@ -2684,10 +2717,10 @@ void MikuPan_UiMenuBar(void)
         }
 
         igEndMenu();
-    }
+        }
 
-    if (igBeginMenu("Profiler", 1))
-    {
+        if (igBeginMenu("Profiler", 1))
+        {
         if (igCheckbox("FPS Counter", (bool *) &show_fps))
         {
             mikupan_configuration.show_fps = show_fps;
@@ -2695,33 +2728,7 @@ void MikuPan_UiMenuBar(void)
 
         igCheckbox("Frame Time Graph", (bool *) &show_frame_time_graph);
         igEndMenu();
-    }
-
-    if (igBeginMenu("Input", 1))
-    {
-        MikuPan_ControllerDrawDeviceSelectorUi();
-        igSeparator();
-
-        igCheckbox("Controller / Joystick Mapping", (bool *)&show_controller_remap);
-
-        if (igMenuItem_Bool("Reset Bindings to Defaults", NULL, false, true))
-        {
-            MikuPan_ControllerResetBindings();
         }
-
-        igEndMenu();
-    }
-
-    if (igBeginMenu("Debug", 1))
-    {
-        igCheckbox("Ingame Debug Menu", (bool *) &dbg_wrk.mode_on);
-
-        igSeparator();
-        igCheckbox("Shader Reload", (bool *) &show_shader_reload);
-        igCheckbox("Draw Call Inspector", (bool *) &show_draw_inspector);
-        igCheckbox("Camera World Info", (bool *) &show_camera_debug);
-        igCheckbox("Photo Debug Window", (bool *) &show_photo_debug_window);
-        igTextDisabled("(Shadow Debug: Rendering > Shadows)");
 
         igEndMenu();
     }

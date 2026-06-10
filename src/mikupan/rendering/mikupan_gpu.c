@@ -139,6 +139,8 @@ static MikuPan_MaterialData g_material_data = {
 extern SDL_GPUShader *MikuPan_GetGPUVertexShader(int idx);
 extern SDL_GPUShader *MikuPan_GetGPUFragmentShader(int idx);
 
+static SDL_GPUTextureFormat PickSupportedDepthFormat(void);
+
 static unsigned int AllocBufferId(void)
 {
     for (unsigned int i = g_next_buffer_id; i < MIKUPAN_GPU_MAX_BUFFERS; i++)
