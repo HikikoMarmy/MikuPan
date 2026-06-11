@@ -24,7 +24,7 @@ int CheckCoordCache(int cn);
 void SetVU1Header();
 void CalcVertexBuffer(u_int *prim);
 u_int* SetVUVNData(u_int *prim);
-u_int* SetVUVNDataPost(u_int *prim);
+u_int* SetVUVNDataPost(u_int *prim, int allow_gpu_skin);
 void printTEX0(sceGsTex0 *tex0);
 void SetVUMeshData(u_int *prim);
 void SetVUMeshDataPost(u_int *prim);

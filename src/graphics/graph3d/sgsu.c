@@ -15,6 +15,7 @@
 #include "graphics/graph3d/sgdma.h"
 #include "graphics/graph3d/sglib.h"
 #include "graphics/graph3d/sglight.h"
+#include "main/glob.h"
 #include "mikupan/mikupan_logging_c.h"
 #include "mikupan/rendering/mikupan_profiler.h"
 #include "mikupan/rendering/mikupan_renderer.h"
@@ -426,6 +427,26 @@ static int SkinAllowed(void)
         && !MikuPan_IsShadowReceiverPassActive();
 }
 
+static int SkinAllowedForMeshType(int mtype)
+{
+    const int raw_type = mtype & 0xff;
+
+    if (raw_type == 0x2)
+    {
+        return 1;
+    }
+
+    /* Scene MIM updates can edit 0xA source vertex blocks every frame. The
+     * GPU-skinned path caches those bind blocks as static, so keep scene 0xA
+     * meshes on the CPU path until dynamic bind-data invalidation exists. */
+    if (raw_type == 0xA && realtime_scene_flg == 0)
+    {
+        return 1;
+    }
+
+    return 0;
+}
+
 int  MikuPan_GpuSkinningEnabled(void) { return g_gpu_skin_enabled; }
 void MikuPan_SetGpuSkinningEnabled(int enabled) { g_gpu_skin_enabled = enabled ? 1 : 0; }
 int  MikuPan_SkinMode(void) { return g_skin_mode; }
@@ -522,7 +543,7 @@ u_int *SetVUVNData(u_int *prim)
     return (u_int *) bak;
 }
 
-u_int *SetVUVNDataPost(u_int *prim)
+u_int *SetVUVNDataPost(u_int *prim, int allow_gpu_skin)
 {
     MIKUPAN_PERF_SCOPE(PERF_SECT_SKIN_PREP);
     int i;
@@ -555,7 +576,7 @@ u_int *SetVUVNDataPost(u_int *prim)
                     copy_skinned_data(vp, (float *) MikuPan_GetHostPointer(prim[0]), (float *) MikuPan_GetHostPointer(prim[1]));
                 }
             }
-            else if (SkinAllowed())
+            else if (allow_gpu_skin && SkinAllowed())
             {
                 /* GPU skin: record the walk context + gather the bone palette
                  * and skip the per-vertex CPU transform entirely. The renderer
@@ -586,7 +607,7 @@ u_int *SetVUVNDataPost(u_int *prim)
                     copy_skinned_data(vp, (float *) MikuPan_GetHostPointer(prim[0]), (float *) MikuPan_GetHostPointer(prim[1]));
                 }
             }
-            else if (SkinAllowed())
+            else if (allow_gpu_skin && SkinAllowed())
             {
                 SkinPrepare(prim, vh->vnum, 3);
             }
@@ -722,7 +743,7 @@ void SetVUMeshDataPost(u_int *prim)
     switch (mtype & (0x1 | 0x2 | 0x10 | 0x40))// 0x53
     {
         case 0:
-            read_p = SetVUVNDataPost(vuvnprim);
+            read_p = SetVUVNDataPost(vuvnprim, 0);
 
             //MikuPan_RenderMeshType0x2((SGDPROCUNITHEADER*)vuvnprim, (SGDPROCUNITHEADER*)prim, (float*)read_p);
 
@@ -736,7 +757,7 @@ void SetVUMeshDataPost(u_int *prim)
             FlushModel(0);
             break;
         case 2:
-            read_p = SetVUVNDataPost(vuvnprim);
+            read_p = SetVUVNDataPost(vuvnprim, SkinAllowedForMeshType(mtype));
 
             /// Needs to be its own function since the actual type is 0x10
             MikuPan_RenderMeshType0x2((void*)vuvnprim, (void*)prim, (float*)read_p);
