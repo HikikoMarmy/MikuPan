@@ -2524,18 +2524,6 @@ void MikuPan_UiMenuBar(void)
             MikuPan_ApplyUiFontScale();
         }
 
-        igSeparatorText("Save / Game Data Folder");
-        igInputText("Folder", mikupan_configuration.data_folder,
-                    sizeof(mikupan_configuration.data_folder), 0, NULL, NULL);
-        if (igButton("Browse...", (ImVec2) {0.0f, 0.0f}))
-        {
-            const char *start = mikupan_configuration.data_folder[0] != '\0'
-                                    ? mikupan_configuration.data_folder
-                                    : NULL;
-            SDL_ShowOpenFolderDialog(MikuPan_DataFolderSelected, NULL,
-                                     ui_window, start, false);
-        }
-
         igSeparator();
         if (igMenuItem_Bool("Take Screenshot", "F12", false, true))
         {

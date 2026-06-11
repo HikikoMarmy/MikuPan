@@ -92,7 +92,6 @@ static void MikuPan_ConvertRGBA8ToBlackWhite(unsigned char *rgba,
 
 SDL_AppResult MikuPan_Init()
 {
-    MikuPan_LoadConfiguration(NULL);
     SDL_SetAppMetadata("MikuPan", "1.0", "MikuPan");
 
     info_log("Initializing SDL");
@@ -102,6 +101,10 @@ SDL_AppResult MikuPan_Init()
         info_log("Couldn't initialize SDL: %s", SDL_GetError());
         return SDL_APP_FAILURE;
     }
+
+    /* Load configuration after SDL is up so the data-folder default can resolve
+     * SDL_GetBasePath(); this runs before any window/asset use of the config. */
+    MikuPan_LoadConfiguration(NULL);
 
     SDL_SetHint(SDL_HINT_MAIN_CALLBACK_RATE, "60");
 
@@ -872,8 +875,8 @@ void MikuPan_EnableMirrorScissorFromNdcBounds(float minx, float miny, float maxx
 
     int sx0 = (int)(((minx * 0.5f) + 0.5f) * (float)render_w);
     int sx1 = (int)((((maxx * 0.5f) + 0.5f) * (float)render_w) + 0.999f);
-    int sy0 = (int)(((miny * 0.5f) + 0.5f) * (float)render_h);
-    int sy1 = (int)((((maxy * 0.5f) + 0.5f) * (float)render_h) + 0.999f);
+    int sy0 = (int)(((1.0f - maxy) * 0.5f) * (float)render_h);
+    int sy1 = (int)((((1.0f - miny) * 0.5f) * (float)render_h) + 0.999f);
 
     sx0 = MikuPan_ClampInt(sx0, 0, render_w);
     sx1 = MikuPan_ClampInt(sx1, 0, render_w);

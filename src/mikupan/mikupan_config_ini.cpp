@@ -2,6 +2,8 @@
 
 #include "mikupan_logging.h"
 
+#include <SDL3/SDL_filesystem.h>
+
 #include <cstring>
 #include <filesystem>
 #include <fstream>
@@ -315,15 +317,27 @@ extern "C" void MikuPan_LoadConfiguration(const char *filename)
     if (filename != nullptr && filename[0] != '\0')
     {
         TryLoadConfigurationFile(filename);
-        return;
     }
-
-    if (TryLoadConfigurationFile("mikupan.ini"))
+    else
     {
-        return;
+        TryLoadConfigurationFile("mikupan.ini");
     }
 
-    TryLoadConfigurationFile("mikupan.ini");
+    // Default the data folder to the executable's resource directory (SDL's
+    // base path) when nothing configured one, so the game finds its assets
+    // out-of-the-box and the resolved path is shown/editable in the UI. An
+    // explicit [paths]/data_folder in the config still takes precedence.
+    if (mikupan_configuration.data_folder[0] == '\0')
+    {
+        const char *base = SDL_GetBasePath();
+        if (base != nullptr)
+        {
+            std::strncpy(mikupan_configuration.data_folder, base,
+                         sizeof(mikupan_configuration.data_folder) - 1);
+            mikupan_configuration.data_folder
+                [sizeof(mikupan_configuration.data_folder) - 1] = '\0';
+        }
+    }
 }
 
 extern "C" int MikuPan_SaveConfiguration(const char *filename)
