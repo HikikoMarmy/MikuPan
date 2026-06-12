@@ -224,7 +224,8 @@ SDL_AppResult MikuPan_Init()
     }
 
     if (!MikuPan_GPUInit(mikupan_render.window, desired_vsync,
-                         mikupan_configuration.renderer.gpu_driver))
+                         mikupan_configuration.renderer.gpu_driver,
+                         mikupan_configuration.renderer.gpu_debug))
     {
         return SDL_APP_FAILURE;
     }

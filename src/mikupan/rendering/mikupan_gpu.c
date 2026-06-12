@@ -578,19 +578,23 @@ static void CreateFallbackTexture(void)
     SDL_ReleaseGPUTransferBuffer(g_device, transfer);
 }
 
-int MikuPan_GPUInit(SDL_Window* window, int vsync, const char* gpu_driver)
+int MikuPan_GPUInit(SDL_Window* window, int vsync, const char* gpu_driver,
+                    int gpu_debug)
 {
     g_window = window;
 
+    const bool debug = gpu_debug ? true : false;
     const char* requested =
         (gpu_driver != NULL && gpu_driver[0] != '\0') ? gpu_driver : NULL;
-    g_device = SDL_CreateGPUDevice(MIKUPAN_GPU_SHADER_FORMATS, true, requested);
+    g_device =
+        SDL_CreateGPUDevice(MIKUPAN_GPU_SHADER_FORMATS, debug, requested);
     if (g_device == NULL && requested != NULL)
     {
         info_log("Could not create SDL_GPU device with driver '%s' (%s), "
                  "falling back to automatic selection",
                  requested, SDL_GetError());
-        g_device = SDL_CreateGPUDevice(MIKUPAN_GPU_SHADER_FORMATS, true, NULL);
+        g_device =
+            SDL_CreateGPUDevice(MIKUPAN_GPU_SHADER_FORMATS, debug, NULL);
     }
 
     if (g_device == NULL)

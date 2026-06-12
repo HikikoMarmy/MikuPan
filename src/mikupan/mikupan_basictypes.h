@@ -87,6 +87,7 @@ typedef struct
      * Empty = let SDL pick. The device is created once, so a change only
      * applies on the next launch. */
     char gpu_driver[32];
+    int gpu_debug;
 } MikuPan_ConfigRenderer;
 
 /* Apply a window display mode to the SDL window.

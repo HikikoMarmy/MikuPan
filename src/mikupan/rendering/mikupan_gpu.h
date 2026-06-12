@@ -80,7 +80,11 @@ typedef struct MikuPan_GPUUniformBlock
 /// Create the SDL_GPU device and claim the window. gpu_driver requests an
 /// SDL_GPU backend by name ("vulkan", "direct3d12", ...); NULL or "" lets SDL
 /// pick. Falls back to automatic selection when the named driver fails.
-int  MikuPan_GPUInit(SDL_Window *window, int vsync, const char *gpu_driver);
+/// gpu_debug creates the device in debug mode (D3D12 debug layer / Vulkan
+/// validation): a huge per-command CPU cost, so it should stay off outside of
+/// debugging sessions.
+int  MikuPan_GPUInit(SDL_Window *window, int vsync, const char *gpu_driver,
+                     int gpu_debug);
 void MikuPan_GPUShutdown(void);
 void MikuPan_GPUWaitIdle(void);
 void MikuPan_GPUSetVsync(int vsync);

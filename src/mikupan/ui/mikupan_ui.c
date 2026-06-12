@@ -116,8 +116,9 @@ static int resolution_selected = 0;
 
 /* SDL_GPU backend selector. Index 0 is always "Auto" (empty driver name); the
  * rest mirror SDL_GetGPUDriver. Populated once in MikuPan_InitUi. Drivers that
- * cannot consume the game's SPIR-V shaders stay listed but disabled. The
- * device is created once at startup, so a change applies on the next launch. */
+ * consume none of the shipped shader formats (MIKUPAN_GPU_SHADER_FORMATS)
+ * stay listed but disabled. The device is created once at startup, so a
+ * change applies on the next launch. */
 #define MIKUPAN_MAX_GPU_DRIVERS 8
 static char gpu_driver_names[MIKUPAN_MAX_GPU_DRIVERS + 1][32];
 static char gpu_driver_labels[MIKUPAN_MAX_GPU_DRIVERS + 1][64];
@@ -1223,7 +1224,7 @@ static void MikuPan_PopulateGpuDriverList(void)
                                                                            : 0;
         snprintf(gpu_driver_labels[idx], sizeof(gpu_driver_labels[idx]),
                  "%s%s", MikuPan_GpuDriverDisplayName(name),
-                 gpu_driver_supported[idx] ? "" : " (no SPIR-V support)");
+                 gpu_driver_supported[idx] ? "" : " (unsupported)");
 
         if (SDL_strcasecmp(name, mikupan_configuration.renderer.gpu_driver)
             == 0)
