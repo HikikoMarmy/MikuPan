@@ -906,6 +906,14 @@ void MikuPan_ClearMirrorScissorDepth(void)
 
     MikuPan_GPUSetDepthWrite(1);
     MikuPan_GPUClearDepth();
+    /*
+     * SDL_GPU clears happen at render-pass begin, not immediately like
+     * glClear. Materialize this pass while the mirror scissor is still active;
+     * otherwise MikuPan_DisableMirrorScissor below would turn the deferred
+     * depth clear into a full-screen clear.
+     */
+    MikuPan_GPUBeginRenderPass();
+    MikuPan_GPUFlushRenderPass();
     MikuPan_ResetRenderStateCache();
 }
 

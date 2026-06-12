@@ -89,7 +89,7 @@ void MikuPan_GPUDestroyInternalBuffer(void);
 unsigned int MikuPan_GPUGetSceneTextureId(void);
 unsigned int MikuPan_GPUGetSceneWidth(void);
 unsigned int MikuPan_GPUGetSceneHeight(void);
-int MikuPan_GPUGetSceneMSAA();
+int MikuPan_GPUGetSceneMSAA(void);
 
 unsigned int MikuPan_GPUCreateBuffer(unsigned int size,
                                      MikuPan_GPUBufferKind kind);

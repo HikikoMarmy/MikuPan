@@ -90,7 +90,7 @@ int MikuPan_GsGetDownloadBytes(void);
 float MikuPan_GsGetDownloadMs(void);
 
 // -- State -------------------------------------------------------------------
-const int msaa_list[] = {0, 2, 4, 8, 16, 32};
+const int msaa_list[] = {0, 2, 4, 8};
 int show_fps = 0;
 int show_menu_bar = 0;
 
@@ -2616,7 +2616,7 @@ void MikuPan_UiMenuBar(void)
                 igEndCombo();
             }
 
-            //igTextDisabled("Scene samples: %dx", MikuPan_GPUGetSceneMSAA());
+            igTextDisabled("Scene samples: %dx", MikuPan_GPUGetSceneMSAA());
 
             MikuPan_UiShadowResolutionCombo("Shadow Resolution");
 

@@ -935,7 +935,7 @@ unsigned int MikuPan_GPUGetSceneHeight(void)
     return (unsigned int) g_scene_height;
 }
 
-int MikuPan_GPUGetSceneMSAA()
+int MikuPan_GPUGetSceneMSAA(void)
 {
     return g_scene_msaa;
 }
