@@ -1219,7 +1219,7 @@ static void MikuPan_PopulateGpuDriverList(void)
         snprintf(gpu_driver_names[idx], sizeof(gpu_driver_names[idx]), "%s",
                  name);
         gpu_driver_supported[idx] =
-            SDL_GPUSupportsShaderFormats(SDL_GPU_SHADERFORMAT_SPIRV, name) ? 1
+            SDL_GPUSupportsShaderFormats(MIKUPAN_GPU_SHADER_FORMATS, name) ? 1
                                                                            : 0;
         snprintf(gpu_driver_labels[idx], sizeof(gpu_driver_labels[idx]),
                  "%s%s", MikuPan_GpuDriverDisplayName(name),
@@ -2719,7 +2719,7 @@ void MikuPan_UiMenuBar(void)
 
             if (igBeginCombo("MSAA", msaa_dropdown_list, 0))
             {
-                for (int i = 0; i < 6; i++)
+                for (int i = 0; i < sizeof(msaa_list)/sizeof(msaa_list[0]); i++)
                 {
                     bool is_selected = (msaa_samples == i);
                     snprintf(msaa_dropdown_list, sizeof(msaa_dropdown_list),

@@ -1,12 +1,16 @@
 # ---------------------------------------------------------------------------
-# Provide the SDL_shadercross CLI and compile the HLSL shaders to SPIR-V as
-# part of the build.
+# Provide the SDL_shadercross CLI and compile the HLSL shaders to every
+# bytecode format the SDL_GPU backends consume as part of the build:
+#   resources/shaders/spirv/*.spv  - Vulkan
+#   resources/shaders/dxil/*.dxil  - Direct3D 12
+#   resources/shaders/msl/*.msl    - Metal
 #
-# The SDL_GPU renderer loads pre-compiled SPIR-V from resources/shaders/spirv/
-# at runtime. This module runs `shadercross` over resources/shaders/hlsl/*.hlsl
-# into that directory (incrementally — only when a .hlsl or the shared .hlsli
-# changes). The existing POST_BUILD `copy_directory resources` then deploys the
-# fresh .spv next to the executable.
+# The SDL_GPU renderer picks the directory matching the active device's
+# shader format at runtime (mikupan_shader.c). This module runs `shadercross`
+# over resources/shaders/hlsl/*.hlsl into those directories (incrementally —
+# only when a .hlsl or the shared .hlsli changes). The existing POST_BUILD
+# `copy_directory resources` then deploys the fresh files next to the
+# executable.
 #
 # How the CLI is obtained:
 #   - Windows: a prebuilt CLI (plus its runtime DLLs) is committed under
@@ -54,7 +58,7 @@ if(NOT SHADERCROSS_EXECUTABLE)
             NAMES shadercross
             HINTS ${MIKUPAN_SHADERCROSS_DIR}
             PATHS ENV PATH
-            DOC "Path to the SDL_shadercross CLI used to compile HLSL shaders to SPIR-V."
+            DOC "Path to the SDL_shadercross CLI used to compile HLSL shaders to SPIR-V/DXIL/MSL."
     )
 endif()
 
@@ -68,7 +72,7 @@ if(NOT SHADERCROSS_EXECUTABLE)
                 "shadercross not found: HLSL shaders will NOT be recompiled automatically.\n"
                 "  Expected a prebuilt CLI under ${MIKUPAN_SHADERCROSS_DIR}\n"
                 "  or pass -DSHADERCROSS_EXECUTABLE=<path>. The build will use the\n"
-                "  existing resources/shaders/spirv/*.spv as-is.")
+                "  existing resources/shaders/{spirv,dxil,msl}/ files as-is.")
         # Empty target so add_dependencies(MikuPan compile_shaders) stays valid.
         add_custom_target(compile_shaders)
         return()
@@ -130,56 +134,70 @@ else()
     message(STATUS "shadercross: ${SHADERCROSS_EXECUTABLE}")
 endif()
 
-set(MIKUPAN_HLSL_DIR  ${CMAKE_SOURCE_DIR}/resources/shaders/hlsl)
-set(MIKUPAN_SPIRV_DIR ${CMAKE_SOURCE_DIR}/resources/shaders/spirv)
-
-file(MAKE_DIRECTORY ${MIKUPAN_SPIRV_DIR})
+set(MIKUPAN_HLSL_DIR ${CMAKE_SOURCE_DIR}/resources/shaders/hlsl)
 
 # CONFIGURE_DEPENDS re-globs on build so newly added shaders are picked up
 # without a manual re-configure.
 file(GLOB MIKUPAN_HLSL_SHADERS  CONFIGURE_DEPENDS ${MIKUPAN_HLSL_DIR}/*.hlsl)
 file(GLOB MIKUPAN_HLSL_INCLUDES CONFIGURE_DEPENDS ${MIKUPAN_HLSL_DIR}/*.hlsli)
 
-# Where the running executable loads shaders from (next to MikuPan.exe). The
-# POST_BUILD `copy_directory resources` only refreshes this on a relink, so a
-# shader-only change wouldn't reach the app — deploy each rebuilt .spv here too.
-set(MIKUPAN_RUNTIME_SPIRV_DIR ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/resources/shaders/spirv)
+# One "<directory>=<extension>" entry per SDL_GPU shader format the game can
+# load at runtime: spirv/*.spv (Vulkan), dxil/*.dxil (Direct3D 12) and
+# msl/*.msl (Metal). shadercross picks the destination format from the output
+# extension. mikupan_shader.c resolves the directory matching the device.
+set(MIKUPAN_SHADER_FORMATS "spirv=spv" "dxil=dxil" "msl=msl")
 
-set(MIKUPAN_SPIRV_OUTPUTS "")
-foreach(hlsl ${MIKUPAN_HLSL_SHADERS})
-    get_filename_component(hlsl_name ${hlsl} NAME)                # heat_haze.frag.hlsl
-    string(REGEX REPLACE "\\.hlsl$" ".spv" spv_name ${hlsl_name})  # heat_haze.frag.spv
-    set(spv_src ${MIKUPAN_SPIRV_DIR}/${spv_name})
-    set(spv_run ${MIKUPAN_RUNTIME_SPIRV_DIR}/${spv_name})
+set(MIKUPAN_SHADER_OUTPUTS "")
+foreach(format ${MIKUPAN_SHADER_FORMATS})
+    string(REPLACE "=" ";" _format_parts ${format})
+    list(GET _format_parts 0 format_dir)
+    list(GET _format_parts 1 format_ext)
 
-    # 1. Compile HLSL -> SPIR-V into the source tree (recompiles whenever this
-    #    shader OR the shared mikupan_common.hlsli changes). shadercross infers
-    #    source (HLSL), destination (SPIRV) and stage from the file names. Do NOT
-    #    pass --cull: the fragment shaders rely on both samplers (uTexture +
-    #    uAuxTexture) staying declared so the runtime's num_samplers=2 matches.
-    #    MIKUPAN_SHADERCROSS_DEP is a target-level dependency only: it makes the
-    #    from-source tool build first but doesn't retrigger shader compiles.
-    add_custom_command(
-            OUTPUT ${spv_src}
-            COMMAND ${SHADERCROSS_EXECUTABLE} ${hlsl} -o ${spv_src} -I ${MIKUPAN_HLSL_DIR}
-            DEPENDS ${hlsl} ${MIKUPAN_HLSL_INCLUDES} ${MIKUPAN_SHADERCROSS_DEP}
-            COMMENT "shadercross ${hlsl_name} -> ${spv_name}"
-            VERBATIM
-    )
+    set(out_dir ${CMAKE_SOURCE_DIR}/resources/shaders/${format_dir})
+    file(MAKE_DIRECTORY ${out_dir})
 
-    # 2. Deploy the rebuilt .spv next to the executable so the change takes
-    #    effect on the next build without needing MikuPan to relink.
-    add_custom_command(
-            OUTPUT ${spv_run}
-            COMMAND ${CMAKE_COMMAND} -E make_directory ${MIKUPAN_RUNTIME_SPIRV_DIR}
-            COMMAND ${CMAKE_COMMAND} -E copy ${spv_src} ${spv_run}
-            DEPENDS ${spv_src}
-            VERBATIM
-    )
+    # Where the running executable loads shaders from (next to MikuPan.exe).
+    # The POST_BUILD `copy_directory resources` only refreshes this on a
+    # relink, so a shader-only change wouldn't reach the app — deploy each
+    # rebuilt file here too.
+    set(run_dir ${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/resources/shaders/${format_dir})
 
-    list(APPEND MIKUPAN_SPIRV_OUTPUTS ${spv_run})
+    foreach(hlsl ${MIKUPAN_HLSL_SHADERS})
+        get_filename_component(hlsl_name ${hlsl} NAME)  # heat_haze.frag.hlsl
+        string(REGEX REPLACE "\\.hlsl$" ".${format_ext}" out_name ${hlsl_name})
+        set(out_src ${out_dir}/${out_name})
+        set(out_run ${run_dir}/${out_name})
+
+        # 1. Compile the HLSL into the source tree (recompiles whenever this
+        #    shader OR the shared mikupan_common.hlsli changes). shadercross
+        #    infers source (HLSL) and stage from the file names. Do NOT pass
+        #    --cull: the fragment shaders rely on both samplers (uTexture +
+        #    uAuxTexture) staying declared so the runtime's num_samplers=2
+        #    matches. MIKUPAN_SHADERCROSS_DEP is a target-level dependency
+        #    only: it makes the from-source tool build first but doesn't
+        #    retrigger shader compiles.
+        add_custom_command(
+                OUTPUT ${out_src}
+                COMMAND ${SHADERCROSS_EXECUTABLE} ${hlsl} -o ${out_src} -I ${MIKUPAN_HLSL_DIR}
+                DEPENDS ${hlsl} ${MIKUPAN_HLSL_INCLUDES} ${MIKUPAN_SHADERCROSS_DEP}
+                COMMENT "shadercross ${hlsl_name} -> ${format_dir}/${out_name}"
+                VERBATIM
+        )
+
+        # 2. Deploy the rebuilt file next to the executable so the change
+        #    takes effect on the next build without needing MikuPan to relink.
+        add_custom_command(
+                OUTPUT ${out_run}
+                COMMAND ${CMAKE_COMMAND} -E make_directory ${run_dir}
+                COMMAND ${CMAKE_COMMAND} -E copy ${out_src} ${out_run}
+                DEPENDS ${out_src}
+                VERBATIM
+        )
+
+        list(APPEND MIKUPAN_SHADER_OUTPUTS ${out_run})
+    endforeach()
 endforeach()
 
 # Built on every MikuPan build (add_dependencies in CMakeLists.txt), so any
 # changed shader is recompiled and redeployed each time.
-add_custom_target(compile_shaders DEPENDS ${MIKUPAN_SPIRV_OUTPUTS})
+add_custom_target(compile_shaders DEPENDS ${MIKUPAN_SHADER_OUTPUTS})

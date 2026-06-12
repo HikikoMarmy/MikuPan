@@ -62,7 +62,41 @@ static const char *kShaderNames[MAX_SHADER_PROGRAMS] = {
     "MESH_0x2_SKINNED", "MESH_0xA_SKINNED",
 };
 
+typedef struct
+{
+    SDL_GPUShaderFormat format;
+    const char *dir;       ///< subdirectory under resources/shaders/
+    const char *extension; ///< bytecode file extension, with dot
+    const char *entrypoint;
+} MikuPan_ShaderFormatInfo;
+
+/* Every format the build produces (cmake/shadercross.cmake), ordered by
+ * preference when a device supports several. The MSL entry point is "main0":
+ * SPIRV-Cross renames main, which is a reserved word in MSL. */
+static const MikuPan_ShaderFormatInfo kShaderFormats[] = {
+    {SDL_GPU_SHADERFORMAT_SPIRV, "spirv", ".spv", "main"},
+    {SDL_GPU_SHADERFORMAT_DXIL, "dxil", ".dxil", "main"},
+    {SDL_GPU_SHADERFORMAT_MSL, "msl", ".msl", "main0"},
+};
+
+static const MikuPan_ShaderFormatInfo *PickShaderFormat(void)
+{
+    SDL_GPUShaderFormat supported =
+        SDL_GetGPUShaderFormats(MikuPan_GPUGetDevice());
+
+    for (size_t i = 0; i < SDL_arraysize(kShaderFormats); i++)
+    {
+        if (supported & kShaderFormats[i].format)
+        {
+            return &kShaderFormats[i];
+        }
+    }
+
+    return NULL;
+}
+
 static int BuildShaderBytecodePath(const char *source_path,
+                                   const MikuPan_ShaderFormatInfo *format,
                                    char *out_path,
                                    int out_path_size)
 {
@@ -87,8 +121,9 @@ static int BuildShaderBytecodePath(const char *source_path,
     }
 
     return snprintf(out_path, (size_t)out_path_size,
-                    "./resources/shaders/spirv/%.*s.spv",
-                    (int)len, name) < out_path_size;
+                    "./resources/shaders/%s/%.*s%s",
+                    format->dir, (int)len, name,
+                    format->extension) < out_path_size;
 }
 
 static Uint8 *ReadShaderBytecode(const char *path,
@@ -131,10 +166,22 @@ static SDL_GPUShader *CompileStageFromFile(const char *path,
                                            int err_buf_size)
 {
     char bytecode_path[512];
-    size_t spirv_size = 0;
-    Uint8 *spirv;
+    size_t bytecode_size = 0;
+    Uint8 *bytecode;
 
-    if (!BuildShaderBytecodePath(path, bytecode_path, (int)sizeof(bytecode_path)))
+    const MikuPan_ShaderFormatInfo *format = PickShaderFormat();
+    if (format == NULL)
+    {
+        if (err_buf && err_buf_size > 0)
+        {
+            snprintf(err_buf, err_buf_size,
+                     "No shipped shader format matches the GPU device");
+        }
+        return NULL;
+    }
+
+    if (!BuildShaderBytecodePath(path, format, bytecode_path,
+                                 (int)sizeof(bytecode_path)))
     {
         if (err_buf && err_buf_size > 0)
         {
@@ -144,18 +191,18 @@ static SDL_GPUShader *CompileStageFromFile(const char *path,
         return NULL;
     }
 
-    spirv = ReadShaderBytecode(bytecode_path, &spirv_size,
-                               err_buf, err_buf_size);
-    if (spirv == NULL)
+    bytecode = ReadShaderBytecode(bytecode_path, &bytecode_size,
+                                  err_buf, err_buf_size);
+    if (bytecode == NULL)
     {
         return NULL;
     }
 
     SDL_GPUShaderCreateInfo create_info = {0};
-    create_info.code_size = spirv_size;
-    create_info.code = spirv;
-    create_info.entrypoint = "main";
-    create_info.format = SDL_GPU_SHADERFORMAT_SPIRV;
+    create_info.code_size = bytecode_size;
+    create_info.code = bytecode;
+    create_info.entrypoint = format->entrypoint;
+    create_info.format = format->format;
     create_info.stage = stage;
     create_info.num_samplers =
         stage == SDL_GPU_SHADERSTAGE_FRAGMENT ? 2u : 0u;
@@ -166,7 +213,7 @@ static SDL_GPUShader *CompileStageFromFile(const char *path,
     SDL_GPUShader *shader =
         SDL_CreateGPUShader(MikuPan_GPUGetDevice(), &create_info);
 
-    free(spirv);
+    free(bytecode);
 
     if (shader == NULL && err_buf && err_buf_size > 0)
     {

@@ -11,6 +11,14 @@
 extern "C" {
 #endif
 
+/// Every shader bytecode format shipped in resources/shaders/ (one
+/// subdirectory per format, built by cmake/shadercross.cmake). The device is
+/// created with this mask so SDL can pick any backend that consumes one of
+/// them; mikupan_shader.c loads the file matching the active device.
+#define MIKUPAN_GPU_SHADER_FORMATS                                            \
+    (SDL_GPU_SHADERFORMAT_SPIRV | SDL_GPU_SHADERFORMAT_DXIL                   \
+     | SDL_GPU_SHADERFORMAT_MSL)
+
 typedef enum MikuPan_GPUTarget
 {
     MIKUPAN_GPU_TARGET_SCENE = 0,
