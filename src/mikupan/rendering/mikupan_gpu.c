@@ -167,7 +167,7 @@ static void TrimUploadTransferPool(void)
     for (int i = 0; i < g_xfer_pool_count; i++)
     {
         GPUTransferPoolEntry* e = &g_xfer_pool[i];
-        
+
         if (e->buffer != NULL
             && (g_gpu_frame - e->last_frame) >= MIKUPAN_XFER_TRIM_FRAMES)
         {
@@ -196,6 +196,7 @@ static unsigned int g_scene_depth_id = 0;
 static int g_scene_width = 0;
 static int g_scene_height = 0;
 static int g_scene_msaa = 1; /* actual sample count in use (1,2,4,8) */
+static int g_pipeline_scene_msaa = 1;
 
 static MikuPan_GPUTarget g_target = MIKUPAN_GPU_TARGET_SCENE;
 static SDL_GPUTexture* g_target_color = NULL;
@@ -886,6 +887,12 @@ void MikuPan_GPUCreateInternalBuffer(int width, int height, int msaa)
 
     g_scene_width = width;
     g_scene_height = height;
+
+    if (g_scene_msaa != g_pipeline_scene_msaa)
+    {
+        MikuPan_GPUInvalidatePipelines();
+        g_pipeline_scene_msaa = g_scene_msaa;
+    }
 }
 
 void MikuPan_GPUDestroyInternalBuffer(void)
@@ -917,13 +924,20 @@ unsigned int MikuPan_GPUGetSceneTextureId(void)
 {
     return g_scene_texture_id;
 }
+
 unsigned int MikuPan_GPUGetSceneWidth(void)
 {
     return (unsigned int) g_scene_width;
 }
+
 unsigned int MikuPan_GPUGetSceneHeight(void)
 {
     return (unsigned int) g_scene_height;
+}
+
+int MikuPan_GPUGetSceneMSAA()
+{
+    return g_scene_msaa;
 }
 
 unsigned int MikuPan_GPUCreateBuffer(unsigned int size,

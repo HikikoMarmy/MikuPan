@@ -81,12 +81,11 @@ void MikuPan_PerfScopeEnd(MikuPan_PerfScope *s);
 void MikuPan_TimedDrawElements(GLenum mode, GLsizei count, GLenum type, const void *indices);
 void MikuPan_TimedDrawArrays(GLenum mode, GLint first, GLsizei count);
 
-/* ── Frame timing (CPU/GPU split via fence-sync) ────────────────────── */
+/* Frame timing (CPU / SDL_GPU idle-wait split) */
 
-/// Split CPU and GPU wall-clock for the perf-debug graph. CPU time = from
-/// MikuPan_PerfBeginFrame through the moment we've submitted all GL commands
-/// (after our final glFlush). GPU time = wall-clock the GPU takes to drain
-/// that work, measured via fence-sync. CPU + GPU ≈ frame time minus vsync.
+/// Split CPU submission and post-submit SDL_GPU idle wait for the perf-debug
+/// graph. The wait value is a back-pressure/presentation signal, not a
+/// hardware GPU-duration query, and can include vsync pacing.
 void  MikuPan_PerfBeginFrame(void);
 void  MikuPan_PerfEndFrame(void);
 void  MikuPan_PerfResetFrame(void);

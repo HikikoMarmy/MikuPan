@@ -12,36 +12,22 @@
 static double g_perf_section_ms_curr[PERF_SECT_COUNT] = {0};
 static double g_perf_section_ms_last[PERF_SECT_COUNT] = {0};
 
-/// Per-frame CPU/GPU timing for the perf-debug graph.
+/// Per-frame CPU / SDL_GPU idle-wait timing for the perf-debug graph.
 ///
 /// We measure two distinct, non-overlapping quantities:
 ///
 ///   CPU time = wall-clock from MikuPan_PerfBeginFrame up to the moment the
-///              CPU has finished submitting *all* GL commands for this frame
-///              (right after our final glFlush).
+///              CPU has finished submitting the SDL_GPU command buffer.
 ///
-///   GPU time = wall-clock from that submission point until the GPU signals
-///              (via a fence-sync) that it has actually finished processing
-///              the frame's commands.
+///   GPU wait = wall-clock spent in SDL_WaitForGPUIdle after that submit.
 ///
-/// This gives a meaningful split:
-///   * If CPU > GPU: CPU-bound — the GPU drained the queue as fast as the
-///     CPU could hand it work; the wait at the end is small.
-///   * If GPU > CPU: GPU-bound — the CPU finished its work first and had to
-///     wait `GPU` ms for the GPU to catch up.
-///   * CPU + GPU ≈ frame time (assuming no v-sync wait).
+/// This is useful as a queue-drain/back-pressure signal, but it is not a
+/// hardware GPU-duration query. With SDL_GPU it can include queued work,
+/// swapchain presentation, and vsync pacing, so it can converge to the display
+/// interval even when per-frame rendering work gets cheaper.
 ///
-/// Why not GL_TIME_ELAPSED? That query reports the GPU-side wall clock
-/// between BeginQuery and EndQuery, which on most drivers includes any time
-/// the GPU was *idle* in the middle of the queried region. When the CPU is
-/// the bottleneck, the GPU sits idle waiting for commands and the query
-/// reports nearly the full frame duration — making CPU and GPU look
-/// identical even though the GPU was barely working. The fence-sync
-/// approach measures honest "post-CPU GPU work" time instead.
-///
-/// Cost: the fence sync at end-of-frame serializes CPU and GPU, so the
-/// engine loses a small amount of pipelining while the graph is collecting
-/// data. That overhead is the price for honest numbers.
+/// Cost: waiting idle at end-of-frame serializes CPU and GPU, so the engine
+/// loses some pipelining while the graph is collecting data.
 static Uint64 g_frame_cpu_start_ticks = 0;
 static float  g_last_frame_cpu_ms     = 0.0f;
 static float  g_last_frame_gpu_ms     = 0.0f;
