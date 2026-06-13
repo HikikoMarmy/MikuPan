@@ -5,6 +5,12 @@ on:
     # 06:00 UTC every day — builds the latest commit on main.
     - cron: '0 6 * * *'
   workflow_dispatch:        # allow manual nightly runs too
+    inputs:
+      ref:
+        description: "Branch, tag or commit to build"
+        required: false
+        default: main
+        type: string
 
 # Only one nightly at a time; let an in-flight build finish rather than waste it.
 concurrency:
@@ -76,9 +82,10 @@ jobs:
         shell: ${{ matrix.sys.shell }}
 
     steps:
+      # Scheduled runs have no inputs, so the fallback keeps them on main.
       - uses: actions/checkout@v4
         with:
-          ref: main
+          ref: ${{ inputs.ref || 'main' }}
           submodules: 'recursive'
           fetch-depth: 0   # full history + tags so the version header resolves
 
@@ -148,9 +155,9 @@ jobs:
           tag: nightly
           name: "Nightly Build"
           body: |
-            Automated nightly build of the latest `main`.
+            Automated nightly build of `${{ inputs.ref || 'main' }}`.
 
-            Commit: ${{ github.sha }}
+            Commit: ${{ steps.built.outputs.sha }}
 
             > Pre-release / unstable — built every day at 06:00 UTC.
           prerelease: true
@@ -159,5 +166,5 @@ jobs:
           removeArtifacts: false
           replacesArtifacts: true
           # Move the rolling `nightly` tag to the commit that was built.
-          commit: ${{ github.sha }}
+          commit: ${{ steps.built.outputs.sha }}
           artifacts: build/MikuPan_${{ matrix.sys.name }}_nightly.zip
