@@ -12,6 +12,7 @@ typedef enum
     MIKUPAN_RS_3D,
     MIKUPAN_RS_3D_MIRROR,
     MIKUPAN_RS_2D,
+    MIKUPAN_RS_2D_DEPTH,
     MIKUPAN_RS_SPRITE_3D,
     MIKUPAN_RS_SHADOW,
     MIKUPAN_RS_SHADOW_RECEIVER
@@ -288,6 +289,13 @@ void MikuPan_SetRenderState2D()
     MikuPan_GPUSetRenderState2D();
 }
 
+void MikuPan_SetRenderState2DDepth()
+{
+    if (g_current_render_state == MIKUPAN_RS_2D_DEPTH) return;
+    g_current_render_state = MIKUPAN_RS_2D_DEPTH;
+    MikuPan_GPUSetRenderState2DDepth();
+}
+
 void MikuPan_SetRenderStateSprite3D()
 {
     if (g_current_render_state == MIKUPAN_RS_SPRITE_3D) return;
@@ -330,6 +338,7 @@ void MikuPan_ApplyRenderStateMode(int mode)
         case MIKUPAN_RS_3D:        MikuPan_SetRenderState3D();        break;
         case MIKUPAN_RS_3D_MIRROR: MikuPan_SetRenderState3DMirror();  break;
         case MIKUPAN_RS_2D:        MikuPan_SetRenderState2D();        break;
+        case MIKUPAN_RS_2D_DEPTH:  MikuPan_SetRenderState2DDepth();   break;
         case MIKUPAN_RS_SPRITE_3D: MikuPan_SetRenderStateSprite3D();  break;
         case MIKUPAN_RS_SHADOW:    MikuPan_SetRenderStateShadow();    break;
         case MIKUPAN_RS_SHADOW_RECEIVER:

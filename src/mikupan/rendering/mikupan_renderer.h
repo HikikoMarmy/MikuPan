@@ -190,7 +190,15 @@ int MikuPan_IsPhotoDebugTargetRectEnabled(void);
 void MikuPan_SetPhotoDebugNegativeLayerEnabled(int enabled);
 int MikuPan_IsPhotoDebugNegativeLayerEnabled(void);
 void MikuPan_RenderSprite2D(sceGsTex0 *tex, float* buffer);
+void MikuPan_RenderSprite2DDepth(sceGsTex0 *tex, float* buffer);
+void MikuPan_RenderSprite2DDepthState(sceGsTex0 *tex, float *buffer,
+                                      int depth_test, int depth_write,
+                                      unsigned int depth_func);
 void MikuPan_RenderUntexturedSprite(float* buffer);
+void MikuPan_RenderUntexturedSpriteDepth(float* buffer);
+void MikuPan_RenderUntexturedSpriteDepthState(float *buffer, int depth_test,
+                                              int depth_write,
+                                              unsigned int depth_func);
 void MikuPan_RenderSprite3D(sceGsTex0 *tex, float* buffer);
 void MikuPan_RenderTexturedTriangles3D(sceGsTex0 *tex, float *buffer, int vertex_count);
 void MikuPan_RenderUntexturedTriangles3D(float *buffer, int vertex_count, int depth_mode, int additive_blend);

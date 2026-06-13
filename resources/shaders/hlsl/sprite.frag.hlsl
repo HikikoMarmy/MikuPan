@@ -19,5 +19,10 @@ float4 main(PSInput input) : SV_Target0
         col.rgb = lerp(col.rgb, negative_color, strength);
     }
 
+    if (col.a <= 0.0)
+    {
+        discard;
+    }
+
     return col;
 }

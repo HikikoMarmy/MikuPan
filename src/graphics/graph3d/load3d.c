@@ -39,7 +39,7 @@ static int room_load_num;
 static int room_req_id;
 
 static ROOM_LOAD_BLOCK backup_block;
-static int64_t room_load_id[32];
+static int room_load_id[32];
 
 static int LoadFDCheck(u_short id, char flg);
 
@@ -206,7 +206,7 @@ int RoomMdlLoadWait()
     InitializeRoom(&room_addr_tbl[rlb->room_no]);
 
     if (rlb->room_no == 22 && ingame_wrk.msn_no < 2)
-        {
+    {
         if (event_stts[112] == 0)
         {
             SetPreRenderR022(0);
@@ -599,7 +599,7 @@ int LoadInitFurnModel(ROOM_LOAD_BLOCK *rlb)
 
         LoadFDCheck(furn_id, 0);
 
-        addr = LoadReqGetAddr(F000_CLOCK_L_SGD + furn_id, (uint64_t)rlb->load_addr, (int64_t *)&load_id);
+        addr = LoadReqGetAddr(F000_CLOCK_L_SGD + furn_id, (uint64_t)rlb->load_addr, &load_id);
 
         furn_addr_tbl[furn_id] = rlb->load_addr;
 
@@ -661,7 +661,7 @@ int LoadInitDoorModel(ROOM_LOAD_BLOCK *rlb)
 
         LoadFDCheck(door_id, 1);
 
-        addr = LoadReqGetAddr(D000_GEN1_SGD + door_id, (uint64_t)rlb->load_addr, (int64_t *)&load_id);
+        addr = LoadReqGetAddr(D000_GEN1_SGD + door_id, (uint64_t)rlb->load_addr, &load_id);
 
         door_addr_tbl[door_id] = rlb->load_addr;
 

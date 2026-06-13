@@ -77,7 +77,7 @@ int LoadReq(int file_no, uint64_t addr)
     return LoadReqNSector(file_no, img_arng->start, img_arng->size, addr);
 }
 
-int64_t LoadReqGetAddr(int file_no, uint64_t addr, int64_t *id)
+int64_t LoadReqGetAddr(int file_no, uint64_t addr, int *id)
 {
     IMG_ARRANGEMENT *img_arng;
     int64_t ret;

@@ -13,6 +13,7 @@ void MikuPan_SetUniformBufferObjectInfo(MikuPan_BufferObjectInfo *object_info,
 void MikuPan_SetRenderState3D();
 void MikuPan_SetRenderState3DMirror();
 void MikuPan_SetRenderState2D();
+void MikuPan_SetRenderState2DDepth();
 void MikuPan_SetRenderStateSprite3D();
 void MikuPan_SetRenderStateShadow();
 void MikuPan_SetRenderStateShadowReceiver();

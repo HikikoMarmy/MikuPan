@@ -832,6 +832,7 @@ static void SetFont(int pri, int type, int no, int x, int y, u_char r, u_char g,
     s.v = th1;
     s.w = Font_W;
     s.h = Font_H;
+    s.z = z;
 
     MikuPan_Render2DMessage(&s);
 
@@ -1054,6 +1055,7 @@ static void SetFontPat(int pri, int fn, int x, int y, int fw, u_char r, u_char g
     dq.h = Font_W;
     dq.u = tw1/16;
     dq.v = th1/16;
+    dq.z = z;
 
     MikuPan_Render2DMessage(&dq);
 

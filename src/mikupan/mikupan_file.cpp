@@ -4,6 +4,11 @@
 #include "gs/mikupan_texture_manager.h"
 #include "mikupan_logging.h"
 #include "spdlog/spdlog.h"
+#include <SDL3/SDL_dialog.h>
+#include <SDL3/SDL_events.h>
+#include <SDL3/SDL_init.h>
+#include <SDL3/SDL_messagebox.h>
+#include <SDL3/SDL_timer.h>
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
@@ -11,12 +16,21 @@
 #include <cctype>
 #include <limits>
 #include <cstring>
+#include <condition_variable>
+#include <mutex>
 
 extern "C" {
 #include "mikupan_memory.h"
 }
 
 static inline std::vector<int> file_loaded_address;
+
+static std::mutex missing_data_dialog_mutex;
+static std::condition_variable missing_data_dialog_cv;
+static bool missing_data_dialog_requested = false;
+static bool missing_data_dialog_open = false;
+static bool missing_data_dialog_selected = false;
+static std::string missing_data_path;
 
 static std::filesystem::path MikuPan_GetDataRoot()
 {
@@ -29,20 +43,344 @@ static std::filesystem::path MikuPan_GetDataRoot()
     return std::filesystem::path(".");
 }
 
+static std::string MikuPan_ToLowerPathString(const std::filesystem::path& path)
+{
+    std::string value = path.lexically_normal().generic_string();
+    std::transform(value.begin(), value.end(), value.begin(),
+                   [](unsigned char ch) {
+                       return static_cast<char>(std::tolower(ch));
+                   });
+    return value;
+}
+
+static bool MikuPan_IsExcludedRuntimeAsset(const std::filesystem::path& path)
+{
+    const std::string value = MikuPan_ToLowerPathString(path);
+
+    return value.rfind("resources/", 0) == 0
+        || value.find("/resources/") != std::string::npos
+        || value.rfind("./resources/", 0) == 0
+        || value == "mikupan.ini"
+        || (value.size() >= 12
+            && value.compare(value.size() - 12, 12, "/mikupan.ini") == 0);
+}
+
+static bool MikuPan_IsPathInsideDataRoot(const std::filesystem::path& path)
+{
+    std::string root =
+        MikuPan_ToLowerPathString(std::filesystem::absolute(MikuPan_GetDataRoot()));
+    std::string target =
+        MikuPan_ToLowerPathString(std::filesystem::absolute(path));
+
+    while (root.size() > 1 && root.back() == '/')
+    {
+        root.pop_back();
+    }
+
+    if (target == root)
+    {
+        return true;
+    }
+
+    root += '/';
+    return target.rfind(root, 0) == 0;
+}
+
+static bool MikuPan_ShouldPromptForMissingDataFile(
+    const std::filesystem::path& path)
+{
+    const std::string filename =
+        MikuPan_ToLowerPathString(path.filename());
+
+    if (filename == "img_hd.bin" || filename == "img_bd.bin")
+    {
+        return true;
+    }
+
+    if (MikuPan_IsExcludedRuntimeAsset(path))
+    {
+        return false;
+    }
+
+    return MikuPan_IsPathInsideDataRoot(path);
+}
+
+static void MikuPan_ApplySelectedDataFolder(const std::string& folder)
+{
+    if (folder.empty())
+    {
+        return;
+    }
+
+    std::strncpy(mikupan_configuration.data_folder,
+                 folder.c_str(),
+                 sizeof(mikupan_configuration.data_folder) - 1);
+    mikupan_configuration
+        .data_folder[sizeof(mikupan_configuration.data_folder) - 1] = '\0';
+
+    if (!MikuPan_SaveConfiguration(nullptr))
+    {
+        spdlog::error("Failed to save selected data folder: {}", folder);
+    }
+    else
+    {
+        spdlog::info("Selected data folder: {}", folder);
+    }
+}
+
+static bool MikuPan_MakePathRelativeToRoot(
+    const std::filesystem::path& path,
+    const std::filesystem::path& root,
+    std::filesystem::path& relative)
+{
+    std::error_code ec;
+    std::filesystem::path abs_path = std::filesystem::absolute(path, ec);
+    if (ec)
+    {
+        return false;
+    }
+
+    std::filesystem::path abs_root = std::filesystem::absolute(root, ec);
+    if (ec)
+    {
+        return false;
+    }
+
+    relative = abs_path.lexically_normal().lexically_relative(
+        abs_root.lexically_normal());
+    if (relative.empty())
+    {
+        return false;
+    }
+
+    for (const auto& part : relative)
+    {
+        if (part == "..")
+        {
+            return false;
+        }
+    }
+
+    return true;
+}
+
+static std::filesystem::path MikuPan_RebasePathAfterDataFolderSelection(
+    const std::filesystem::path& path,
+    const std::filesystem::path& old_root)
+{
+    const std::string filename =
+        MikuPan_ToLowerPathString(path.filename());
+    if (filename == "img_hd.bin" || filename == "img_bd.bin")
+    {
+        return MikuPan_GetDataRoot() / path.filename();
+    }
+
+    std::filesystem::path relative;
+    if (MikuPan_MakePathRelativeToRoot(path, old_root, relative))
+    {
+        return MikuPan_GetDataRoot() / relative;
+    }
+
+    return path;
+}
+
+static void SDLCALL MikuPan_ServiceMissingDataFolderDialogOnMainThread(
+    void *userdata)
+{
+    (void)userdata;
+    MikuPan_ServiceMissingDataFolderDialog();
+}
+
+static bool MikuPan_WaitForMissingDataFolderDialogOnMainThread()
+{
+    for (;;)
+    {
+        {
+            std::lock_guard<std::mutex> lock(missing_data_dialog_mutex);
+            if (!missing_data_dialog_open && !missing_data_dialog_requested)
+            {
+                return missing_data_dialog_selected;
+            }
+        }
+
+        MikuPan_ServiceMissingDataFolderDialog();
+        SDL_PumpEvents();
+        SDL_Delay(10);
+    }
+}
+
+static bool MikuPan_RequestMissingDataFolderDialog(
+    const std::filesystem::path& path)
+{
+    if (!MikuPan_ShouldPromptForMissingDataFile(path))
+    {
+        return false;
+    }
+
+    if (SDL_WasInit(SDL_INIT_VIDEO) == 0)
+    {
+        return false;
+    }
+
+    const bool is_main_thread = SDL_IsMainThread();
+
+    {
+        std::unique_lock<std::mutex> lock(missing_data_dialog_mutex);
+        if (missing_data_dialog_open || missing_data_dialog_requested)
+        {
+            if (!is_main_thread)
+            {
+                missing_data_dialog_cv.wait(lock, [] {
+                    return !missing_data_dialog_open
+                        && !missing_data_dialog_requested;
+                });
+                return missing_data_dialog_selected;
+            }
+
+            lock.unlock();
+            return MikuPan_WaitForMissingDataFolderDialogOnMainThread();
+        }
+
+        missing_data_path = path.lexically_normal().generic_string();
+        missing_data_dialog_requested = true;
+        missing_data_dialog_selected = false;
+    }
+
+    if (is_main_thread)
+    {
+        MikuPan_ServiceMissingDataFolderDialog();
+    }
+    else if (!SDL_RunOnMainThread(
+                 MikuPan_ServiceMissingDataFolderDialogOnMainThread,
+                 nullptr,
+                 false))
+    {
+        {
+            std::lock_guard<std::mutex> lock(missing_data_dialog_mutex);
+            missing_data_dialog_requested = false;
+            missing_data_dialog_selected = false;
+        }
+        missing_data_dialog_cv.notify_all();
+        return false;
+    }
+
+    if (is_main_thread)
+    {
+        return MikuPan_WaitForMissingDataFolderDialogOnMainThread();
+    }
+    else
+    {
+        std::unique_lock<std::mutex> lock(missing_data_dialog_mutex);
+        missing_data_dialog_cv.wait(lock, [] {
+            return !missing_data_dialog_open && !missing_data_dialog_requested;
+        });
+        return missing_data_dialog_selected;
+    }
+}
+
+static void SDLCALL MikuPan_MissingDataFolderSelected(
+    void *userdata, const char *const *filelist, int filter)
+{
+    (void)userdata;
+    (void)filter;
+
+    std::string selected_folder;
+    if (filelist != nullptr && filelist[0] != nullptr
+        && filelist[0][0] != '\0')
+    {
+        selected_folder = filelist[0];
+        MikuPan_ApplySelectedDataFolder(selected_folder);
+    }
+
+    {
+        std::lock_guard<std::mutex> lock(missing_data_dialog_mutex);
+        missing_data_dialog_selected = !selected_folder.empty();
+        missing_data_dialog_open = false;
+    }
+    missing_data_dialog_cv.notify_all();
+}
+
+extern "C" void MikuPan_ServiceMissingDataFolderDialog()
+{
+    std::string missing_path_to_show;
+
+    {
+        std::lock_guard<std::mutex> lock(missing_data_dialog_mutex);
+
+        if (missing_data_dialog_requested && !missing_data_dialog_open)
+        {
+            missing_path_to_show = missing_data_path;
+            missing_data_dialog_requested = false;
+            missing_data_dialog_open = true;
+        }
+    }
+
+    if (missing_path_to_show.empty())
+    {
+        return;
+    }
+
+    const std::string message =
+        "The game data file was not found:\n\n" + missing_path_to_show
+        + "\n\nSelect the folder that contains the Fatal Frame data files. "
+          "The selected folder will be saved to mikupan.ini.";
+
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
+                             "File not found",
+                             message.c_str(),
+                             nullptr);
+
+    const char *start = mikupan_configuration.data_folder[0] != '\0'
+                            ? mikupan_configuration.data_folder
+                            : nullptr;
+    SDL_ShowOpenFolderDialog(MikuPan_MissingDataFolderSelected,
+                             nullptr,
+                             nullptr,
+                             start,
+                             false);
+}
+
 void MikuPan_LoadImgHdFile()
 {
-    const auto path = (MikuPan_GetDataRoot() / "IMG_HD.BIN").generic_string();
+    auto data_path = MikuPan_GetDataRoot() / "IMG_HD.BIN";
+    if (!std::filesystem::exists(data_path))
+    {
+        const auto old_root = MikuPan_GetDataRoot();
+        if (MikuPan_RequestMissingDataFolderDialog(data_path))
+        {
+            data_path =
+                MikuPan_RebasePathAfterDataFolderSelection(data_path, old_root);
+        }
+
+        if (!std::filesystem::exists(data_path))
+        {
+            return;
+        }
+    }
+
+    const auto path = data_path.generic_string();
     MikuPan_ReadFullFile(path.c_str(),
         static_cast<char *>(MikuPan_GetHostPointer(ImgHdAddress)));
 }
 
 void MikuPan_ReadFullFile(const char *filename, char *buffer)
 {
-    const std::filesystem::path path_filename(filename);
+    std::filesystem::path path_filename(filename);
 
     if (!std::filesystem::exists(path_filename))
     {
-        return;
+        const auto old_root = MikuPan_GetDataRoot();
+        if (MikuPan_RequestMissingDataFolderDialog(path_filename))
+        {
+            path_filename =
+                MikuPan_RebasePathAfterDataFolderSelection(path_filename,
+                                                           old_root);
+        }
+
+        if (!std::filesystem::exists(path_filename))
+        {
+            return;
+        }
     }
 
     if (buffer == nullptr)
@@ -76,11 +414,21 @@ void MikuPan_NotifyPs2MemoryLoad(int ps2_address)
 
 void MikuPan_ReadFileInArchive(int sector, int size, u_int *address)
 {
-    const auto archive = MikuPan_GetDataRoot() / "IMG_BD.BIN";
+    auto archive = MikuPan_GetDataRoot() / "IMG_BD.BIN";
     if (!std::filesystem::exists(archive))
     {
         spdlog::critical("IMG_BD.BIN not found!");
-        return;
+        const auto old_root = MikuPan_GetDataRoot();
+        if (MikuPan_RequestMissingDataFolderDialog(archive))
+        {
+            archive =
+                MikuPan_RebasePathAfterDataFolderSelection(archive, old_root);
+        }
+
+        if (!std::filesystem::exists(archive))
+        {
+            return;
+        }
     }
 
     if (address == nullptr)
@@ -116,10 +464,20 @@ void MikuPan_ReadFileInArchive(int sector, int size, u_int *address)
 
 void MikuPan_BufferFile(int sector, int size, int64_t address)
 {
-    const auto archive = MikuPan_GetDataRoot() / "IMG_BD.BIN";
+    auto archive = MikuPan_GetDataRoot() / "IMG_BD.BIN";
     if (!std::filesystem::exists(archive))
     {
-        return;
+        const auto old_root = MikuPan_GetDataRoot();
+        if (MikuPan_RequestMissingDataFolderDialog(archive))
+        {
+            archive =
+                MikuPan_RebasePathAfterDataFolderSelection(archive, old_root);
+        }
+
+        if (!std::filesystem::exists(archive))
+        {
+            return;
+        }
     }
 
     if (address == 0)
@@ -173,12 +531,22 @@ u_char MikuPan_WriteFile(const char *filename, const void *buffer, int size)
 
 u_int MikuPan_GetFileSize(const char *filename)
 {
-    if (!std::filesystem::exists(filename))
+    std::filesystem::path path(filename);
+    if (!std::filesystem::exists(path))
     {
-        return 0;
+        const auto old_root = MikuPan_GetDataRoot();
+        if (MikuPan_RequestMissingDataFolderDialog(path))
+        {
+            path = MikuPan_RebasePathAfterDataFolderSelection(path, old_root);
+        }
+
+        if (!std::filesystem::exists(path))
+        {
+            return 0;
+        }
     }
 
-    return std::filesystem::file_size(filename);
+    return std::filesystem::file_size(path);
 }
 
 bool MikuPan_ResolveCdPath(const char* path, char* buffer, size_t buffer_size)
@@ -235,7 +603,15 @@ bool MikuPan_ResolveCdPath(const char* path, char* buffer, size_t buffer_size)
     }
 
     if (!s.empty()) {
-        s = (MikuPan_GetDataRoot() / s).generic_string();
+        const std::filesystem::path relative_data_path(s);
+        std::filesystem::path resolved_path =
+            MikuPan_GetDataRoot() / relative_data_path;
+        if (!std::filesystem::exists(resolved_path)) {
+            if (MikuPan_RequestMissingDataFolderDialog(resolved_path)) {
+                resolved_path = MikuPan_GetDataRoot() / relative_data_path;
+            }
+        }
+        s = resolved_path.generic_string();
     }
 
     if (s.length() + 1 > buffer_size) {

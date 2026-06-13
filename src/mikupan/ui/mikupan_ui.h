@@ -14,6 +14,7 @@ void MikuPan_StartFrameUi(void);
 void MikuPan_DrawUi(void);
 void MikuPan_ShutDownUi(void);
 void MikuPan_ProcessEventUi(SDL_Event *event);
+void MikuPan_RequestQuit(void);
 float MikuPan_GetFrameRate(void);
 int MikuPan_IsWireframeRendering(void);
 int MikuPan_IsNormalsRendering(void);

@@ -218,6 +218,13 @@ static int g_target_clear = 0;
 static int g_target_clear_depth = 0;
 static int g_target_has_depth = 1;
 static int g_target_initialized = 0;
+/* The single-sample scene texture is only current after an explicit resolve.
+ * Normal scene pass breaks should STORE the MSAA target without resolving;
+ * framebuffer reads/copies and final present request a resolve on demand. */
+static int g_scene_resolve_dirty = 0;
+static int g_scene_resolve_requested = 0;
+static int g_scene_resolve_preserve_msaa = 1;
+static int g_pass_resolves_scene = 0;
 
 static GPURenderState g_state = {0};
 static unsigned int g_bound_vao = 0;
@@ -258,6 +265,9 @@ static SDL_GPUBuffer* g_vertex_storage_buffer = NULL;
 static SDL_GPUBuffer* g_last_vertex_buffers[4] = {0};
 static unsigned int g_last_vertex_buffer_count = 0;
 static int g_vertex_binding_valid = 0;
+
+static void BeginTargetPassIfNeeded(void);
+static void ResolveSceneTexture(int preserve_msaa);
 static SDL_GPUTexture* g_last_sampler_textures[2] = {0};
 static SDL_GPUSampler* g_last_sampler_samplers[2] = {0};
 static int g_sampler_binding_valid = 0;
@@ -399,6 +409,8 @@ static SDL_GPUCompareOp CompareFromGL(unsigned int func)
 {
     switch (func)
     {
+        case GL_NEVER:
+            return SDL_GPU_COMPAREOP_NEVER;
         case GL_ALWAYS:
             return SDL_GPU_COMPAREOP_ALWAYS;
         case GL_GEQUAL:
@@ -709,6 +721,9 @@ void MikuPan_GPUBeginFrame(void)
 {
     g_cmd = SDL_AcquireGPUCommandBuffer(g_device);
     g_pass = NULL;
+    g_pass_resolves_scene = 0;
+    g_scene_resolve_requested = 0;
+    g_scene_resolve_preserve_msaa = 1;
     g_swapchain = NULL;
     g_target_initialized = 0;
     g_gpu_frame++;
@@ -721,6 +736,11 @@ void MikuPan_GPUFlushRenderPass(void)
     {
         SDL_EndGPURenderPass(g_pass);
         g_pass = NULL;
+        if (g_pass_resolves_scene)
+        {
+            g_scene_resolve_dirty = 0;
+            g_pass_resolves_scene = 0;
+        }
     }
 }
 
@@ -735,6 +755,46 @@ void MikuPan_GPUEndFrame(void)
 
     g_cmd = NULL;
     g_swapchain = NULL;
+}
+
+static void ResolveSceneTexture(int preserve_msaa)
+{
+    if (g_scene_msaa <= 1 || !g_scene_resolve_dirty
+        || g_scene_texture_id == 0 || g_scene_msaa_color_id == 0)
+    {
+        return;
+    }
+
+    if (g_target != MIKUPAN_GPU_TARGET_SCENE)
+    {
+        return;
+    }
+
+    /* The resolve store-op is fixed when a render pass starts. End any active
+     * scene pass as STORE-only, then open a no-draw pass whose only job is to
+     * resolve the stored MSAA texture into the single-sample scene texture. */
+    MikuPan_GPUFlushRenderPass();
+
+    if (g_target != MIKUPAN_GPU_TARGET_SCENE || g_target_resolve == NULL
+        || g_target_color == NULL)
+    {
+        return;
+    }
+
+    g_scene_resolve_requested = 1;
+    g_scene_resolve_preserve_msaa = preserve_msaa != 0;
+    BeginTargetPassIfNeeded();
+    MikuPan_GPUFlushRenderPass();
+}
+
+void MikuPan_GPUResolveSceneForSampling(void)
+{
+    ResolveSceneTexture(1);
+}
+
+void MikuPan_GPUResolveSceneForPresent(void)
+{
+    ResolveSceneTexture(0);
 }
 
 static GPUTextureEntry* TextureEntry(unsigned int id)
@@ -816,6 +876,19 @@ static void CreateDepthTexture(int width, int height)
     /* Depth must be multisampled to match the MSAA colour target. */
     info.sample_count = SampleCountFromMSAA(g_scene_msaa);
     g_textures[id].texture = SDL_CreateGPUTexture(g_device, &info);
+
+    if (g_textures[id].texture == NULL)
+    {
+        /* The device does not support a multisampled depth target at this
+         * sample count. Leave g_scene_depth_id at 0 so the caller can detect
+         * the failure and step MSAA down. */
+        info_log("Depth texture creation failed (%dx MSAA): %s", g_scene_msaa,
+                 SDL_GetError());
+        MikuPan_GPUReleaseTexture(id);
+        g_scene_depth_id = 0;
+        return;
+    }
+
     g_textures[id].width = width;
     g_textures[id].height = height;
     g_textures[id].format = info.format;
@@ -866,15 +939,24 @@ void MikuPan_GPUCreateInternalBuffer(int width, int height, int msaa)
     }
 
     MikuPan_GPUDestroyInternalBuffer();
+    g_scene_resolve_dirty = 0;
+    g_scene_resolve_requested = 0;
+    g_scene_resolve_preserve_msaa = 1;
+    g_pass_resolves_scene = 0;
 
-    /* Clamp the requested MSAA to a sample count the device supports for both
-     * the colour and depth target formats, stepping down toward 1x. */
+    /* Clamp the requested MSAA to a sample count the colour target supports,
+     * stepping down toward 1x. The depth-stencil format is deliberately NOT
+     * probed here: SDL's D3D12 backend implements SupportsSampleCount for depth
+     * formats by querying multisample quality levels with the depth *read*
+     * format (D24_UNORM -> R24_UNORM_X8_TYPELESS), which D3D12 reports as
+     * unsupported, so probing depth would force MSAA off on D3D12 even though
+     * multisampled depth targets work fine. The multisampled depth allocation
+     * is verified after creation instead (see below), which is correct on every
+     * backend. */
     SDL_GPUSampleCount sc = SampleCountFromMSAA(msaa);
     while (sc != SDL_GPU_SAMPLECOUNT_1
-           && (!SDL_GPUTextureSupportsSampleCount(
-                   g_device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, sc)
-               || !SDL_GPUTextureSupportsSampleCount(g_device, g_depth_format,
-                                                     sc)))
+           && !SDL_GPUTextureSupportsSampleCount(
+                  g_device, SDL_GPU_TEXTUREFORMAT_R8G8B8A8_UNORM, sc))
     {
         sc = (sc == SDL_GPU_SAMPLECOUNT_8)   ? SDL_GPU_SAMPLECOUNT_4
              : (sc == SDL_GPU_SAMPLECOUNT_4) ? SDL_GPU_SAMPLECOUNT_2
@@ -899,6 +981,21 @@ void MikuPan_GPUCreateInternalBuffer(int width, int height, int msaa)
     }
 
     CreateDepthTexture(width, height);
+
+    /* The multisampled depth target genuinely failed to allocate: this device
+     * does not support MSAA depth at this sample count. Drop the MSAA colour
+     * target and fall back to single-sample so the scene still renders, then
+     * recreate the depth target to match. */
+    if (g_scene_msaa > 1 && g_scene_depth_id == 0)
+    {
+        if (g_scene_msaa_color_id != 0)
+        {
+            MikuPan_GPUReleaseTexture(g_scene_msaa_color_id);
+            g_scene_msaa_color_id = 0;
+        }
+        g_scene_msaa = 1;
+        CreateDepthTexture(width, height);
+    }
 
     g_scene_width = width;
     g_scene_height = height;
@@ -933,6 +1030,10 @@ void MikuPan_GPUDestroyInternalBuffer(void)
     g_scene_width = 0;
     g_scene_height = 0;
     g_scene_msaa = 1;
+    g_scene_resolve_dirty = 0;
+    g_scene_resolve_requested = 0;
+    g_scene_resolve_preserve_msaa = 1;
+    g_pass_resolves_scene = 0;
 }
 
 unsigned int MikuPan_GPUGetSceneTextureId(void)
@@ -1243,6 +1344,10 @@ int MikuPan_GPUReadTextureRGBA8(unsigned int texture_id, int width, int height,
         return 0;
     }
 
+    if (texture_id == g_scene_texture_id)
+    {
+        MikuPan_GPUResolveSceneForSampling();
+    }
     MikuPan_GPUFlushRenderPass();
     const unsigned int pitch = (unsigned int) width * 4u;
     const unsigned int size = pitch * (unsigned int) height;
@@ -1345,6 +1450,10 @@ void MikuPan_GPUCopyTexture(unsigned int src_texture_id,
         return;
     }
 
+    if (src_texture_id == g_scene_texture_id)
+    {
+        MikuPan_GPUResolveSceneForSampling();
+    }
     MikuPan_GPUFlushRenderPass();
 
     SDL_GPUTextureLocation src_loc = {0};
@@ -1591,28 +1700,31 @@ static void BeginTargetPassIfNeeded(void)
     }
 
     SDL_GPUColorTargetInfo color = {0};
+    const int resolving_scene = g_target_resolve != NULL
+                                && g_scene_resolve_requested;
     color.texture = g_target_color;
     color.clear_color = (SDL_FColor) {0.0f, 0.0f, 0.0f, 1.0f};
-    color.load_op = g_target_clear ? SDL_GPU_LOADOP_CLEAR : SDL_GPU_LOADOP_LOAD;
+    color.load_op = (!resolving_scene && g_target_clear)
+                        ? SDL_GPU_LOADOP_CLEAR
+                        : SDL_GPU_LOADOP_LOAD;
     color.store_op = SDL_GPU_STOREOP_STORE;
     color.cycle = false;
 
-    /* Multisampled target: resolve into the single-sample scene texture each
-     * pass (RESOLVE_AND_STORE keeps the MSAA contents so a later pass in the
-     * same frame can LOAD and keep drawing, while the resolve target stays
-     * current for sampling/blitting). */
-    if (g_target_resolve != NULL)
+    if (resolving_scene)
     {
-        color.store_op = SDL_GPU_STOREOP_RESOLVE_AND_STORE;
+        color.store_op = g_scene_resolve_preserve_msaa
+                             ? SDL_GPU_STOREOP_RESOLVE_AND_STORE
+                             : SDL_GPU_STOREOP_RESOLVE;
         color.resolve_texture = g_target_resolve;
     }
 
     /* A depth-only clear (mirror reflection prep) must NOT wipe colour. */
-    const int clear_depth = g_target_clear || g_target_clear_depth;
+    const int clear_depth =
+        !resolving_scene && (g_target_clear || g_target_clear_depth);
 
     SDL_GPUDepthStencilTargetInfo depth = {0};
     SDL_GPUDepthStencilTargetInfo* depth_ptr = NULL;
-    if (g_target_has_depth && g_target_depth != NULL)
+    if (!resolving_scene && g_target_has_depth && g_target_depth != NULL)
     {
         depth.texture = g_target_depth;
         depth.clear_depth = 1.0f;
@@ -1627,6 +1739,14 @@ static void BeginTargetPassIfNeeded(void)
     }
 
     g_pass = SDL_BeginGPURenderPass(g_cmd, &color, 1, depth_ptr);
+    g_pass_resolves_scene = resolving_scene && g_pass != NULL;
+    if (g_pass != NULL && g_target == MIKUPAN_GPU_TARGET_SCENE
+        && g_target_resolve != NULL && !resolving_scene)
+    {
+        g_scene_resolve_dirty = 1;
+    }
+    g_scene_resolve_requested = 0;
+    g_scene_resolve_preserve_msaa = 1;
     g_target_clear = 0;
     g_target_clear_depth = 0;
 
@@ -1690,6 +1810,19 @@ void MikuPan_GPUSetRenderState2D(void)
 {
     g_state.depth_test = 0;
     g_state.depth_write = 0;
+    g_state.blend = 1;
+    g_state.additive_blend = 0;
+    g_state.cull_mode = SDL_GPU_CULLMODE_NONE;
+    g_state.fill_mode = SDL_GPU_FILLMODE_FILL;
+    g_state.depth_bias = 0;
+    ResetColorWriteMask();
+}
+
+void MikuPan_GPUSetRenderState2DDepth(void)
+{
+    g_state.depth_test = 1;
+    g_state.depth_write = 1;
+    g_state.compare = SDL_GPU_COMPAREOP_LESS_OR_EQUAL;
     g_state.blend = 1;
     g_state.additive_blend = 0;
     g_state.cull_mode = SDL_GPU_CULLMODE_NONE;

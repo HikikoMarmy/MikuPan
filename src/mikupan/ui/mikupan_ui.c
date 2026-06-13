@@ -2495,6 +2495,17 @@ void MikuPan_ProcessEventUi(SDL_Event* event)
     MikuPan_ImGui_ImplProcessEvent(event);
 }
 
+void MikuPan_RequestQuit(void)
+{
+    /* Routed through the SDL event queue so it follows the same shutdown path
+     * as closing the window (SDL_AppEvent returns SDL_APP_SUCCESS, running the
+     * normal cleanup in SDL_AppQuit). */
+    SDL_Event quit_event;
+    SDL_zero(quit_event);
+    quit_event.type = SDL_EVENT_QUIT;
+    SDL_PushEvent(&quit_event);
+}
+
 float MikuPan_GetFrameRate(void)
 {
     ImGuiIO* io = igGetIO_Nil();

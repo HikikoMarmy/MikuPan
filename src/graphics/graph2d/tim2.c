@@ -15,6 +15,7 @@
 #include "mikupan/rendering/mikupan_renderer.h"
 #include "mikupan/ui/mikupan_ui.h"
 
+#include <glad/gl.h>
 #include <stdlib.h>
 
 // borrowed and adapted from FF2 symbols
@@ -68,6 +69,35 @@ static int Tim2GetLog2(int n);
 static void InitTIM2Addr();
 static void FlushTextureCache();
 static int GetLog2(u_int n);
+static int GsDepthTestEnabled(u_long test);
+static unsigned int GsDepthTestToGLFunc(u_long test);
+static int GsDepthWriteEnabled(u_long zbuf);
+
+static int GsDepthTestEnabled(u_long test)
+{
+    return (int)((test >> 16) & 0x1);
+}
+
+static unsigned int GsDepthTestToGLFunc(u_long test)
+{
+    switch ((int)((test >> 17) & 0x3))
+    {
+    case SCE_GS_DEPTH_NEVER:
+        return GL_NEVER;
+    case SCE_GS_DEPTH_ALWAYS:
+        return GL_ALWAYS;
+    case SCE_GS_DEPTH_GREATER:
+        return GL_LESS;
+    case SCE_GS_DEPTH_GEQUAL:
+    default:
+        return GL_LEQUAL;
+    }
+}
+
+static int GsDepthWriteEnabled(u_long zbuf)
+{
+    return ((zbuf >> 32) & 0x1) == 0;
+}
 
 void printClut(void *pClut, int ClutColors)
 {
@@ -2125,7 +2155,7 @@ void DispSprD(DISP_SPRT *s)
 
         pbuf[ndpkt].fl32[0] = ndc[0];
         pbuf[ndpkt].fl32[1] = ndc[1];
-        pbuf[ndpkt].fl32[2] = 0.0f;
+        pbuf[ndpkt].fl32[2] = (float)mz;
         pbuf[ndpkt++].fl32[3] = 1.0f;
 
         //pbuf[ndpkt].ui32[0] = uu[i];
@@ -2145,7 +2175,12 @@ void DispSprD(DISP_SPRT *s)
         //pbuf[ndpkt++].ui32[3] = 0;
     }
 
-    MikuPan_RenderSprite2D((sceGsTex0*)&tex0, render_buffer);
+    MikuPan_RenderSprite2DDepthState(
+        (sceGsTex0*)&tex0,
+        render_buffer,
+        GsDepthTestEnabled(mtest),
+        GsDepthWriteEnabled(mzbuf),
+        GsDepthTestToGLFunc(mtest));
 }
 
 void CopySqrDToSqr(DISP_SQAR *s, SQAR_DAT *d)
@@ -2474,7 +2509,7 @@ void DispSqrD(DISP_SQAR *s)
 
         pbuf[ndpkt].fl32[0] = ndc[0];
         pbuf[ndpkt].fl32[1] = ndc[1];
-        pbuf[ndpkt].fl32[2] = 0.0f;
+        pbuf[ndpkt].fl32[2] = (float)mz;
         pbuf[ndpkt++].fl32[3] = 1.0f;
     }
 
@@ -2490,5 +2525,9 @@ void DispSqrD(DISP_SQAR *s)
     //    pbuf[ndpkt++].ui32[3] = 0;
     //}
 
-    MikuPan_RenderUntexturedSprite(render_buffer);
+    MikuPan_RenderUntexturedSpriteDepthState(
+        render_buffer,
+        GsDepthTestEnabled(mtest),
+        GsDepthWriteEnabled(mzbuf),
+        GsDepthTestToGLFunc(mtest));
 }

@@ -410,7 +410,7 @@ void ScnTestMdlLoadReq(u_int *addr)
 
         if (sam->mdl_no != hero_no)
         {
-            next_addr = LoadReqGetAddr(sam->mdl_no + M000_MIKU_MDL, (int64_t)addr, (int64_t *)&scn_test_load_id[scn_test_load_num]);
+            next_addr = LoadReqGetAddr(sam->mdl_no + M000_MIKU_MDL, (uint64_t)addr, &scn_test_load_id[scn_test_load_num]);
 
             pmanmodel[sam->mdl_no] = addr;
             addr = (u_int *)next_addr;
@@ -424,7 +424,7 @@ void ScnTestMdlLoadReq(u_int *addr)
         sam = &scn_p->item_mdl[i];
 
         if (sam->mdl_no != 1) {
-            next_addr = LoadReqGetAddr(sam->mdl_no + I000_PLAY_CAMERA1_SGD, (int64_t)addr, (int64_t *)&scn_test_load_id[scn_test_load_num]);
+            next_addr = LoadReqGetAddr(sam->mdl_no + I000_PLAY_CAMERA1_SGD, (uint64_t)addr, &scn_test_load_id[scn_test_load_num]);
 
             item_addr_tbl[sam->mdl_no] = addr;
             addr = (u_int *)next_addr;

@@ -8,5 +8,10 @@ struct PSInput
 
 float4 main(PSInput input) : SV_Target0
 {
+    if (input.outColor.a <= 0.0)
+    {
+        discard;
+    }
+
     return input.outColor;
 }

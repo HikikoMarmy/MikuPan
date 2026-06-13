@@ -34,6 +34,10 @@
 #include "os/eeiop/eese.h"
 #include "outgame.h"
 
+#define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
+#include "cimgui.h"
+#include "mikupan/ui/mikupan_ui.h"
+
 #include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -43,6 +47,11 @@
 /* data 343070 */ TITLE_WRK title_wrk;
 TTL_DSP_WRK ttl_dsp;
 OUT_DITHER_STR out_dither = {0};
+
+/* MikuPan: state for the "exit game?" confirmation popup shown when TRIANGLE is
+ * pressed on the PRESS START title screen. */
+static int exit_prompt_open = 0;
+static int exit_prompt_sel = 1; /* 0 = Yes, 1 = No (default to the safe choice) */
 
 #define PI 3.1415927f
 #define DEG2RAD(x) ((float)(x)*PI/180.0f)
@@ -411,6 +420,7 @@ SPRT_DAT title_sprt[11] = {
     {
     case TITLE_INIT:
         ttl_dsp = (TTL_DSP_WRK){0};
+        exit_prompt_open = 0;
 
         title_wrk.load_id = LoadReq(TITLE_PK2, SPRITE_ADDRESS);
 
@@ -451,7 +461,11 @@ SPRT_DAT title_sprt[11] = {
         }
     break;
     case TITLE_TITLE:
-        title_cnt++;
+        /* Freeze the attract-mode timeout while the exit prompt is up. */
+        if (!exit_prompt_open)
+        {
+            title_cnt++;
+        }
 
         SetSprFile(SPRITE_ADDRESS);
         TitleWaitMode();
@@ -947,6 +961,102 @@ SPRT_DAT title_sprt[11] = {
     }
 }
 
+/* MikuPan: one Yes/No choice in the exit prompt. Highlights the entry the pad
+ * cursor is on; the returned flag also fires on a mouse click. */
+static int TitleExitPromptButton(const char *label, int selected)
+{
+    int clicked;
+
+    if (selected)
+    {
+        igPushStyleColor_Vec4(ImGuiCol_Button, (ImVec4){0.26f, 0.59f, 0.98f, 1.0f});
+        igPushStyleColor_Vec4(ImGuiCol_ButtonHovered, (ImVec4){0.31f, 0.64f, 1.00f, 1.0f});
+        igPushStyleColor_Vec4(ImGuiCol_ButtonActive, (ImVec4){0.20f, 0.50f, 0.90f, 1.0f});
+    }
+
+    clicked = igButton(label, (ImVec2){110.0f, 0.0f}) ? 1 : 0;
+
+    if (selected)
+    {
+        igPopStyleColor(3);
+    }
+
+    return clicked;
+}
+
+/* MikuPan: render and drive the centred "exit game?" confirmation popup. Pad
+ * navigation matches the rest of the title (D-pad/stick to move, CROSS/START to
+ * confirm, TRIANGLE/CIRCLE to cancel); mouse clicks work too. */
+static void TitleExitPrompt()
+{
+    ImGuiIO *io = igGetIO_Nil();
+    ImGuiWindowFlags flags =
+        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoResize
+        | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoCollapse
+        | ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_AlwaysAutoResize
+        | ImGuiWindowFlags_NoNavInputs | ImGuiWindowFlags_NoNavFocus;
+    int left;
+    int right;
+    int confirm;
+    int yes_clicked;
+    int no_clicked;
+
+    igSetNextWindowPos(
+        (ImVec2){io->DisplaySize.x * 0.5f, io->DisplaySize.y * 0.5f},
+        ImGuiCond_Always, (ImVec2){0.5f, 0.5f});
+
+    igBegin("##title_exit_prompt", NULL, flags);
+
+    igText("Exit the game?");
+    igDummy((ImVec2){0.0f, 6.0f});
+
+    yes_clicked = TitleExitPromptButton("Yes", exit_prompt_sel == 0);
+    igSameLine(0.0f, 16.0f);
+    no_clicked = TitleExitPromptButton("No", exit_prompt_sel == 1);
+
+    igEnd();
+
+    left = (DPAD_LEFT_PRESSED() == 1) || (Ana2PadDirCnt(3) == 1);
+    right = (DPAD_RIGHT_PRESSED() == 1) || (Ana2PadDirCnt(1) == 1);
+
+    if (left || right)
+    {
+        exit_prompt_sel = exit_prompt_sel == 0;
+        SeStartFix(SE_CSR0, 0, 0x1000, 0x1000, 0);
+    }
+
+    if (yes_clicked)
+    {
+        exit_prompt_sel = 0;
+    }
+    else if (no_clicked)
+    {
+        exit_prompt_sel = 1;
+    }
+
+    confirm = (CROSS_PRESSED() == 1) || (START_PRESSED() == 1)
+              || yes_clicked || no_clicked;
+
+    if (confirm)
+    {
+        if (exit_prompt_sel == 0)
+        {
+            SeStartFix(SE_CLIC, 0, 0x1000, 0x1000, 0);
+            MikuPan_RequestQuit();
+        }
+        else
+        {
+            exit_prompt_open = 0;
+            SeStartFix(SE_CANCEL, 0, 0x1000, 0x1000, 0);
+        }
+    }
+    else if (TRIANGLE_PRESSED() == 1 || CIRCLE_PRESSED() == 1)
+    {
+        exit_prompt_open = 0;
+        SeStartFix(SE_CANCEL, 0, 0x1000, 0x1000, 0);
+    }
+}
+
 void TitleWaitMode()
 {
     /* s0 16 */ int i;
@@ -978,12 +1088,27 @@ void TitleWaitMode()
 
     ttl_dsp.mode = 0;
 
+    if (exit_prompt_open)
+    {
+        TitleExitPrompt();
+        return;
+    }
+
     if (CROSS_PRESSED() == 1 || START_PRESSED() == 1)
     {
         ttl_dsp.mode = 1;
 
         title_wrk.mode = TITLE_TITLE_SEL_INIT;
         title_wrk.csr = 0;
+
+        SeStartFix(SE_CLIC, 0, 4096, 4096, 0);
+    }
+    else if (TRIANGLE_PRESSED() == 1)
+    {
+        /* Open the exit confirmation. The popup is rendered/handled from the
+         * next frame so this same TRIANGLE press cannot also cancel it. */
+        exit_prompt_open = 1;
+        exit_prompt_sel = 1;
 
         SeStartFix(SE_CLIC, 0, 4096, 4096, 0);
     }

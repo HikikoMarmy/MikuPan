@@ -21,10 +21,10 @@ void main()
         col.rgb = mix(col.rgb, negative_color, strength);
     }
 
-    //if (col.a == 0.0f)
-    //{
-    //    discard;
-    //}
+    if (col.a <= 0.0f)
+    {
+        discard;
+    }
 
     FragColor = col;
 }

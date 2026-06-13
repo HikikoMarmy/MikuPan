@@ -118,14 +118,10 @@ static void ICdvdInitOnce()
 
     strcpy(fname, "\\IMG_HD.BIN;1");
     if (!sceCdSearchFile(&cdlf, fname)) {
-        while (!MikuPan_IopHostShouldShutdown())
-            ;
         return;
     }
     strcpy(fname, "\\IMG_BD.BIN;1");
     if (!sceCdSearchFile(&cdvd_stat.cdlf, fname)) {
-        while (!MikuPan_IopHostShouldShutdown())
-            ;
         return;
     }
 

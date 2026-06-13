@@ -25,6 +25,7 @@ typedef struct
 } MikuPan_McTblGetDir __attribute__((aligned (64)));
 
 void MikuPan_LoadImgHdFile();
+void MikuPan_ServiceMissingDataFolderDialog();
 /* Records that file data was loaded at a PS2 main-memory offset; requests a
    texture-cache flush only when an address is loaded over a second time. */
 void MikuPan_NotifyPs2MemoryLoad(int ps2_address);

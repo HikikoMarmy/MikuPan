@@ -545,6 +545,7 @@ static void MikuPan_ConvertPs2RectToRenderTextureUv(float *out,
 void MikuPan_EndFrame()
 {
     MikuPan_GPUFlushRenderPass();
+    MikuPan_GPUResolveSceneForPresent();
     MikuPan_SetViewportCached(
         0,
         0,

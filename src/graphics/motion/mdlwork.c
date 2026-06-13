@@ -51,6 +51,11 @@ char motCheckTrRateMdl(u_int mdl_no)
 
 u_int* MpkMapUnit(u_int *mpk_p)
 {
+    if (mpk_p == (void*)NULL)
+    {
+        return (void*)NULL;
+    }
+
     mpk_p += 4;
 
     while (mpk_p[0] - 1 < 0x7fffffff)

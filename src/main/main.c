@@ -20,6 +20,7 @@
 #define SDL_MAIN_USE_CALLBACKS 1  /* use the callbacks instead of main() */
 #include "iop/adpcm/iopadpcm.h"
 #include "iop/iopmain.h"
+#include "mikupan/mikupan_file_c.h"
 #include "mikupan/gs/mikupan_texture_manager_c.h"
 #include "mikupan/ui/mikupan_ui.h"
 #include "os/eeiop/se_cmd.h"
@@ -70,6 +71,8 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
 
 SDL_AppResult SDL_AppIterate(void *appstate)
 {
+    MikuPan_ServiceMissingDataFolderDialog();
+
     MikuPan_StartFrameUi();
     MikuPan_Clear();
 

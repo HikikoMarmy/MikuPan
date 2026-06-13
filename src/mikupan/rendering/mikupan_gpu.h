@@ -98,6 +98,8 @@ void MikuPan_GPUBeginFrame(void);
 void MikuPan_GPUEndFrame(void);
 void MikuPan_GPUFlushRenderPass(void);
 void MikuPan_GPUBeginRenderPass(void);
+void MikuPan_GPUResolveSceneForSampling(void);
+void MikuPan_GPUResolveSceneForPresent(void);
 
 void MikuPan_GPUCreateInternalBuffer(int width, int height, int msaa);
 void MikuPan_GPUDestroyInternalBuffer(void);
@@ -158,6 +160,7 @@ void MikuPan_GPUInvalidatePipelines(void);
 void MikuPan_GPUSetRenderState3D(void);
 void MikuPan_GPUSetRenderState3DMirror(void);
 void MikuPan_GPUSetRenderState2D(void);
+void MikuPan_GPUSetRenderState2DDepth(void);
 void MikuPan_GPUSetRenderStateSprite3D(void);
 void MikuPan_GPUSetRenderStateShadow(void);
 void MikuPan_GPUSetRenderStateShadowReceiver(void);
