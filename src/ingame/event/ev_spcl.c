@@ -2,6 +2,7 @@
 #include "typedefs.h"
 #include "enums.h"
 #include "ev_spcl.h"
+#include "mikupan/mikupan_memory.h"
 #include "mikupan/mikupan_rng.h"
 
 #include "graphics/graph2d/effect_scr.h" // SetBlackIn, SetBlackOut
@@ -912,7 +913,7 @@ int StarPuzzleMain(int pzl_no)
         {
             if (IsLoadEndAll() != 0)
             {
-                SetSprFile(EVENT_ADDRESS);
+                SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
 
                 star_pzl_wrk.mode = STAR_PZL_MODE_SELOAD;
 
@@ -934,7 +935,7 @@ int StarPuzzleMain(int pzl_no)
             {
                 pzl_load_id = -1;
 
-                SetSprFile(EVENT_ADDRESS);
+                SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
 
                 star_pzl_wrk.mode = STAR_PZL_MODE_IN;
                 star_pzl_wrk.time = 40;
@@ -2026,7 +2027,7 @@ int StarPuzzleMSGMain(int pzl_no)
         {
             if (IsLoadEndAll() != 0)
             {
-                SetSprFile(EVENT_ADDRESS);
+                SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
 
                 star_pzl_wrk.mode = STAR_PZL_MODE_IN;
                 star_pzl_wrk.time = 40;
@@ -2670,7 +2671,7 @@ void DialKeyDoorDisp()
     };
     int msg_index;
 
-    SetSprFile(EVENT_ADDRESS);
+    SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
 
     if (dkey_wrk.mode == DIAL_KEY_MODE_IN)
     {
@@ -2977,7 +2978,7 @@ void DialKeyMSGDoorDisp(int msg_no)
         .alpha = 0x64
     };
 
-    SetSprFile(EVENT_ADDRESS);
+    SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
 
     if (dkey_wrk.mode == DIAL_KEY_MODE_IN)
     {
@@ -3217,7 +3218,7 @@ void GhostDoorDisp(int door_no)
         .alpha = 0x3c,
     };
 
-    SetSprFile(EVENT_ADDRESS);
+    SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
 
     if (door_no != 5)
     {
@@ -3337,7 +3338,7 @@ void DollPzlMain()
         {
             if (IsLoadEndAll() != 0)
             {
-                SetSprFile(EVENT_ADDRESS);
+                SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
 
                 spev_wrk.mode = 2;
 
@@ -3972,7 +3973,7 @@ void SpecialEventDisp003(int no)
         .alpha = 0x3c,
     };
 
-    SetSprFile(EVENT_ADDRESS);
+    SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
 
     for (i = 0; i < 11; i++)
     {
@@ -4361,7 +4362,7 @@ void ButsuzoPzlMain()
         {
             if (IsLoadEndAll() != 0)
             {
-                SetSprFile(EVENT_ADDRESS);
+                SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
 
                 spev_wrk.mode = 2;
 
@@ -4900,7 +4901,7 @@ void SpecialEventDisp004()
         .alpha = 0x3c,
     };
 
-    SetSprFile(EVENT_ADDRESS);
+    SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
 
     for (i = 0; i < 3; i++)
     {
@@ -5304,7 +5305,7 @@ void ButsuzoMSGMain()
         {
             if (IsLoadEndAll() != 0)
             {
-                SetSprFile(EVENT_ADDRESS);
+                SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
 
                 spev_wrk.mode = 2;
 
@@ -5438,7 +5439,7 @@ void ButsuzoMSGDisp()
         .alpha = 0x3c,
     };
 
-    SetSprFile(EVENT_ADDRESS);
+    SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
 
     for (i = 0; i < 3; i++)
     {
@@ -5561,7 +5562,7 @@ void LightsOutMain()
         {
             if (IsLoadEndAll() != 0)
             {
-                SetSprFile(EVENT_ADDRESS);
+                SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
 
                 spev_wrk.mode = 2;
 
@@ -5898,7 +5899,7 @@ void SpecialEventDisp014(int no)
         .alpha = 0x80,
     };
 
-    SetSprFile(EVENT_ADDRESS);
+    SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
 
     for (i = 0; i < 6; i++)
     {
@@ -6233,7 +6234,7 @@ void FaceDoorMain(int face_no)
         {
             if (IsLoadEndAll() != 0)
             {
-                SetSprFile(EVENT_ADDRESS);
+                SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
 
                 spev_wrk.mode = 2;
 
@@ -6939,8 +6940,8 @@ void FaceDoorDisp(int face_no)
 
     spev_str.alpha = 0x80;
 
-    SetSprFile(EVENT_ADDRESS);
-    SetSprFile(EVENT_ADDRESS_2);
+    SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
+    SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS_2));
 
     if (spev_wrk.mode != 4 && spev_wrk.mode != 30)
     {
@@ -7906,8 +7907,8 @@ void SurpriseDoorMain()
         {
             if (IsLoadEndAll() != 0)
             {
-                SetSprFile(EVENT_ADDRESS);
-                SetSprFile(EVENT_ADDRESS_2);
+                SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
+                SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS_2));
 
                 spev_wrk.mode = 2;
 
@@ -8049,8 +8050,8 @@ void SurpriseDoorDisp(int face_no)
         .alpha = 0x80,
     };
 
-    SetSprFile(EVENT_ADDRESS);
-    SetSprFile(EVENT_ADDRESS_2);
+    SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
+    SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS_2));
 
     spev_str.alpha = 0x80;
 
@@ -8152,8 +8153,8 @@ void SimenPillarMain(int event_no)
                 return;
             }
 
-            SetSprFile(EVENT_ADDRESS);
-            SetSprFile(EVENT_ADDRESS_2);
+            SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
+            SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS_2));
 
             ingame_wrk.stts |= 0x20;
 
@@ -8633,7 +8634,7 @@ void SimenPillarDisp()
 
     if (spev_wrk.mode == 3 || spev_wrk.mode == 23 || spev_wrk.mode == 24 || spev_wrk.mode == 26)
     {
-        SetSprFile(EVENT_ADDRESS);
+        SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
 
         for (i = 0; i < 11; i++)
         {
@@ -9609,7 +9610,7 @@ void ZushiBonjiMain(int bonji_no)
         {
             if (IsLoadEndAll() != 0)
             {
-                SetSprFile(EVENT_ADDRESS);
+                SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
 
                 spev_wrk.mode = 3;
 
@@ -9922,7 +9923,7 @@ void ZushiBonjiDisp(int bonji_no)
 
     menu_sq0.alpha = zushi_alpha[1];
 
-    SetSprFile(EVENT_ADDRESS);
+    SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
 
     for (i = 0; i < 11; i++)
     {
@@ -10051,7 +10052,7 @@ void ZushiBonjiMSGMain()
         {
             if (IsLoadEndAll() != 0)
             {
-                SetSprFile(EVENT_ADDRESS);
+                SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
 
                 spev_wrk.mode = 2;
                 spev_wrk.time = 40;
@@ -10171,7 +10172,7 @@ void ZushiBonjiMSGDisp()
 
     menu_sq0.alpha = zushi_alpha[1];
 
-    SetSprFile(EVENT_ADDRESS);
+    SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
 
     for (i = 0; i < 11; i++)
     {
@@ -10250,7 +10251,7 @@ void ZushiBonjiAfterMain(int bonji_no)
         {
             if (IsLoadEndAll() != 0)
             {
-                SetSprFile(EVENT_ADDRESS);
+                SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
 
                 spev_wrk.mode = 2;
                 spev_wrk.time = 40;
@@ -10358,7 +10359,7 @@ void ZushiBonjiAfterDisp(int bonji_no)
 
     menu_sq0.alpha = zushi_alpha[1];
 
-    SetSprFile(EVENT_ADDRESS);
+    SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
 
     for (i = 0; i < 11; i++)
     {

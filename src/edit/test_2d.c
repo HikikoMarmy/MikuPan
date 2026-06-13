@@ -21,7 +21,7 @@ void LayoutTestInit()
 
 void LayoutTestMain()
 {
-    SetSprFile(TEST2D_PK2_ADDRESS);
+    SetSprFile(MikuPan_GetHostAddress(TEST2D_PK2_ADDRESS));
     LayoutTestDisp();
 
     if (*key_now[5] != 0)

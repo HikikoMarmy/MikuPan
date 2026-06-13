@@ -1710,11 +1710,6 @@ void SetSprFile(int64_t addr)
 
 void SetSprFile2(int64_t addr, u_int offset)
 {
-    if (MikuPan_GetHostAddress(addr) != -1)
-    {
-        addr = MikuPan_GetHostAddress(addr);
-    }
-
     MakeTim2ClutDirect3(addr, -1, -1, offset);
 }
 

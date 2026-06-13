@@ -2090,16 +2090,16 @@ void DspOgAlbumTop1(u_char alp, u_char alp0, u_char alp1)
         {
         case 0:
 #ifdef BUILD_EU_VERSION
-            SetSprFile(0x1d83000);
+            SetSprFile(MikuPan_GetHostAddress(0x1d83000));
 #else
-            SetSprFile(PL_FNDR_PK2_ADDRESS);
+            SetSprFile(MikuPan_GetHostAddress(PL_FNDR_PK2_ADDRESS));
 #endif
         break;
         case 1:
 #ifdef BUILD_EU_VERSION
-            SetSprFile(0x1d93470);
+            SetSprFile(MikuPan_GetHostAddress(0x1d93470));
 #else
-            SetSprFile(0x1d98570);
+            SetSprFile(MikuPan_GetHostAddress(0x1d98570));
 #endif
         break;
         }
@@ -2109,16 +2109,16 @@ void DspOgAlbumTop1(u_char alp, u_char alp0, u_char alp1)
         {
         case 0:
 #ifdef BUILD_EU_VERSION
-            SetSprFile(0x1d83000);
+            SetSprFile(MikuPan_GetHostAddress(0x1d83000));
 #else
-            SetSprFile(PL_FNDR_PK2_ADDRESS);
+            SetSprFile(MikuPan_GetHostAddress(PL_FNDR_PK2_ADDRESS));
 #endif
         break;
         case 1:
 #ifdef BUILD_EU_VERSION
-            SetSprFile(0x1dc3470);
+            SetSprFile(MikuPan_GetHostAddress(0x1dc3470));
 #else
-            SetSprFile(PL_ALBM_SIDE_1_ADDRESS);
+            SetSprFile(MikuPan_GetHostAddress(PL_ALBM_SIDE_1_ADDRESS));
 #endif
         break;
         }
@@ -2253,16 +2253,16 @@ void DspOgAlbumBig(u_char alp)
             {
             case 0:
 #ifdef BUILD_EU_VERSION
-                SetSprFile(0x1d83000);
+                SetSprFile(MikuPan_GetHostAddress(0x1d83000));
 #else
-                SetSprFile(PL_FNDR_PK2_ADDRESS);
+                SetSprFile(MikuPan_GetHostAddress(PL_FNDR_PK2_ADDRESS));
 #endif
             break;
             case 1:
 #ifdef BUILD_EU_VERSION
-                SetSprFile(0x1d93470);
+                SetSprFile(MikuPan_GetHostAddress(0x1d93470));
 #else
-                SetSprFile(0x1d98570);
+                SetSprFile(MikuPan_GetHostAddress(0x1d98570));
 #endif
             break;
             }
@@ -2272,16 +2272,16 @@ void DspOgAlbumBig(u_char alp)
             {
             case 0:
 #ifdef BUILD_EU_VERSION
-                SetSprFile(0x1d83000);
+                SetSprFile(MikuPan_GetHostAddress(0x1d83000));
 #else
-                SetSprFile(PL_FNDR_PK2_ADDRESS);
+                SetSprFile(MikuPan_GetHostAddress(PL_FNDR_PK2_ADDRESS));
 #endif
             break;
             case 1:
 #ifdef BUILD_EU_VERSION
-                SetSprFile(0x1dc3470);
+                SetSprFile(MikuPan_GetHostAddress(0x1dc3470));
 #else
-                SetSprFile(PL_ALBM_SIDE_1_ADDRESS);
+                SetSprFile(MikuPan_GetHostAddress(PL_ALBM_SIDE_1_ADDRESS));
 #endif
             break;
             }
@@ -2624,7 +2624,7 @@ void Navion(u_char type, u_char sw, u_char alp)
         }
     }
     
-    SetSprFile(PL_STTS_PK2_ADDRESS);  // Line 2193
+    SetSprFile(MikuPan_GetHostAddress(PL_STTS_PK2_ADDRESS));  // Line 2193
 
     switch (type)  // Line 2194
     {
@@ -3008,11 +3008,11 @@ void BtnExt(u_char mode, u_char alp)
         switch (mode)
         {
             case 0:
-                SetSprFile(PL_STTS_PK2_ADDRESS);
+                SetSprFile(MikuPan_GetHostAddress(PL_STTS_PK2_ADDRESS));
                 DispCaption(0x16, alp);
                 break;
             case 1:
-                SetSprFile(PL_STTS_PK2_ADDRESS);
+                SetSprFile(MikuPan_GetHostAddress(PL_STTS_PK2_ADDRESS));
                 DispCaption(0x16, alp);
             break;
             case 2:

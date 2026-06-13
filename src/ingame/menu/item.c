@@ -19,6 +19,7 @@
 #include "ingame/menu/item.h"
 #include "ingame/menu/item_get.h"
 #include "main/glob.h"
+#include "mikupan/mikupan_memory.h"
 #include "os/eeiop/adpcm/ea_tape.h"
 #include "os/eeiop/cdvd/eecdvd.h"
 #include "os/eeiop/eese.h"
@@ -1417,12 +1418,12 @@ static void PlaySM(u_char alp)
     alpha = alp * SgSinf((iew.tape_flsh * PI) / 90.0f);
 
 #ifdef BUILD_EU_VERSION
-    SetSprFile(0x1e2f000);
+    SetSprFile(MikuPan_GetHostAddress(0x1e2f000));
 
     PutSpriteYW(PLAYMATE, PLAYMATE, 130.0f, 104.0f, 0.0f, 0x303030, alp, 1.0f, 1.0f, 0, 0xff, 1, 0, 0);
     PutSpriteYW(PLAYMATE, PLAYMATE, 130.0f, 104.0f, 0.0f, 0x606060, (int)(alpha / 2), 1.0f, 1.0f, 0, 0xff, 1, 1, 0);
 #else
-    SetSprFile(0x1e2f700);
+    SetSprFile(MikuPan_GetHostAddress(0x1e2f700));
 
     PutSpriteYW(PLAYMATE, PLAYMATE, 100.0f, 180.0f, 0.0f, 0x303030, alp, 1.0f, 1.0f, 0, 0xff, 1, 0, 0);
     PutSpriteYW(PLAYMATE, PLAYMATE, 100.0f, 180.0f, 0.0f, 0x606060, (int)(alpha / 2), 1.0f, 1.0f, 0, 0xff, 1, 1, 0);
@@ -2592,7 +2593,7 @@ void BgFusumaYW(int rgb, float pos_x, float alpha, int pri)
     float scl_x;
     float scl_y;
 
-    SetSprFile(PL_BGBG_PK2_ADDRESS);
+    SetSprFile(MikuPan_GetHostAddress(PL_BGBG_PK2_ADDRESS));
 
     scl_x = 2.5396826f;
     scl_y = 2.516854f;
@@ -2648,105 +2649,105 @@ u_int FromPKZ(u_int pkz_addr, u_char pk2_no)
     switch(pk2_no)
     {
     case 0:
-        SetSprFile(0x1ce0000);
+        SetSprFile(MikuPan_GetHostAddress(0x1ce0000));
     break;
     case 1:
 #ifdef BUILD_EU_VERSION
-        SetSprFile(0x1cfefc0);
+        SetSprFile(MikuPan_GetHostAddress(0x1cfefc0));
 #else
-        SetSprFile(0x1d05140);
+        SetSprFile(MikuPan_GetHostAddress(0x1d05140));
 #endif
     break;
     case 2:
 #ifdef BUILD_EU_VERSION
-        SetSprFile(0x1d210c0);
+        SetSprFile(MikuPan_GetHostAddress(0x1d210c0));
 #else
-        SetSprFile(0x1d266c0);
+        SetSprFile(MikuPan_GetHostAddress(0x1d266c0));
 #endif
     break;
     case 3:
 #ifdef BUILD_EU_VERSION
-        SetSprFile(0x1d10000);
+        SetSprFile(MikuPan_GetHostAddress(0x1d10000));
 #else
-        SetSprFile(0x1d15600);
+        SetSprFile(MikuPan_GetHostAddress(0x1d15600));
 #endif
     break;
     case 5:
 #ifdef BUILD_EU_VERSION
-        SetSprFile(0x1d54030);
+        SetSprFile(MikuPan_GetHostAddress(0x1d54030));
 #else
-        SetSprFile(0x1d59630);
+        SetSprFile(MikuPan_GetHostAddress(0x1d59630));
 #endif
     break;
     case 4:
 #ifdef BUILD_EU_VERSION
-        SetSprFile(0x1d10000);
+        SetSprFile(MikuPan_GetHostAddress(0x1d10000));
 #else
-        SetSprFile(0x1d15600);
+        SetSprFile(MikuPan_GetHostAddress(0x1d15600));
 #endif
     break;
     case 7:
 #ifdef BUILD_EU_VERSION
-        SetSprFile(0x1d83000);
+        SetSprFile(MikuPan_GetHostAddress(0x1d83000));
 #else
-        SetSprFile(0x1d88100);
+        SetSprFile(MikuPan_GetHostAddress(0x1d88100));
 #endif
     break;
     case 8:
 #ifdef BUILD_EU_VERSION
-        SetSprFile(0x1ded000);
+        SetSprFile(MikuPan_GetHostAddress(0x1ded000));
 #else
-        SetSprFile(0x1df2100);
+        SetSprFile(MikuPan_GetHostAddress(0x1df2100));
 #endif
     break;
     case 9:
 #ifdef BUILD_EU_VERSION
-        SetSprFile(0x1e04000);
+        SetSprFile(MikuPan_GetHostAddress(0x1e04000));
 #else
-        SetSprFile(0x1e05b00);
+        SetSprFile(MikuPan_GetHostAddress(0x1e05b00));
 #endif
     break;
     case 10:
-        SetSprFile(EVENT_ADDRESS);
+        SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
     break;
     case 11:
 #ifdef BUILD_EU_VERSION
-        SetSprFile(MODE_SELECT2_ADDRESS);
+        SetSprFile(MikuPan_GetHostAddress(MODE_SELECT2_ADDRESS));
 #else
-        SetSprFile(PL_PHOT_PK2_ADDRESS);
+        SetSprFile(MikuPan_GetHostAddress(PL_PHOT_PK2_ADDRESS));
 #endif
     break;
     case 12:
-        SetSprFile(EVENT_ADDRESS);
+        SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
     break;
     case 13:
 #ifdef BUILD_EU_VERSION
-        SetSprFile(MODE_SELECT2_ADDRESS);
+        SetSprFile(MikuPan_GetHostAddress(MODE_SELECT2_ADDRESS));
 #else
-        SetSprFile(PL_PHOT_PK2_ADDRESS);
+        SetSprFile(MikuPan_GetHostAddress(PL_PHOT_PK2_ADDRESS));
 #endif
     break;
     case 14:
-        SetSprFile(EVENT_ADDRESS);
+        SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
     break;
     case 15:
-        SetSprFile(EVENT_ADDRESS);
+        SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
     break;
     case 16:
-        SetSprFile(EVENT_ADDRESS);
+        SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
     break;
     case 18:
 #ifdef BUILD_EU_VERSION
-        SetSprFile(0x1d23680);
+        SetSprFile(MikuPan_GetHostAddress(0x1d23680));
 #else
-        SetSprFile(0x1d28c80);
+        SetSprFile(MikuPan_GetHostAddress(0x1d28c80));
 #endif
     break;
     case 17:
 #ifdef BUILD_EU_VERSION
-        SetSprFile(0x1d10000);
+        SetSprFile(MikuPan_GetHostAddress(0x1d10000));
 #else
-        SetSprFile(0x1d15600);
+        SetSprFile(MikuPan_GetHostAddress(0x1d15600));
 #endif
     break;
     }
@@ -2758,7 +2759,7 @@ void DcdCMP2PK2(u_int cmp_addr, u_int tmp_addr)
 {
     SlideDecode((u_char*)cmp_addr, (u_char*)tmp_addr);
 
-    SetSprFile(tmp_addr);
+    SetSprFile(MikuPan_GetHostAddress(tmp_addr));
 }
 
 static void YW_DBG()

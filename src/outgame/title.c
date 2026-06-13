@@ -448,7 +448,7 @@ SPRT_DAT title_sprt[11] = {
 
         EAdpcmFadeOut(0x3c);
     case TITLE_TITLE_WAIT2:
-        SetSprFile(SPRITE_ADDRESS);
+        SetSprFile(MikuPan_GetHostAddress(SPRITE_ADDRESS));
 
         TitleWaitMode();
         DispOutDither();
@@ -468,7 +468,7 @@ SPRT_DAT title_sprt[11] = {
             title_cnt++;
         }
 
-        SetSprFile(SPRITE_ADDRESS);
+        SetSprFile(MikuPan_GetHostAddress(SPRITE_ADDRESS));
         TitleWaitMode();
         DispOutDither();
         if (title_cnt >= 60*46 && title_wrk.mode != TITLE_TITLE_SEL_INIT)
@@ -546,7 +546,7 @@ SPRT_DAT title_sprt[11] = {
         title_wrk.csr = 1;
         title_wrk.mode = TITLE_TITLE_SEL;
     case TITLE_TITLE_SEL:
-        SetSprFile(SPRITE_ADDRESS);
+        SetSprFile(MikuPan_GetHostAddress(SPRITE_ADDRESS));
 
         if (L1_PRESSED() >= 1 && R1_PRESSED()  >= 1)
         {
@@ -588,9 +588,9 @@ SPRT_DAT title_sprt[11] = {
             title_wrk.sub_mode = 7;
         }
 
-        SetSprFile(PL_PSVP_PK2_ADDRESS);
-        SetSprFile(PL_SAVE_PK2_ADDRESS);
-        SetSprFile(SV_PHT_PK2_ADDRESS);
+        SetSprFile(MikuPan_GetHostAddress(PL_PSVP_PK2_ADDRESS));
+        SetSprFile(MikuPan_GetHostAddress(PL_SAVE_PK2_ADDRESS));
+        SetSprFile(MikuPan_GetHostAddress(SV_PHT_PK2_ADDRESS));
 
         switch (McAtLoadChk(1))
         {
@@ -639,7 +639,7 @@ SPRT_DAT title_sprt[11] = {
         }
     break;
     case TITLE_MODE_SEL:
-        SetSprFile(SPRITE_ADDRESS);
+        SetSprFile(MikuPan_GetHostAddress(SPRITE_ADDRESS));
 
         if (ttl_dsp.mode != 0)
         {
@@ -680,9 +680,9 @@ SPRT_DAT title_sprt[11] = {
         }
     break;
     case TITLE_ALBM_LOAD1:
-        SetSprFile(PL_PSVP_PK2_ADDRESS);
-        SetSprFile(PL_SAVE_PK2_ADDRESS);
-        SetSprFile(SV_PHT_PK2_ADDRESS);
+        SetSprFile(MikuPan_GetHostAddress(PL_PSVP_PK2_ADDRESS));
+        SetSprFile(MikuPan_GetHostAddress(PL_SAVE_PK2_ADDRESS));
+        SetSprFile(MikuPan_GetHostAddress(SV_PHT_PK2_ADDRESS));
 
         switch (McAtLoadChk(2))
         {
@@ -709,8 +709,8 @@ SPRT_DAT title_sprt[11] = {
         }
     break;
     case TITLE_ALBM_LOAD2:
-        SetSprFile(PL_SAVE_PK2_ADDRESS);
-        SetSprFile(SV_PHT_PK2_ADDRESS);
+        SetSprFile(MikuPan_GetHostAddress(PL_SAVE_PK2_ADDRESS));
+        SetSprFile(MikuPan_GetHostAddress(SV_PHT_PK2_ADDRESS));
 
         switch (McAtLoadChk(2))
         {
@@ -767,8 +767,8 @@ SPRT_DAT title_sprt[11] = {
         }
     break;
     case TITLE_ALBM_MAIN:
-        SetSprFile(PL_ALBM_FSM_PK2_ADDRESS);
-        SetSprFile(PL_SAVE_PK2_ADDRESS);
+        SetSprFile(MikuPan_GetHostAddress(PL_ALBM_FSM_PK2_ADDRESS));
+        SetSprFile(MikuPan_GetHostAddress(PL_SAVE_PK2_ADDRESS));
 
         switch(SweetMemories(1, 0x80))
         {
@@ -840,9 +840,9 @@ SPRT_DAT title_sprt[11] = {
         }
     break;
     case TITLE_ALBM_LOAD_MODE:
-        SetSprFile(PL_PSVP_PK2_ADDRESS);
-        SetSprFile(PL_SAVE_PK2_ADDRESS);
-        SetSprFile(SV_PHT_PK2_ADDRESS);
+        SetSprFile(MikuPan_GetHostAddress(PL_PSVP_PK2_ADDRESS));
+        SetSprFile(MikuPan_GetHostAddress(PL_SAVE_PK2_ADDRESS));
+        SetSprFile(MikuPan_GetHostAddress(SV_PHT_PK2_ADDRESS));
 
         switch (McAtLoadChk(2))
         {
@@ -900,9 +900,9 @@ SPRT_DAT title_sprt[11] = {
         }
     break;
     case TITLE_ALBM_SAVE:
-        SetSprFile(PL_PSVP_PK2_ADDRESS);
-        SetSprFile(PL_SAVE_PK2_ADDRESS);
-        SetSprFile(SV_PHT_PK2_ADDRESS);
+        SetSprFile(MikuPan_GetHostAddress(PL_PSVP_PK2_ADDRESS));
+        SetSprFile(MikuPan_GetHostAddress(PL_SAVE_PK2_ADDRESS));
+        SetSprFile(MikuPan_GetHostAddress(SV_PHT_PK2_ADDRESS));
 
         switch (McAtAlbmChk())
         {

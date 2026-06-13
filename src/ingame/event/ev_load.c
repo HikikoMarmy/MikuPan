@@ -3240,7 +3240,7 @@ void MissionTitleDisp(int msn_no)
 	/* 0x0(sp) */ SPRT_SDAT ssd;
     SPRT_SDAT *p;
 
-    SetSprFile((int64_t)MISSION_TITLE_CARD_ADDRESS);
+    SetSprFile(MikuPan_GetHostAddress(MISSION_TITLE_CARD_ADDRESS));
     
     if (mttl_wrk.mode == 1)
     {
@@ -3277,7 +3277,7 @@ void StageTitleDisp(int msn_no)
 	u_char alp_rate;
 	SPRT_SDAT ssd;
 
-    SetSprFile(MISSION_TITLE_CARD_ADDRESS);
+    SetSprFile(MikuPan_GetHostAddress(MISSION_TITLE_CARD_ADDRESS));
 
     if (mttl_wrk.mode == 1)
     {

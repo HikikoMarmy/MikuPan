@@ -14,6 +14,7 @@
 #include "ingame/menu/pause.h"
 #include "main/gamemain.h"
 #include "main/glob.h"
+#include "mikupan/mikupan_memory.h"
 #include "os/eeiop/adpcm/ea_ctrl.h"
 #include "os/eeiop/eese.h"
 #include "outgame/btl_mode/btl_menu.h"
@@ -263,7 +264,7 @@ static void PauseDraw(u_char alp)
 {
     int i;
 
-    SetSprFile(0x1ce0000);
+    SetSprFile(MikuPan_GetHostAddress(0x1ce0000));
 
     CmnWindow(20, 0, 0, alp, 0x80);
 

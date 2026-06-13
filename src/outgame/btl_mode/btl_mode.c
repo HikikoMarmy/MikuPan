@@ -241,10 +241,10 @@ void BattleModeStageMain()
         }
     break;
     case BTL_MODE_SAVE3:
-        SetSprFile(PL_STTS_PK2_ADDRESS);
-        SetSprFile(PL_PSVP_PK2_ADDRESS);
-        SetSprFile(PL_SAVE_PK2_ADDRESS);
-        SetSprFile(SV_PHT_PK2_ADDRESS);
+        SetSprFile(MikuPan_GetHostAddress(PL_STTS_PK2_ADDRESS));
+        SetSprFile(MikuPan_GetHostAddress(PL_PSVP_PK2_ADDRESS));
+        SetSprFile(MikuPan_GetHostAddress(PL_SAVE_PK2_ADDRESS));
+        SetSprFile(MikuPan_GetHostAddress(SV_PHT_PK2_ADDRESS));
 
         if (McAtSaveChk() != 0)
         {

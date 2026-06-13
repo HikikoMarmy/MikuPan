@@ -2788,7 +2788,7 @@ int CallMissionAllClear()
         }
         break;
     case 8:
-        SetSprFile(0x1f108b0);
+        SetSprFile(MikuPan_GetHostAddress(0x1f108b0));
 
         for (i = 0; i < 11; i++)
         {
@@ -3128,15 +3128,15 @@ int BtlAnmInit(/* s0 16 */ int anm_no)
         switch (anm_no)
         {
         case 3:
-            SetSprFile(MISSION_TITLE_CARD_ADDRESS);
-            SetSprFile(EFFECT_ANIMATION_ADDRESS);
+            SetSprFile(MikuPan_GetHostAddress(MISSION_TITLE_CARD_ADDRESS));
+            SetSprFile(MikuPan_GetHostAddress(EFFECT_ANIMATION_ADDRESS));
         break;
         case 5:
-            SetSprFile(MISSION_TITLE_CARD_ADDRESS);
-            SetSprFile(MPEG_WORK_ADDRESS);
+            SetSprFile(MikuPan_GetHostAddress(MISSION_TITLE_CARD_ADDRESS));
+            SetSprFile(MikuPan_GetHostAddress(MPEG_WORK_ADDRESS));
         break;
         default:
-            SetSprFile(MISSION_TITLE_CARD_ADDRESS);
+            SetSprFile(MikuPan_GetHostAddress(MISSION_TITLE_CARD_ADDRESS));
         }
 
         i = anm_wrk.start_num;
@@ -3531,7 +3531,7 @@ void BtlReadyDisp(/* s0 16 */ ANM2D_WRK_TABLE *w_table)
     /* s1 17 */ int i;
     int64_t addr = EFFECT_ADDRESS; // workaround to make the last for loop match
 
-    SetSprFile(addr);
+    SetSprFile(MikuPan_GetHostAddress(addr));
 
     if (ANM2D_DAT_TABLE_P(w_table->table_p)->attribute & 0x10000)
     {

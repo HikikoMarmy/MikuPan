@@ -15,6 +15,7 @@
 #include "ingame/menu/item.h"
 #include "ingame/menu/pause.h"
 #include "main/glob.h"
+#include "mikupan/mikupan_memory.h"
 #include "os/eeiop/adpcm/ea_ctrl.h"
 #include "os/eeiop/cdvd/eecdvd.h"
 #include "os/eeiop/eese.h"
@@ -111,11 +112,11 @@ void SpdMapMain()
 
     if (yw2d.io_a[4] != 0.0f)
     {
-        SetSprFile(0x1ce0000);
+        SetSprFile(MikuPan_GetHostAddress(0x1ce0000));
 #ifdef BUILD_EU_VERSION
-        SetSprFile(0x1e04000);
+        SetSprFile(MikuPan_GetHostAddress(0x1e04000));
 #else
-        SetSprFile(0x1e05b00);
+        SetSprFile(MikuPan_GetHostAddress(0x1e05b00));
 #endif
     }
 
@@ -298,8 +299,8 @@ void SpdOptMain()
 
     if (yw2d.io_a[4] != 0.0f)
     {
-        SetSprFile(SP_SPRITES_ADDRESS);
-        SetSprFile(EVENT_ADDRESS);
+        SetSprFile(MikuPan_GetHostAddress(SP_SPRITES_ADDRESS));
+        SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
     }
 
     if (spd_mnu.sopt != 0x0)

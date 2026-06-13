@@ -858,13 +858,13 @@ char ModeSlctPad(u_char mode)
         {
             BgFusumaYW(0x606060, 0.0f, GetCamDispAlpha(), 0x7d000);
 #ifdef BUILD_EU_VERSION
-            SetSprFile(EVENT_ADDRESS);
-            SetSprFile(PL_STTS_PK2_ADDRESS);
-            SetSprFile(MODE_SELECT_ADDRESS);
+            SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
+            SetSprFile(MikuPan_GetHostAddress(PL_STTS_PK2_ADDRESS));
+            SetSprFile(MikuPan_GetHostAddress(MODE_SELECT_ADDRESS));
 #else
-            SetSprFile(MISSION_TITLE_CARD_ADDRESS);
-            SetSprFile(PL_STTS_PK2_ADDRESS);
-            SetSprFile(PL_MTOP_PK2_ADDRESS);
+            SetSprFile(MikuPan_GetHostAddress(MISSION_TITLE_CARD_ADDRESS));
+            SetSprFile(MikuPan_GetHostAddress(PL_STTS_PK2_ADDRESS));
+            SetSprFile(MikuPan_GetHostAddress(PL_MTOP_PK2_ADDRESS));
 #endif
             CameraCustomMain();
         }
@@ -880,13 +880,13 @@ char ModeSlctPad(u_char mode)
         {
             BgFusumaYW(0x606060, 0.0f, GetPhtDispAlpha(), 0x7d000);
 #ifdef BUILD_EU_VERSION
-            SetSprFile(MODE_SELECT2_ADDRESS);
-            SetSprFile(PL_STTS_PK2_ADDRESS);
-            SetSprFile(MODE_SELECT_ADDRESS);
+            SetSprFile(MikuPan_GetHostAddress(MODE_SELECT2_ADDRESS));
+            SetSprFile(MikuPan_GetHostAddress(PL_STTS_PK2_ADDRESS));
+            SetSprFile(MikuPan_GetHostAddress(MODE_SELECT_ADDRESS));
 #else
-            SetSprFile(PL_PHOT_PK2_ADDRESS);
-            SetSprFile(PL_STTS_PK2_ADDRESS);
-            SetSprFile(PL_MTOP_PK2_ADDRESS);
+            SetSprFile(MikuPan_GetHostAddress(PL_PHOT_PK2_ADDRESS));
+            SetSprFile(MikuPan_GetHostAddress(PL_STTS_PK2_ADDRESS));
+            SetSprFile(MikuPan_GetHostAddress(PL_MTOP_PK2_ADDRESS));
 #endif
             IngameMenuAlbum(1);
         }
@@ -919,8 +919,8 @@ void ModeSlctDspBak(u_char alp, u_char mode)
         return;
     }
     
-    SetSprFile(M_SLCT_CMN_PK2_ADDRESS);
-    SetSprFile(M_SLCT_STY_PK2_ADDRESS);
+    SetSprFile(MikuPan_GetHostAddress(M_SLCT_CMN_PK2_ADDRESS));
+    SetSprFile(MikuPan_GetHostAddress(M_SLCT_STY_PK2_ADDRESS));
     
     for (i = 0; i < 11; i++)
     {
@@ -982,15 +982,15 @@ void ModeSlctDspChr(u_char alp, u_char mode)
             DspBattleMode(alp, flsh);
         break;
         case 3:
-            SetSprFile(PL_STTS_PK2_ADDRESS);
-            SetSprFile(PL_OPTI_PK2_ADDRESS);
+            SetSprFile(MikuPan_GetHostAddress(PL_STTS_PK2_ADDRESS));
+            SetSprFile(MikuPan_GetHostAddress(PL_OPTI_PK2_ADDRESS));
             DspOptCtrl(dsp_ms.csr[2], dsp_ms.opt_mode, alp, 0x0);
         break;
         case 4:
             SoundTestForModeSlectDisp(alp, flsh);
         break;
         case 7:
-            SetSprFile(M_SLCT_BTL_MSN_PK2_ADDRESS);
+            SetSprFile(MikuPan_GetHostAddress(M_SLCT_BTL_MSN_PK2_ADDRESS));
             DspMissionSelect(alp);
         }
     }
@@ -1022,7 +1022,7 @@ void DspModeSlect(u_char alp)
     PutChrOne(0x48, 0, 0, dsp_rgb[3], dsp_alp[3], 0x0);
     PutChrOne(0x49, 0, 0, dsp_rgb[4], dsp_alp[4], 0x0);
     
-    SetSprFile(PL_STTS_PK2_ADDRESS);
+    SetSprFile(MikuPan_GetHostAddress(PL_STTS_PK2_ADDRESS));
     DispCaption(3, alp);
 }
 
@@ -1171,7 +1171,7 @@ void DspStoryMode(u_char alp, float flsh)
     break;
     }
     
-    SetSprFile(PL_STTS_PK2_ADDRESS);
+    SetSprFile(MikuPan_GetHostAddress(PL_STTS_PK2_ADDRESS));
     DispCaption(3, alp);
 }
 
@@ -1257,7 +1257,7 @@ void DspBattleMode(u_char alp, float flsh)
     break;
     }
     
-    SetSprFile(PL_STTS_PK2_ADDRESS);
+    SetSprFile(MikuPan_GetHostAddress(PL_STTS_PK2_ADDRESS));
     DispCaption(3, alp);
 }
 
@@ -1388,7 +1388,7 @@ void DspMissionSelect(u_char alp)
         }
     }
 
-    SetSprFile(PL_STTS_PK2_ADDRESS);
+    SetSprFile(MikuPan_GetHostAddress(PL_STTS_PK2_ADDRESS));
     DispCaption(4, alp);
 }
 

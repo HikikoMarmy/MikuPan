@@ -2,6 +2,7 @@
 #include "typedefs.h"
 #include "enums.h"
 #include "inf_disp.h"
+#include "mikupan/mikupan_memory.h"
 #include "mikupan/mikupan_rng.h"
 
 #include "graphics/graph2d/effect.h"
@@ -11473,7 +11474,7 @@ void InformationDispMain()
             }
             else if (isDispLamp() != 0)
             {
-                SetSprFile(PL_LIFE_PK2_ADDRESS);
+                SetSprFile(MikuPan_GetHostAddress(PL_LIFE_PK2_ADDRESS));
                 EdogawaLamp(230, 352, 1);
             }
             else
@@ -11566,13 +11567,13 @@ void InformationDispModeCtrl()
 
     if (inf_dsp.fndr_dsp_flg != 0)
     {
-        SetSprFile(PL_FNDR_PK2_ADDRESS);
-        SetSprFile(PL_LIFE_PK2_ADDRESS);
+        SetSprFile(MikuPan_GetHostAddress(PL_FNDR_PK2_ADDRESS));
+        SetSprFile(MikuPan_GetHostAddress(PL_LIFE_PK2_ADDRESS));
     }
 
     if (inf_dsp.stts_dsp_flg != 0)
     {
-        SetSprFile(PL_LIFE_PK2_ADDRESS);
+        SetSprFile(MikuPan_GetHostAddress(PL_LIFE_PK2_ADDRESS));
     }
     else
     {
@@ -14441,7 +14442,7 @@ static void GekisyaBoyGeisyaGirl(short int px, short int py)
 
     i = 0;
 
-    SetSprFile(PL_LIFE_PK2_ADDRESS);
+    SetSprFile(MikuPan_GetHostAddress(PL_LIFE_PK2_ADDRESS));
 
     while (y[i] != -1)
     {

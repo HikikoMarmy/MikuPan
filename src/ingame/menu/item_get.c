@@ -19,6 +19,7 @@
 
 #include "graphics/motion/mdlwork.h"
 #include "main/glob.h"
+#include "mikupan/mikupan_memory.h"
 #include "mikupan/rendering/mikupan_renderer.h"
 #include "os/eeiop/adpcm/ea_tape.h"
 #include "os/eeiop/cdvd/eecdvd.h"
@@ -99,7 +100,7 @@ void ItemGet(u_char get_type, u_char get_no, u_char msg0_no, u_char msg1_no)
 
 int ItemGetCtrl()
 {
-    SetSprFile(0x1ce0000);
+    SetSprFile(MikuPan_GetHostAddress(0x1ce0000));
 
     if (file_dsp.cnt < 60)
     {

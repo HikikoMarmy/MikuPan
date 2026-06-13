@@ -3,6 +3,7 @@
 #include "enums.h"
 #include "ig_menu.h"
 
+#include "mikupan/mikupan_memory.h"
 #include "graphics/graph2d/effect.h"
 #include "graphics/graph2d/effect_sub.h"
 // #include "graphics/graph2d/tim2.h"
@@ -143,9 +144,9 @@ void IngameMenuMain()
 {
     u_char ret;
 
-    SetSprFile(SPR_ADDRESS_1);
-    SetSprFile(SPR_ADDRESS_2);
-    SetSprFile(SPR_ADDRESS_3);
+    SetSprFile(MikuPan_GetHostAddress(SPR_ADDRESS_1));
+    SetSprFile(MikuPan_GetHostAddress(SPR_ADDRESS_2));
+    SetSprFile(MikuPan_GetHostAddress(SPR_ADDRESS_3));
 
     if (yw2d.inn_mode_cnt != 0)
     {
@@ -182,42 +183,42 @@ void IngameMenuMain()
         IngameMenuModeSlct();
     break;
     case IGMENU_MODE_MAP:
-        SetSprFile(SPR_ADDRESS_4);
+        SetSprFile(MikuPan_GetHostAddress(SPR_ADDRESS_4));
 
         IngameMenuMap();
     break;
     case IGMENU_MODE_ITEM:
-        SetSprFile(SPR_ADDRESS_5);
+        SetSprFile(MikuPan_GetHostAddress(SPR_ADDRESS_5));
 
         IngameMenuItem();
     break;
     case IGMENU_MODE_ALBM:
-        SetSprFile(SPR_ADDRESS_6);
+        SetSprFile(MikuPan_GetHostAddress(SPR_ADDRESS_6));
 
         IngameMenuAlbum(0);
     break;
     case IGMENU_MODE_FILE:
-        SetSprFile(SPR_ADDRESS_5);
+        SetSprFile(MikuPan_GetHostAddress(SPR_ADDRESS_5));
 
         IngameMenuFile();
     break;
     case IGMENU_MODE_GHOST:
-        SetSprFile(SPR_ADDRESS_5);
+        SetSprFile(MikuPan_GetHostAddress(SPR_ADDRESS_5));
 
         IngameMenuGlst();
     break;
     case IGMENU_MODE_RANKING:
-        SetSprFile(SPR_ADDRESS_6);
+        SetSprFile(MikuPan_GetHostAddress(SPR_ADDRESS_6));
 
         IngameMenuRank();
     break;
     case IGMENU_MODE_CAMERA:
-        SetSprFile(SPR_ADDRESS_5);
+        SetSprFile(MikuPan_GetHostAddress(SPR_ADDRESS_5));
 
         CameraCustomMain();
     break;
     case IGMENU_MODE_OPTN:
-        SetSprFile(SPR_ADDRESS_5);
+        SetSprFile(MikuPan_GetHostAddress(SPR_ADDRESS_5));
 
         IngameMenuOption();
     break;
@@ -1181,7 +1182,7 @@ static void CmnWakuForWin(short int pos_x, short int pos_y, u_short siz_x, u_sho
     short int put_u;
     short int put_v;
 
-    SetSprFile(0x1ce0000);
+    SetSprFile(MikuPan_GetHostAddress(0x1ce0000));
 
     if (msk_sw != 0)
     {

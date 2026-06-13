@@ -4848,7 +4848,7 @@ void RelationShip()
         }
     break;
     case 2:
-        SetSprFile(SPRT_ADDRESS);
+        SetSprFile(MikuPan_GetHostAddress(SPRT_ADDRESS));
         if (TateizFreeSpace() != 0)
         {
             file_rel.step = 3;
@@ -5869,9 +5869,9 @@ void RelDspBackGrd()
 
     DispSprD(&ds);
 
-    SetSprFile(EVENT_ADDRESS);
+    SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
 
-    SetSprFile(SPRT_ADDRESS_2);
+    SetSprFile(MikuPan_GetHostAddress(SPRT_ADDRESS_2));
 
     for (i = 0; i < 10; i++)
     {
@@ -5949,7 +5949,7 @@ void RelDspBackGrd()
 
     DispSprD(&ds);
 
-    SetSprFile(SPRT_ADDRESS_2);
+    SetSprFile(MikuPan_GetHostAddress(SPRT_ADDRESS_2));
 
     DrawButtonTex(0x14000, 3, spr_dat[MAP_DIRECTION].x - 45, spr_dat[MAP_DIRECTION].y + rel_csr.offy + 69, 0x64);
 
@@ -5993,7 +5993,7 @@ void RelDspBackGrd()
 
     DspMenuTitle(yw2d.io_x[1], yw2d.io_y[1] + rel_csr.offy - 22.0f, 128.0f, 30, 4);
 
-    SetSprFile(SPRT_ADDRESS);
+    SetSprFile(MikuPan_GetHostAddress(SPRT_ADDRESS));
 }
 
 void RelationDispMsg(RELATION_DAT *r_dat)
@@ -6068,7 +6068,7 @@ void RelationDispMsg(RELATION_DAT *r_dat)
     break;
     }
 
-    SetSprFile(EVENT_ADDRESS);
+    SetSprFile(MikuPan_GetHostAddress(EVENT_ADDRESS));
 
 #ifdef BUILD_EU_VERSION
     Sheet(814, 20, dsp_offy + 20, 600, 180, 0xf, 0x80);
@@ -6078,7 +6078,7 @@ void RelationDispMsg(RELATION_DAT *r_dat)
     Fuchidori(815, 20, dsp_offy + 20, 600, 180, 0xe, 0x80);
 #endif
 
-    SetSprFile(SPRT_ADDRESS);
+    SetSprFile(MikuPan_GetHostAddress(SPRT_ADDRESS));
 }
 
 void SimpleDispSprtDS(SPRT_DAT *ssd, u_int addr, int sp_no, SPRT_SROT *srot, SPRT_SSCL *sscl, u_char alp_rate)

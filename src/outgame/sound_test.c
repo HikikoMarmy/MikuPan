@@ -2,6 +2,7 @@
 #include "typedefs.h"
 #include "enums.h"
 #include "sound_test.h"
+#include "mikupan/mikupan_memory.h"
 #include "mikupan/mikupan_rng.h"
 #include "graphics/graph2d/tim2.h"
 #include "graphics/graph3d/sglib.h"
@@ -699,7 +700,7 @@ void SoundTestForModeSlectDisp(u_char alp, float flsh)
         PutStringYW(52, stf.msg_no, 80, 357, 0x808080, alp, 0x1000, 0);
     }
 
-    SetSprFile(0x1ce0000);
+    SetSprFile(MikuPan_GetHostAddress(0x1ce0000));
     DispCaption(5, alp);
 }
 

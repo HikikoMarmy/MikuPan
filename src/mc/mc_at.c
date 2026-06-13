@@ -3,6 +3,7 @@
 #include "enums.h"
 #include "mc_at.h"
 
+#include "mikupan/mikupan_memory.h"
 #include "ingame/menu/sp_menu.h"
 #include "ingame/menu/item.h"
 #include "graphics/graph2d/tim2.h"
@@ -419,7 +420,7 @@ static char McAtAlbmMainLoop()
         }
     }
 
-    SetSprFile(0x1ce0000);
+    SetSprFile(MikuPan_GetHostAddress(0x1ce0000));
 
     BgFusumaYW(0x606060, 0.0f, 128.0f, 0x7d000);
 

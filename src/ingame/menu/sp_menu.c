@@ -20,6 +20,7 @@
 #include "ingame/menu/sp_menu.h"
 #include "ingame/plyr/plyr_ctl.h"
 #include "main/glob.h"
+#include "mikupan/mikupan_memory.h"
 #include "mikupan/rendering/mikupan_renderer.h"
 #include "mc/mc_at.h"
 #include "mc/mc_disp.h"
@@ -281,7 +282,7 @@ char SavePointMenuMain(u_char msn)
             }
             break;
         case 4:
-            SetSprFile(LOAD_ADDRESS_1);
+            SetSprFile(MikuPan_GetHostAddress(LOAD_ADDRESS_1));
 
             if (dsp_svp.top_alp + 8 < 0x80)
             {
@@ -300,11 +301,11 @@ char SavePointMenuMain(u_char msn)
             }
             break;
         case 5:
-            SetSprFile(LOAD_ADDRESS_1);
+            SetSprFile(MikuPan_GetHostAddress(LOAD_ADDRESS_1));
             SavePointMenuModeSlct(msn, mode);
             break;
         case 6:
-            SetSprFile(LOAD_ADDRESS_1);
+            SetSprFile(MikuPan_GetHostAddress(LOAD_ADDRESS_1));
 
             if (sp_load_id == -1)
             {
@@ -338,9 +339,9 @@ char SavePointMenuMain(u_char msn)
             }
             break;
         case 7:
-            SetSprFile(LOAD_ADDRESS_2);
-            SetSprFile(LOAD_ADDRESS_1);
-            SetSprFile(LOAD_ADDRESS_3);
+            SetSprFile(MikuPan_GetHostAddress(LOAD_ADDRESS_2));
+            SetSprFile(MikuPan_GetHostAddress(LOAD_ADDRESS_1));
+            SetSprFile(MikuPan_GetHostAddress(LOAD_ADDRESS_3));
 
             if (McAtSaveChk() != 0)
             {
@@ -350,7 +351,7 @@ char SavePointMenuMain(u_char msn)
             }
             break;
         case 8:
-            SetSprFile(LOAD_ADDRESS_1);
+            SetSprFile(MikuPan_GetHostAddress(LOAD_ADDRESS_1));
 
             if (sp_load_id == -1)
             {
@@ -370,7 +371,7 @@ char SavePointMenuMain(u_char msn)
             }
             break;
         case 9:
-            SetSprFile(LOAD_ADDRESS_1);
+            SetSprFile(MikuPan_GetHostAddress(LOAD_ADDRESS_1));
 
             if (sp_load_id == -1)
             {
@@ -378,7 +379,7 @@ char SavePointMenuMain(u_char msn)
             }
             break;
         case 10:
-            SetSprFile(LOAD_ADDRESS_1);
+            SetSprFile(MikuPan_GetHostAddress(LOAD_ADDRESS_1));
 
             dsp_svp.bak_alp = 0x80;
 
@@ -405,9 +406,9 @@ char SavePointMenuMain(u_char msn)
             }
             break;
         case 11:
-            SetSprFile(LOAD_ADDRESS_1);
-            SetSprFile(LOAD_ADDRESS_2);
-            SetSprFile(LOAD_ADDRESS_3);
+            SetSprFile(MikuPan_GetHostAddress(LOAD_ADDRESS_1));
+            SetSprFile(MikuPan_GetHostAddress(LOAD_ADDRESS_2));
+            SetSprFile(MikuPan_GetHostAddress(LOAD_ADDRESS_3));
 
             switch (McAtLoadChk(2))
             {
@@ -545,7 +546,7 @@ char SavePointMenuMain(u_char msn)
             }
             break;
         case 13:
-            SetSprFile(LOAD_ADDRESS_2);
+            SetSprFile(MikuPan_GetHostAddress(LOAD_ADDRESS_2));
 
             switch (SweetMemories(0, 0x80))
             {
@@ -654,7 +655,7 @@ char SavePointMenuMain(u_char msn)
             }
             break;
         case 14:
-            SetSprFile(LOAD_ADDRESS_1);
+            SetSprFile(MikuPan_GetHostAddress(LOAD_ADDRESS_1));
 
             if (sp_load_id == -1)
             {
@@ -662,9 +663,9 @@ char SavePointMenuMain(u_char msn)
             }
             break;
         case 15:
-            SetSprFile(LOAD_ADDRESS_1);
-            SetSprFile(LOAD_ADDRESS_2);
-            SetSprFile(LOAD_ADDRESS_3);
+            SetSprFile(MikuPan_GetHostAddress(LOAD_ADDRESS_1));
+            SetSprFile(MikuPan_GetHostAddress(LOAD_ADDRESS_2));
+            SetSprFile(MikuPan_GetHostAddress(LOAD_ADDRESS_3));
 
             switch (McAtAlbmChk())
             {
@@ -750,7 +751,7 @@ char SavePointMenuMain(u_char msn)
             }
             break;
         case 16:
-            SetSprFile(LOAD_ADDRESS_1);
+            SetSprFile(MikuPan_GetHostAddress(LOAD_ADDRESS_1));
 
             if (sp_load_id == -1)
             {
@@ -776,7 +777,7 @@ char SavePointMenuMain(u_char msn)
             // do nothing ...
             break;
         case 18:
-            SetSprFile(LOAD_ADDRESS_1);
+            SetSprFile(MikuPan_GetHostAddress(LOAD_ADDRESS_1));
 
             if (sp_load_id == -1)
             {
@@ -1219,7 +1220,7 @@ void SavePointMenuModeSlctDisp(u_char msn, u_char csr3, u_char csr4,
         }
     }
 
-    SetSprFile(0x1ce0000);
+    SetSprFile(MikuPan_GetHostAddress(0x1ce0000));
 
     DispCaption(2, alp_max);
 }
@@ -1809,7 +1810,7 @@ void DspMemSavePoint(u_char msk, u_char msg, u_char fdt, u_char svp, u_char alt,
     WarningMsg(alt, csr0, sv_dsp_sw.alt_alp / 100.0f,
                sv_dsp_sw.yno_alp / 100.0f);
 
-    SetSprFile(0x1ce0000);
+    SetSprFile(MikuPan_GetHostAddress(0x1ce0000));
 
     DispCaption(9, alp_max);
 }
@@ -2636,7 +2637,7 @@ static void DspSpInfo(u_char file_no, u_char pos_y, u_char alp, u_char type)
 
             if (sv_pht != 0xff)
             {
-                SetSprFile(LOAD_ADDRESS_3);
+                SetSprFile(MikuPan_GetHostAddress(LOAD_ADDRESS_3));
 
 #ifdef BUILD_EU_VERSION
                 PutSpriteYW(SP_R000 + sv_pht, SP_R000 + sv_pht, 471.0f,
@@ -2719,7 +2720,7 @@ static void DspSpInfo(u_char file_no, u_char pos_y, u_char alp, u_char type)
 
             if (sv_pht != 0xff)
             {
-                SetSprFile(LOAD_ADDRESS_3);
+                SetSprFile(MikuPan_GetHostAddress(LOAD_ADDRESS_3));
 
 #ifdef BUILD_EU_VERSION
                 PutSpriteYW(SP_R042 + sv_pht, SP_R042 + sv_pht, 471.0f,
@@ -3244,9 +3245,9 @@ char AlbumModeInGameOver()
             }
             break;
         case ALBM_MODE_DATA_LOAD:
-            SetSprFile(LOAD_ADDRESS_1);
-            SetSprFile(LOAD_ADDRESS_2);
-            SetSprFile(LOAD_ADDRESS_3);
+            SetSprFile(MikuPan_GetHostAddress(LOAD_ADDRESS_1));
+            SetSprFile(MikuPan_GetHostAddress(LOAD_ADDRESS_2));
+            SetSprFile(MikuPan_GetHostAddress(LOAD_ADDRESS_3));
 
             switch (McAtLoadChk(2))
             {
@@ -3371,7 +3372,7 @@ char AlbumModeInGameOver()
             break;
         case ALBM_MODE_BODY:
             BgFusumaYW(0x606060, 0.0f, 128.0f, 0x7d000);
-            SetSprFile(LOAD_ADDRESS_2);
+            SetSprFile(MikuPan_GetHostAddress(LOAD_ADDRESS_2));
 
             switch (SweetMemories(0, 0x80))
             {
@@ -3454,9 +3455,9 @@ char AlbumModeInGameOver()
             }
             break;
         case ALBM_MODE_DATA_SAVE:
-            SetSprFile(LOAD_ADDRESS_1);
-            SetSprFile(LOAD_ADDRESS_2);
-            SetSprFile(LOAD_ADDRESS_3);
+            SetSprFile(MikuPan_GetHostAddress(LOAD_ADDRESS_1));
+            SetSprFile(MikuPan_GetHostAddress(LOAD_ADDRESS_2));
+            SetSprFile(MikuPan_GetHostAddress(LOAD_ADDRESS_3));
 
             switch (McAtAlbmChk())
             {

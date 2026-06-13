@@ -21,6 +21,7 @@
 #include "ingame/menu/sp_menu.h"
 #include "ingame/plyr/unit_ctl.h"
 #include "main/glob.h"
+#include "mikupan/mikupan_memory.h"
 #include "mikupan/mikupan_utils.h"
 #include "mikupan/rendering/mikupan_renderer.h"
 #include "os/eeiop/cdvd/eecdvd.h"
@@ -7417,7 +7418,7 @@ void SetEneFace(EFFECT_CONT *ec)
     clpy2 = 0xfd00;
     clpz2 = 0x00ffffff;
 
-    SetSprFile(ADDRESS);
+    SetSprFile(MikuPan_GetHostAddress(ADDRESS));
 
     wpos[0] = ec->dat.fl32[1];
     wpos[1] = ec->dat.fl32[2];
