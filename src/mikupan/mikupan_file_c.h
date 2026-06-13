@@ -36,6 +36,7 @@ u_int MikuPan_GetFileSize(const char *filename);
 u_char MikuPan_OpenFile(const char *filename, void *buffer, int size);
 u_char MikuPan_SaveFile(const char *filename, void *buffer, int size);
 bool MikuPan_ResolveCdPath(const char* path, char* buffer, size_t buffer_size);
+bool MikuPan_ResolveBasePath(const char* path, char* buffer, size_t buffer_size);
 u_char MikuPan_ReadFile(const char *filename, void *buffer, int size);
 u_char MikuPan_WriteFile(const char *filename, const void *buffer, int size);
 u_char MikuPan_CreateFolder(const char *folder);

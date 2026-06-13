@@ -36,6 +36,7 @@
 
 #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
 #include "cimgui.h"
+#include "mikupan/mikupan_utils.h"
 #include "mikupan/ui/mikupan_ui.h"
 
 #include <math.h>
@@ -1085,6 +1086,13 @@ void TitleWaitMode()
     ds.tex1 = SCE_GS_SET_TEX1_1(1, 0, SCE_GS_LINEAR, SCE_GS_LINEAR_MIPMAP_LINEAR, 0, 0, 0);
 
     DispSprD(&ds);
+
+    float message_y = PS2_RESOLUTION_Y_FLOAT - PS2_RESOLUTION_Y_FLOAT / 6;
+    float message_x = PS2_RESOLUTION_X_FLOAT / 2 - 120;
+
+    SetASCIIString3(0x10, message_x, message_y, 0, ds.r, ds.g, ds.b, alp, (char *) "PRESS ");
+    SetASCIIString3(0x10, message_x + (4*24), message_y, 2, ds.r, ds.g, ds.b, alp, (char *) "\xD8");
+    SetASCIIString3(0x10, message_x + (5*24), message_y, 0, ds.r, ds.g, ds.b, alp, (char *) " TO LEAVE");
 
     ttl_dsp.mode = 0;
 

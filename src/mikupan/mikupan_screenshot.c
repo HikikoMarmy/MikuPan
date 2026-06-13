@@ -1,4 +1,5 @@
 #include "mikupan_screenshot.h"
+#include "mikupan_config.h"
 #include "mikupan_logging_c.h"
 #include "mikupan/rendering/mikupan_renderer.h"
 
@@ -196,7 +197,7 @@ void MikuPan_ScreenshotCaptureIfRequested(int drawable_w, int drawable_h)
         return;
     }
 
-    char path[128];
+    char filename[128];
     time_t t = time(NULL);
     struct tm lt;
 #if defined(_WIN32)
@@ -204,10 +205,18 @@ void MikuPan_ScreenshotCaptureIfRequested(int drawable_w, int drawable_h)
 #else
     localtime_r(&t, &lt);
 #endif
-    snprintf(path, sizeof(path),
+    snprintf(filename, sizeof(filename),
              "mikupan_screenshot_%04d%02d%02d_%02d%02d%02d.png",
              lt.tm_year + 1900, lt.tm_mon + 1, lt.tm_mday,
              lt.tm_hour, lt.tm_min, lt.tm_sec);
+
+    char path[1024];
+    if (!MikuPan_ResolveUserPath(filename, path, sizeof(path)))
+    {
+        info_log("Screenshot: failed to resolve output path");
+        free(rgba);
+        return;
+    }
 
     if (MikuPan_ScreenshotWritePng(path, rgba, drawable_w, drawable_h))
     {

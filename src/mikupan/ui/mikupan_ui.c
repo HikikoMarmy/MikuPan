@@ -9,6 +9,7 @@
 #include "main/glob.h"
 #include "mikupan/gs/mikupan_texture_manager_c.h"
 #include "mikupan/mikupan_controller.h"
+#include "mikupan/mikupan_file_c.h"
 #include "mikupan/mikupan_screenshot.h"
 #include "mikupan/mikupan_utils.h"
 #include "mikupan/rendering/mikupan_gpu.h"
@@ -1347,10 +1348,16 @@ static void MikuPan_LoadUiFonts(void)
         ImFontConfig_destroy(default_font_config);
     }
 
-    ui_fonts[1] = ImFontAtlas_AddFontFromFileTTF(
-        io->Fonts, "./resources/fonts/CenturyOldStyle.ttf",
-        ui_font_regular_size, NULL,
-        ImFontAtlas_GetGlyphRangesDefault(io->Fonts));
+    char font_path[1024];
+    if (MikuPan_ResolveBasePath("resources/fonts/CenturyOldStyle.ttf",
+                                font_path,
+                                sizeof(font_path)))
+    {
+        ui_fonts[1] = ImFontAtlas_AddFontFromFileTTF(
+            io->Fonts, font_path,
+            ui_font_regular_size, NULL,
+            ImFontAtlas_GetGlyphRangesDefault(io->Fonts));
+    }
 
     if (ui_fonts[1] == NULL)
     {
@@ -2602,11 +2609,50 @@ void MikuPan_ShowTextureList(void)
     igEnd();
 }
 
+static int MikuPan_UiGamepadMenuShortcutPressed(void)
+{
+    static int was_down = 0;
+    int down = 0;
+
+    SDL_Gamepad *gamepad = MikuPan_GetController();
+    if (gamepad != NULL)
+    {
+        down = SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_LEFT_STICK)
+            && SDL_GetGamepadButton(gamepad, SDL_GAMEPAD_BUTTON_START);
+    }
+    else
+    {
+        int gamepad_count = 0;
+        SDL_JoystickID *gamepad_ids = SDL_GetGamepads(&gamepad_count);
+        if (gamepad_ids != NULL)
+        {
+            for (int i = 0; i < gamepad_count && !down; i++)
+            {
+                SDL_Gamepad *opened_gamepad =
+                    SDL_GetGamepadFromID(gamepad_ids[i]);
+                if (opened_gamepad != NULL)
+                {
+                    down = SDL_GetGamepadButton(
+                               opened_gamepad,
+                               SDL_GAMEPAD_BUTTON_LEFT_STICK)
+                        && SDL_GetGamepadButton(
+                               opened_gamepad,
+                               SDL_GAMEPAD_BUTTON_START);
+                }
+            }
+            SDL_free(gamepad_ids);
+        }
+    }
+
+    const int pressed = down && !was_down;
+    was_down = down;
+    return pressed;
+}
+
 void MikuPan_UiHandleShortcuts(void)
 {
     if (igIsKeyPressed_Bool(ImGuiKey_F1, 0)
-        || (igIsKeyPressed_Bool(ImGuiKey_GamepadL3, 1)
-            && igIsKeyPressed_Bool(ImGuiKey_GamepadStart, 1)))
+        || MikuPan_UiGamepadMenuShortcutPressed())
     {
         show_menu_bar = !show_menu_bar;
     }

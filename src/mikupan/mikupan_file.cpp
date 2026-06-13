@@ -6,6 +6,7 @@
 #include "spdlog/spdlog.h"
 #include <SDL3/SDL_dialog.h>
 #include <SDL3/SDL_events.h>
+#include <SDL3/SDL_filesystem.h>
 #include <SDL3/SDL_init.h>
 #include <SDL3/SDL_messagebox.h>
 #include <SDL3/SDL_timer.h>
@@ -32,6 +33,17 @@ static bool missing_data_dialog_open = false;
 static bool missing_data_dialog_selected = false;
 static std::string missing_data_path;
 
+static std::filesystem::path MikuPan_GetApplicationBasePath()
+{
+    const char *base = SDL_GetBasePath();
+    if (base != nullptr && base[0] != '\0')
+    {
+        return std::filesystem::path(base);
+    }
+
+    return std::filesystem::path(".");
+}
+
 static std::filesystem::path MikuPan_GetDataRoot()
 {
     const char *folder = mikupan_configuration.data_folder;
@@ -40,7 +52,7 @@ static std::filesystem::path MikuPan_GetDataRoot()
         return std::filesystem::path(folder);
     }
 
-    return std::filesystem::path(".");
+    return MikuPan_GetApplicationBasePath();
 }
 
 static std::string MikuPan_ToLowerPathString(const std::filesystem::path& path)
@@ -55,11 +67,14 @@ static std::string MikuPan_ToLowerPathString(const std::filesystem::path& path)
 
 static bool MikuPan_IsExcludedRuntimeAsset(const std::filesystem::path& path)
 {
-    const std::string value = MikuPan_ToLowerPathString(path);
+    std::string value = MikuPan_ToLowerPathString(path);
+    while (value.rfind("./", 0) == 0)
+    {
+        value.erase(0, 2);
+    }
 
     return value.rfind("resources/", 0) == 0
         || value.find("/resources/") != std::string::npos
-        || value.rfind("./resources/", 0) == 0
         || value == "mikupan.ini"
         || (value.size() >= 12
             && value.compare(value.size() - 12, 12, "/mikupan.ini") == 0);
@@ -323,7 +338,7 @@ extern "C" void MikuPan_ServiceMissingDataFolderDialog()
     const std::string message =
         "The game data file was not found:\n\n" + missing_path_to_show
         + "\n\nSelect the folder that contains the Fatal Frame data files. "
-          "The selected folder will be saved to mikupan.ini.";
+          "The selected folder will be saved to the configuration file.";
 
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR,
                              "File not found",
@@ -520,6 +535,18 @@ u_char MikuPan_ReadFile(const char *filename, void *buffer, int size)
 u_char MikuPan_WriteFile(const char *filename, const void *buffer, int size)
 {
     auto relative_path = std::filesystem::path(MikuPan_GetRelativePath(filename));
+    const auto parent = relative_path.parent_path();
+    if (!parent.empty() && !std::filesystem::exists(parent))
+    {
+        std::error_code error;
+        std::filesystem::create_directories(parent, error);
+        if (error)
+        {
+            spdlog::error("Failed to create user data directory {}: {}",
+                          parent.generic_string(), error.message());
+            return 0;
+        }
+    }
 
     std::ofstream outFile;
     outFile.open(relative_path, std::ios::binary);
@@ -624,6 +651,48 @@ bool MikuPan_ResolveCdPath(const char* path, char* buffer, size_t buffer_size)
     
     return true;
 }
+
+bool MikuPan_ResolveBasePath(const char* path, char* buffer, size_t buffer_size)
+{
+    if (!path)
+    {
+        spdlog::error("MikuPan_ResolveBasePath: path is null");
+        return false;
+    }
+
+    if (!buffer)
+    {
+        spdlog::error("MikuPan_ResolveBasePath: buffer is null");
+        return false;
+    }
+
+    if (buffer_size == 0)
+    {
+        spdlog::error("MikuPan_ResolveBasePath: buffer_size is 0");
+        return false;
+    }
+
+    std::filesystem::path resolved_path(path);
+    if (resolved_path.is_relative())
+    {
+        resolved_path = MikuPan_GetApplicationBasePath()
+            / resolved_path.relative_path();
+    }
+
+    const std::string resolved =
+        resolved_path.lexically_normal().generic_string();
+    if (resolved.length() + 1 > buffer_size)
+    {
+        spdlog::error(
+            "MikuPan_ResolveBasePath: Buffer too small. Need {} bytes, got {}",
+            resolved.length() + 1, buffer_size);
+        return false;
+    }
+
+    std::strcpy(buffer, resolved.c_str());
+    return true;
+}
+
 u_char MikuPan_FolderExists(const char *folder)
 {
     auto relative_path = std::filesystem::path(MikuPan_GetRelativePath(folder));
@@ -674,6 +743,11 @@ int MikuPan_GetListFiles(const char *folder, MikuPan_McTblGetDir *table)
 
 std::string MikuPan_GetRelativePath(const char *path)
 {
-    auto relative_path = std::filesystem::path(path).relative_path();
-    return (MikuPan_GetDataRoot() / relative_path).generic_u8string();
+    char resolved_path[1024];
+    if (MikuPan_ResolveUserPath(path, resolved_path, sizeof(resolved_path)))
+    {
+        return resolved_path;
+    }
+
+    return std::filesystem::path(path).relative_path().generic_u8string();
 }

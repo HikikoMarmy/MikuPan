@@ -17,38 +17,38 @@ static SDL_GPUShader *g_fragment_shaders[MAX_SHADER_PROGRAMS] = {0};
 
 // [vert, geom (NULL = none; SDL_GPU has no geometry stage), frag]
 const char *shader_file_name[MAX_SHADER_PROGRAMS][3] = {
-    {"./resources/shaders/hlsl/mesh_0x2.vert.hlsl", NULL,
-     "./resources/shaders/hlsl/textured_mesh_lighted.frag.hlsl"},
-    {"./resources/shaders/hlsl/mesh_0xA.vert.hlsl", NULL,
-     "./resources/shaders/hlsl/textured_mesh_lighted.frag.hlsl"},
-    {"./resources/shaders/hlsl/mesh_0x12.vert.hlsl", NULL,
-     "./resources/shaders/hlsl/textured_mesh_lighted.frag.hlsl"},
-    {"./resources/shaders/hlsl/untextured_coloured_sprite.vert.hlsl", NULL,
-     "./resources/shaders/hlsl/untextured_coloured_sprite.frag.hlsl"},
-    {"./resources/shaders/hlsl/bounding_box.vert.hlsl", NULL,
-     "./resources/shaders/hlsl/untextured_coloured_sprite.frag.hlsl"},
-    {"./resources/shaders/hlsl/sprite.vert.hlsl", NULL,
-     "./resources/shaders/hlsl/sprite.frag.hlsl"},
-    {"./resources/shaders/hlsl/normals_0x12.vert.hlsl", NULL,
-     "./resources/shaders/hlsl/untextured_coloured_sprite.frag.hlsl"},
-    {"./resources/shaders/hlsl/normals_0x2.vert.hlsl", NULL,
-     "./resources/shaders/hlsl/untextured_coloured_sprite.frag.hlsl"},
-    {"./resources/shaders/hlsl/sprite.vert.hlsl", NULL,
-     "./resources/shaders/hlsl/postprocess.frag.hlsl"},
-    {"./resources/shaders/hlsl/sprite.vert.hlsl", NULL,
-     "./resources/shaders/hlsl/shadow_caster.frag.hlsl"},
-    {"./resources/shaders/hlsl/shadow_silhouette.vert.hlsl", NULL,
-     "./resources/shaders/hlsl/shadow_silhouette.frag.hlsl"},
-    {"./resources/shaders/hlsl/shadow_receiver.vert.hlsl", NULL,
-     "./resources/shaders/hlsl/shadow_receiver.frag.hlsl"},
-    {"./resources/shaders/hlsl/camera_debug.vert.hlsl", NULL,
-     "./resources/shaders/hlsl/untextured_coloured_sprite.frag.hlsl"},
-    {"./resources/shaders/hlsl/heat_haze.vert.hlsl", NULL,
-     "./resources/shaders/hlsl/heat_haze.frag.hlsl"},
-    {"./resources/shaders/hlsl/mesh_0x2_skinned.vert.hlsl", NULL,
-     "./resources/shaders/hlsl/textured_mesh_lighted.frag.hlsl"},
-    {"./resources/shaders/hlsl/mesh_0xA_skinned.vert.hlsl", NULL,
-     "./resources/shaders/hlsl/textured_mesh_lighted.frag.hlsl"},
+    {"resources/shaders/hlsl/mesh_0x2.vert.hlsl", NULL,
+     "resources/shaders/hlsl/textured_mesh_lighted.frag.hlsl"},
+    {"resources/shaders/hlsl/mesh_0xA.vert.hlsl", NULL,
+     "resources/shaders/hlsl/textured_mesh_lighted.frag.hlsl"},
+    {"resources/shaders/hlsl/mesh_0x12.vert.hlsl", NULL,
+     "resources/shaders/hlsl/textured_mesh_lighted.frag.hlsl"},
+    {"resources/shaders/hlsl/untextured_coloured_sprite.vert.hlsl", NULL,
+     "resources/shaders/hlsl/untextured_coloured_sprite.frag.hlsl"},
+    {"resources/shaders/hlsl/bounding_box.vert.hlsl", NULL,
+     "resources/shaders/hlsl/untextured_coloured_sprite.frag.hlsl"},
+    {"resources/shaders/hlsl/sprite.vert.hlsl", NULL,
+     "resources/shaders/hlsl/sprite.frag.hlsl"},
+    {"resources/shaders/hlsl/normals_0x12.vert.hlsl", NULL,
+     "resources/shaders/hlsl/untextured_coloured_sprite.frag.hlsl"},
+    {"resources/shaders/hlsl/normals_0x2.vert.hlsl", NULL,
+     "resources/shaders/hlsl/untextured_coloured_sprite.frag.hlsl"},
+    {"resources/shaders/hlsl/sprite.vert.hlsl", NULL,
+     "resources/shaders/hlsl/postprocess.frag.hlsl"},
+    {"resources/shaders/hlsl/sprite.vert.hlsl", NULL,
+     "resources/shaders/hlsl/shadow_caster.frag.hlsl"},
+    {"resources/shaders/hlsl/shadow_silhouette.vert.hlsl", NULL,
+     "resources/shaders/hlsl/shadow_silhouette.frag.hlsl"},
+    {"resources/shaders/hlsl/shadow_receiver.vert.hlsl", NULL,
+     "resources/shaders/hlsl/shadow_receiver.frag.hlsl"},
+    {"resources/shaders/hlsl/camera_debug.vert.hlsl", NULL,
+     "resources/shaders/hlsl/untextured_coloured_sprite.frag.hlsl"},
+    {"resources/shaders/hlsl/heat_haze.vert.hlsl", NULL,
+     "resources/shaders/hlsl/heat_haze.frag.hlsl"},
+    {"resources/shaders/hlsl/mesh_0x2_skinned.vert.hlsl", NULL,
+     "resources/shaders/hlsl/textured_mesh_lighted.frag.hlsl"},
+    {"resources/shaders/hlsl/mesh_0xA_skinned.vert.hlsl", NULL,
+     "resources/shaders/hlsl/textured_mesh_lighted.frag.hlsl"},
 };
 
 static const char *kShaderNames[MAX_SHADER_PROGRAMS] = {
@@ -100,6 +100,7 @@ static int BuildShaderBytecodePath(const char *source_path,
                                    char *out_path,
                                    int out_path_size)
 {
+    char relative_path[512];
     const char *name = source_path;
     const char *slash = strrchr(source_path, '/');
     const char *backslash = strrchr(source_path, '\\');
@@ -120,10 +121,17 @@ static int BuildShaderBytecodePath(const char *source_path,
         len -= 5;
     }
 
-    return snprintf(out_path, (size_t)out_path_size,
-                    "./resources/shaders/%s/%.*s%s",
-                    format->dir, (int)len, name,
-                    format->extension) < out_path_size;
+    int written = snprintf(relative_path, sizeof(relative_path),
+                           "resources/shaders/%s/%.*s%s",
+                           format->dir, (int)len, name,
+                           format->extension);
+    if (written < 0 || written >= (int)sizeof(relative_path))
+    {
+        return 0;
+    }
+
+    return MikuPan_ResolveBasePath(relative_path, out_path,
+                                   (size_t)out_path_size);
 }
 
 static Uint8 *ReadShaderBytecode(const char *path,

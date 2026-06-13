@@ -8,6 +8,7 @@
 #include "graphics/graph3d/sgsu.h"
 #include "mikupan/gs/mikupan_gs_c.h"
 #include "mikupan/gs/mikupan_texture_manager_c.h"
+#include "mikupan/mikupan_file_c.h"
 #include "mikupan/mikupan_logging_c.h"
 #include "mikupan/mikupan_screenshot.h"
 #include "mikupan/ui/mikupan_ui.h"
@@ -110,7 +111,11 @@ SDL_AppResult MikuPan_Init()
 
     info_log("Loading SDL_GameControllerDB");
 
-    if (!SDL_AddGamepadMappingsFromFile("./resources/gamecontrollerdb.txt"))
+    char controller_db_path[1024];
+    if (MikuPan_ResolveBasePath("resources/gamecontrollerdb.txt",
+                                controller_db_path,
+                                sizeof(controller_db_path))
+        && !SDL_AddGamepadMappingsFromFile(controller_db_path))
     {
         info_log("Error adding the controller mapping, bindings might be wrong %s", SDL_GetError());
     }
@@ -181,8 +186,20 @@ SDL_AppResult MikuPan_Init()
     mikupan_configuration.renderer.window.width = mikupan_render.width;
     mikupan_configuration.renderer.window.height = mikupan_render.height;
 
-    SDL_Surface* iconSurface = SDL_LoadPNG("resources/mikupan.png");
-    if (!SDL_SetWindowIcon(mikupan_render.window, iconSurface))
+    char icon_path[1024];
+    SDL_Surface* iconSurface = NULL;
+    if (MikuPan_ResolveBasePath("resources/mikupan.png",
+                                icon_path,
+                                sizeof(icon_path)))
+    {
+        iconSurface = SDL_LoadPNG(icon_path);
+    }
+
+    if (iconSurface == NULL)
+    {
+        info_log("Error loading the icon %s", SDL_GetError());
+    }
+    else if (!SDL_SetWindowIcon(mikupan_render.window, iconSurface))
     {
         info_log("Error creating the icon %s", SDL_GetError());
     }
@@ -577,6 +594,10 @@ void MikuPan_EndFrame()
         (float)render_back_msaa.texture.width, (float)render_back_msaa.texture.height
         );
 
+    int screenshot_width = 0, screenshot_height = 0;
+    SDL_GetWindowSizeInPixels(mikupan_render.window, &screenshot_width, &screenshot_height);
+    MikuPan_ScreenshotCaptureIfRequested(screenshot_width, screenshot_height);
+
     MikuPan_SetViewportCached(
         offset_output[0], offset_output[1],
         offset_output[2], offset_output[3]
@@ -707,10 +728,6 @@ void MikuPan_EndFrame()
     MikuPan_FlushLate2DOverlayQueue();
     MikuPan_Flush2DMessageQueue();
     MikuPan_SetViewportCached(0, 0, mikupan_render.width, mikupan_render.height);
-
-    int screenshot_width = 0, screenshot_height = 0;
-    SDL_GetWindowSizeInPixels(mikupan_render.window, &screenshot_width, &screenshot_height);
-    MikuPan_ScreenshotCaptureIfRequested(screenshot_width, screenshot_height);
 
     //info_log("Frame: state_changes=%d, draw_calls=%d, mesh_cache hits=%d misses_new=%d misses_full=%d",
     //    MikuPan_PerfGetStateChangesCurrent(),

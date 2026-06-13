@@ -20,13 +20,25 @@ using Ini = inipp::Ini<char>;
 
 std::filesystem::path GetDefaultConfigurationPath()
 {
-    const char *base = SDL_GetBasePath();
+    char *base = SDL_GetPrefPath("Mikompilation", "MikuPan");
     if (base != nullptr && base[0] != '\0')
     {
-        return std::filesystem::path(base) / "MikuPan" / "mikupan.ini";
+        std::filesystem::path path(base);
+        SDL_free(base);
+        return path / "mikupan.ini";
+    }
+
+    if (base != nullptr)
+    {
+        SDL_free(base);
     }
 
     return std::filesystem::path("MikuPan") / "mikupan.ini";
+}
+
+std::filesystem::path GetDefaultConfigurationDirectory()
+{
+    return GetDefaultConfigurationPath().parent_path();
 }
 
 template <typename T>
@@ -338,7 +350,10 @@ extern "C" void MikuPan_LoadConfiguration(const char *filename)
     }
     else
     {
-        if (!TryLoadConfigurationFile(GetDefaultConfigurationPath()))
+        const std::filesystem::path default_path = GetDefaultConfigurationPath();
+        info_log("Default configuration path: %s",
+                 default_path.generic_string().c_str());
+        if (!TryLoadConfigurationFile(default_path))
         {
             TryLoadConfigurationFile("mikupan.ini");
         }
@@ -368,5 +383,55 @@ extern "C" int MikuPan_SaveConfiguration(const char *filename)
         return TrySaveConfigurationFile(filename) ? 1 : 0;
     }
 
-    return TrySaveConfigurationFile(GetDefaultConfigurationPath()) ? 1 : 0;
+    const std::filesystem::path default_path = GetDefaultConfigurationPath();
+    info_log("Default configuration path: %s",
+             default_path.generic_string().c_str());
+    return TrySaveConfigurationFile(default_path) ? 1 : 0;
+}
+
+extern "C" int MikuPan_ResolveUserPath(const char *path, char *buffer,
+                                        size_t buffer_size)
+{
+    if (path == nullptr || buffer == nullptr || buffer_size == 0)
+    {
+        return 0;
+    }
+
+    std::filesystem::path relative_path;
+    for (const auto& part : std::filesystem::path(path).relative_path())
+    {
+        if (part.empty() || part == "." || part == "..")
+        {
+            continue;
+        }
+
+        relative_path /= part;
+    }
+
+    const std::filesystem::path resolved_path =
+        (GetDefaultConfigurationDirectory() / relative_path).lexically_normal();
+    const std::filesystem::path parent = resolved_path.parent_path();
+    if (!parent.empty() && !std::filesystem::exists(parent))
+    {
+        std::error_code error;
+        std::filesystem::create_directories(parent, error);
+        if (error)
+        {
+            info_log("Failed to create user data directory %s: %s",
+                     parent.generic_string().c_str(),
+                     error.message().c_str());
+            return 0;
+        }
+    }
+
+    const std::string resolved = resolved_path.generic_string();
+
+    if (resolved.size() + 1 > buffer_size)
+    {
+        info_log("User path too long: %s", resolved.c_str());
+        return 0;
+    }
+
+    std::strcpy(buffer, resolved.c_str());
+    return 1;
 }
