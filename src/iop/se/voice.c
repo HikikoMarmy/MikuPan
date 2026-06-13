@@ -184,11 +184,185 @@ static void StopVoicePlayback(int vNo)
     }
 }
 
+static int StereoPairRightVoice(int vNo)
+{
+    if (vNo == 0)
+    {
+        return 1;
+    }
+
+    if (vNo == 46)
+    {
+        return 47;
+    }
+
+    return -1;
+}
+
+static int StereoPairLeftVoice(int vNo)
+{
+    if (vNo == 1)
+    {
+        return 0;
+    }
+
+    if (vNo == 47)
+    {
+        return 46;
+    }
+
+    return -1;
+}
+
+static s32 GetVoiceLeftVolume(const VOICE *v)
+{
+    return (s32)(((int64_t)mVolL * (int64_t)v->volL) / INT16_MAX);
+}
+
+static s32 GetVoiceRightVolume(const VOICE *v)
+{
+    return (s32)(((int64_t)mVolR * (int64_t)v->volR) / INT16_MAX);
+}
+
+static s16 ClampS32ToS16(s32 value)
+{
+    if (value > INT16_MAX)
+    {
+        return INT16_MAX;
+    }
+
+    if (value < INT16_MIN)
+    {
+        return INT16_MIN;
+    }
+
+    return (s16)value;
+}
+
+static bool DecodeVoiceBlock(int vNo, s16 *out)
+{
+    VOICE *v = &voices[vNo];
+
+    if (v->nax + ADPCM_BLOCK_WORDS > sizeof(spuRam) / sizeof(spuRam[0]))
+    {
+        info_log("Voice %d decode exceeded SPU RAM", vNo);
+        StopVoicePlayback(vNo);
+        return false;
+    }
+
+    s16 *src = (s16 *) &spuRam[v->nax];
+
+    MikuPan_DecodeAdpcmBlock(out, src, v->histL, v->histR);
+    v->nax += ADPCM_BLOCK_WORDS;
+
+    loopEnd = (v->header & (1 << 8)) != 0;
+    loopRepeat = (v->header & (1 << 9)) != 0;
+
+    if (loopEnd)
+    {
+        v->nax = v->lsa;
+
+        if (!loopRepeat)
+        {
+            StopVoicePlayback(vNo);
+        }
+    }
+
+    FillAdpcmHeader(vNo);
+    MikuPan_SdVoiceReachedAddress(vNo, v->nax);
+    return true;
+}
+
+static void MixStereoPairSamples(int sampleCount, VOICE *left, VOICE *right)
+{
+    s16 *left_samples = left->buffer;
+    const s16 *right_samples = right->buffer;
+    const s32 left_volume_l = GetVoiceLeftVolume(left);
+    const s32 left_volume_r = GetVoiceRightVolume(left);
+    const s32 right_volume_l = GetVoiceLeftVolume(right);
+    const s32 right_volume_r = GetVoiceRightVolume(right);
+
+    for (int i = sampleCount - 1; i >= 0; i--)
+    {
+        const s16 left_sample = left_samples[i];
+        const s16 right_sample = right_samples[i];
+        const s32 out_l = ApplyVolume(left_sample, left_volume_l)
+            + ApplyVolume(right_sample, right_volume_l);
+        const s32 out_r = ApplyVolume(left_sample, left_volume_r)
+            + ApplyVolume(right_sample, right_volume_r);
+
+        left_samples[i * 2] = ClampS32ToS16(out_l);
+        left_samples[i * 2 + 1] = ClampS32ToS16(out_r);
+    }
+}
+
+static void FillStereoPair(int leftNo, int rightNo)
+{
+    VOICE *left = &voices[leftNo];
+    VOICE *right = &voices[rightNo];
+
+    if (left->stream == NULL || left->buffer == NULL || right->buffer == NULL)
+    {
+        StopVoicePlayback(leftNo);
+        StopVoicePlayback(rightNo);
+        return;
+    }
+
+    int sampleCount = 0;
+    int blockCount = 0;
+
+    while (left->isPlaying && right->isPlaying
+           && blockCount < VOICE_MAX_BLOCKS_PER_FILL
+           && SDL_GetAudioStreamQueued(left->stream)
+                   + sampleCount * 2 * (int)sizeof(s16)
+               < VOICE_TARGET_QUEUE_BYTES)
+    {
+        if (sampleCount + ADPCM_BLOCK_SAMPLES > VOICE_BUFFER_STEREO_FRAMES)
+        {
+            info_log("Voice pair %d/%d decode exceeded host buffer",
+                     leftNo, rightNo);
+            StopVoicePlayback(leftNo);
+            StopVoicePlayback(rightNo);
+            break;
+        }
+
+        if (!DecodeVoiceBlock(leftNo, left->buffer + sampleCount)
+            || !DecodeVoiceBlock(rightNo, right->buffer + sampleCount))
+        {
+            break;
+        }
+
+        sampleCount += ADPCM_BLOCK_SAMPLES;
+        blockCount++;
+    }
+
+    if (sampleCount > 0)
+    {
+        MixStereoPairSamples(sampleCount, left, right);
+        UpdateVoiceFrequencyRatio(left);
+        SDL_PutAudioStreamData(left->stream, left->buffer,
+                               sampleCount * 2 * (int)sizeof(s16));
+    }
+}
+
 static void FillStereo(int vNo)
 {
     s16 *src;
 
     VOICE *v = &voices[vNo];
+    const int pair_left = StereoPairLeftVoice(vNo);
+    if (pair_left >= 0 && voices[pair_left].isPlaying)
+    {
+        return;
+    }
+
+    const int pair_right = StereoPairRightVoice(vNo);
+    if (pair_right >= 0 && voices[pair_right].isPlaying)
+    {
+        FillStereoPair(vNo, pair_right);
+        return;
+    }
+
     if (v->stream == NULL || v->buffer == NULL)
     {
         StopVoicePlayback(vNo);
