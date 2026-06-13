@@ -2647,6 +2647,8 @@ void DrawPhotoHinttex2(u_int sw, u_int pri, int num)
     ds.csy = ds.y;
 
     DispSprD(&ds);
+
+    MikuPan_EndLate2DOverlayQueue();
 }
 
 void DrawPhotoEffect(u_int pri, int type)
