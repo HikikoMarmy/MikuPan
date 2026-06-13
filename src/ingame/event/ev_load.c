@@ -38,8 +38,8 @@ u_char msn_title_flr_sp_num[] = {1, 2, 1, 1, 1};
 u_char msn_title_sp_ttl_no[] = {11, 11, 11, 11, 11};
 u_char msn_title_ttl_sp_num[] = {2, 1, 1, 1, 1};
 
-SPRT_SDAT stg_title_sp_bak[];
-SCN_LOAD_DAT *scn_load[] = {scn_load0, scn_load1, scn_load2, scn_load3, scn_load4};
+SPRT_SDAT stg_title_sp_bak[11];
+SCN_LOAD_DAT *scn_load[5] = {scn_load0, scn_load1, scn_load2, scn_load3, scn_load4};
 
 SPRT_SDAT msn_title00_sp_flr[] = {
     {

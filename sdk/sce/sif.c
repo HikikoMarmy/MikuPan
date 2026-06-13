@@ -21,7 +21,7 @@ static void* ResolveDmaPointer(int64_t address, int* is_ps2_memory)
 {
     *is_ps2_memory = 0;
 
-    if (address == 0)
+    if (address == 0 || address == -1)
     {
         return NULL;
     }

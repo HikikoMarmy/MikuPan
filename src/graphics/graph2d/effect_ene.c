@@ -44,6 +44,40 @@ static NEW_PERTICLE new_perticle[44];
 #define ADDRESS 0x01fa8000
 #define ADDRESS_2 0x00ac8000
 
+/// Writes one untextured vertex (COLOUR4_POSITION4, 8 floats) into the MikuPan
+/// render buffer. Positions are expected in NDC; matches the layout consumed by
+/// MikuPan_RenderUntexturedTriangles3D / MikuPan_RenderUntexturedSprite.
+static void EneWriteUntexturedNdcVertex(float *dst, const float *ndc, u_char r, u_char g, u_char b, u_char a)
+{
+    dst[0] = MikuPan_ConvertScaleColor(r);
+    dst[1] = MikuPan_ConvertScaleColor(g);
+    dst[2] = MikuPan_ConvertScaleColor(b);
+    dst[3] = MikuPan_ConvertScaleColor(a);
+    dst[4] = ndc[0];
+    dst[5] = ndc[1];
+    dst[6] = ndc[2];
+    dst[7] = 1.0f;
+}
+
+/// Writes one textured vertex (UV4_COLOUR4_POSITION4, 12 floats) into the
+/// MikuPan render buffer. Positions are expected in NDC; matches the layout
+/// consumed by MikuPan_RenderSprite2D / MikuPan_RenderSprite3D.
+static void EneWriteTexturedNdcVertex(float *dst, float u, float v, const float *ndc, u_char r, u_char g, u_char b, u_char a)
+{
+    dst[0] = u;
+    dst[1] = v;
+    dst[2] = 0.0f;
+    dst[3] = 0.0f;
+    dst[4] = MikuPan_ConvertScaleColor(r);
+    dst[5] = MikuPan_ConvertScaleColor(g);
+    dst[6] = MikuPan_ConvertScaleColor(b);
+    dst[7] = MikuPan_ConvertScaleColor(a);
+    dst[8] = ndc[0];
+    dst[9] = ndc[1];
+    dst[10] = ndc[2];
+    dst[11] = 1.0f;
+}
+
 void InitEffectEne()
 {
     int i;
@@ -509,6 +543,49 @@ int SetCamFont(int no, int fl)
     }
 
     pbuf[bak].ui32[0] = ndpkt + DMAend - bak - 1;
+
+    /* MikuPan GL render: draw the (up to two) font quads as 2D HUD overlays.
+     * The pbuf packet above is legacy scratch and no longer reaches the GS. */
+    {
+        float win_w = (float)MikuPan_GetWindowWidth();
+        float win_h = (float)MikuPan_GetWindowHeight();
+
+        for (j = 0; j < 2; j++)
+        {
+            float verts[4][12];
+            float ndc[2];
+            float ndc_z;
+
+            if (clip[j] == 0)
+            {
+                continue;
+            }
+
+            for (i = 0; i < 4; i++)
+            {
+                sceVu0FVECTOR pos;
+
+                MikuPan_GSToNDC(ivec[j][i][0], ivec[j][i][1], ivec[j][i][2],
+                                &ndc[0], &ndc[1], &ndc_z, win_w, win_h);
+
+                /* 2D HUD overlay: depth test is off, so Z is irrelevant. */
+                pos[0] = ndc[0];
+                pos[1] = ndc[1];
+                pos[2] = 0.0f;
+                pos[3] = 1.0f;
+
+                /* Font texture content fills the full 64x64 texture: UV = 0..1. */
+                EneWriteTexturedNdcVertex(
+                    verts[i],
+                    (i & 1) ? 1.0f : 0.0f,
+                    (i / 2) ? 1.0f : 0.0f,
+                    pos,
+                    0x80, 0x80, 0x80, (u_char)alp[no][j]);
+            }
+
+            MikuPan_RenderSprite2D((sceGsTex0 *)&tx[j], &verts[0][0]);
+        }
+    }
 
     return (flow[no][0] == 0xff && flow[no][1] == 0xff) ? 0xff : 0;
 }
@@ -1743,6 +1820,61 @@ void RunCamSlow2(int o, float hrt, float rrt, u_int alp)
     }
 
     pbuf[bak].ui32[0] = ndpkt + DMAend - bak - 1;
+
+    /* MikuPan GL render: rebuild the two-ring band as an NDC triangle list.
+     * The pbuf packet above is legacy scratch and no longer reaches the GS. */
+    {
+        sceVu0FVECTOR ndcf[2][33];
+        sceVu0FMATRIX slm_ndc;
+        float tri[64 * 3][8];
+        int t;
+        int q;
+        int outn;
+
+        sceVu0MulMatrix(slm_ndc, *(sceVu0FMATRIX *)MikuPan_GetWorldClipView(), wlm);
+        sceVu0RotTransPersNF(ndcf[0], slm_ndc, ct->ncf[0], 33, 0);
+        sceVu0RotTransPersNF(ndcf[1], slm_ndc, ct->ncf[1], 33, 0);
+
+        outn = 0;
+
+        /* The original GS packet is a triangle strip zig-zagging between the
+         * two rings: strip vertex sv -> row (sv & 1), column (sv >> 1).
+         * Cull faces are disabled, so winding does not matter. */
+        for (t = 0; t < 64; t++)
+        {
+            int sv[3] = {t, t + 1, t + 2};
+            int ok = 1;
+
+            for (q = 0; q < 3; q++)
+            {
+                if (clip[sv[q] & 1][sv[q] >> 1] == 0)
+                {
+                    ok = 0;
+                }
+            }
+
+            if (ok == 0)
+            {
+                continue;
+            }
+
+            for (q = 0; q < 3; q++)
+            {
+                int row = sv[q] & 1;
+                int col = sv[q] >> 1;
+
+                EneWriteUntexturedNdcVertex(
+                    tri[outn++], ndcf[row][col],
+                    eto_rgb[row][0], eto_rgb[row][1], eto_rgb[row][2],
+                    row ? 0 : (u_char)alp);
+            }
+        }
+
+        if (outn > 0)
+        {
+            MikuPan_RenderUntexturedTriangles3D(&tri[0][0], outn, MIKUPAN_DEPTH_LEQUAL, 0);
+        }
+    }
 }
 
 void IniCamSlow()
@@ -2709,6 +2841,64 @@ void SetSwordLineSub(void *pos, int num, u_char r1, u_char g1, u_char b1, u_char
     }
 
     pbuf[n].ui32[0] = ndpkt + DMAend - n - 1;
+
+    /* MikuPan GL render: redraw the sword trail as a screen-space feedback
+     * smear. The original samples a GS framebuffer copy at each vertex's screen
+     * position; the screen-copy path reproduces that against the live frame.
+     * The pbuf packet above is legacy scratch and no longer reaches the GS. */
+    {
+        static float sword_tri[96 * 3][12];
+        sceVu0FVECTOR fvec[96];
+        u_long swtex0;
+        int t;
+        int q;
+        int outn;
+        int total = num * 2;
+
+        sceVu0RotTransPersNF(fvec, *(sceVu0FMATRIX *)MikuPan_GetWorldClipView(),
+                             (sceVu0FVECTOR *)pos, total, 1);
+
+        outn = 0;
+
+        for (t = 0; t + 2 < total; t++)
+        {
+            if (clip[t] == 0 || clip[t + 1] == 0 || clip[t + 2] == 0)
+            {
+                continue;
+            }
+
+            for (q = 0; q < 3; q++)
+            {
+                int sv = t + q;
+                int seg = sv >> 1;
+                int edge = sv & 1;
+                int a;
+
+                if (SWORDTYPE == 0)
+                {
+                    a = edge ? (((num - seg) - 1) * sa2) / num
+                             : (((num - seg) - 1) * sa1) / num;
+                }
+                else
+                {
+                    a = edge ? (((num - seg) - 1) * 0x20) / num
+                             : (((num - seg) - 1) * 0x80) / num;
+                }
+
+                EneWriteTexturedNdcVertex(
+                    sword_tri[outn++], 0.0f, 0.0f, fvec[sv],
+                    edge ? r2 : r1, edge ? g2 : g1, edge ? b2 : b1, (u_char)a);
+            }
+        }
+
+        if (outn > 0)
+        {
+            swtex0 = SCE_GS_SET_TEX0_1(0, 10, SCE_GS_PSMCT32, 10, 8, 0,
+                                       SCE_GS_MODULATE, 0, SCE_GS_PSMCT32, 0, 0, 0);
+            MikuPan_RenderScreenCopyTriangles3DScreenPos(
+                (sceGsTex0 *)&swtex0, &sword_tri[0][0], outn, MIKUPAN_DEPTH_LEQUAL);
+        }
+    }
 }
 
 void SetSwordSwitch(int sw)
@@ -3289,6 +3479,71 @@ int SetNewEneOut(int flag, u_char eneno, u_char type, float *bpos, float sc)
         }
 
         pbuf[bak].ui32[0] = ndpkt + DMAend - bak - 1;
+
+        /* MikuPan GL render: rebuild the deformable grid as NDC triangle lists.
+         * NOTE: the original samples a frozen GS capture of the sealed enemy at
+         * 0x1a40 / 0x8c0. That capture is not wired up in the GL port, so this
+         * falls back to the live screen-copy: the grid warps the current frame
+         * instead of a frozen snapshot, and the pass-2 blue tint is not applied
+         * by the refraction shader. Placeholder pending freeze-frame texture. */
+        {
+            static float grid_tex[256 * 6][12];
+            static float grid_ovl[256 * 6][12];
+            sceVu0FVECTOR gndc[289];
+            sceVu0FMATRIX slm_ndc;
+            u_long gtex0;
+            int gx;
+            int gy;
+            int c;
+            int outn;
+
+            sceVu0MulMatrix(slm_ndc, *(sceVu0FMATRIX *)MikuPan_GetWorldClipView(), wlm);
+            sceVu0RotTransPersNF(gndc, slm_ndc, vt, vnumw * vnumh, 0);
+
+            outn = 0;
+
+            /* The original is a tristrip pairing each vertex with the one a row
+             * below (i, i+vnumw), restarted each row. Emit the equivalent quads
+             * (two triangles per cell); cull is disabled, so winding is free. */
+            for (gy = 0; gy < pnumh; gy++)
+            {
+                for (gx = 0; gx < pnumw; gx++)
+                {
+                    int tl = gy * vnumw + gx;
+                    int idx[6];
+
+                    idx[0] = tl;
+                    idx[1] = tl + 1;
+                    idx[2] = tl + vnumw;
+                    idx[3] = tl + 1;
+                    idx[4] = tl + vnumw + 1;
+                    idx[5] = tl + vnumw;
+
+                    for (c = 0; c < 6; c++)
+                    {
+                        int g = idx[c];
+
+                        EneWriteTexturedNdcVertex(
+                            grid_tex[outn], 0.0f, 0.0f, gndc[g],
+                            0x80, 0x80, 0x80, (u_char)(alpha1[g] * fa));
+                        EneWriteTexturedNdcVertex(
+                            grid_ovl[outn], 0.0f, 0.0f, gndc[g],
+                            0xa0, 0xc0, 0xff, (u_char)(alpha1[g] * l * fa * 0.5f));
+                        outn++;
+                    }
+                }
+            }
+
+            if (outn > 0)
+            {
+                gtex0 = SCE_GS_SET_TEX0_1(0, 10, SCE_GS_PSMCT32, 10, 8, 0,
+                                          SCE_GS_MODULATE, 0, SCE_GS_PSMCT32, 0, 0, 1);
+                MikuPan_RenderScreenCopyTriangles3DScreenPos(
+                    (sceGsTex0 *)&gtex0, &grid_tex[0][0], outn, MIKUPAN_DEPTH_ALWAYS);
+                MikuPan_RenderScreenCopyTriangles3DScreenPos(
+                    (sceGsTex0 *)&gtex0, &grid_ovl[0][0], outn, MIKUPAN_DEPTH_ALWAYS);
+            }
+        }
     }
 
     if (1)
@@ -4053,12 +4308,14 @@ void SetEneDmgEffect1_Sub2(int num)
     float scl[4];
     sceVu0FMATRIX wlm;
     sceVu0FMATRIX slm;
+    sceVu0FMATRIX slm_ndc;
     int mono;
     int clip[4];
     u_int tw[4];
     u_int th[4];
     u_long tex0[4];
     sceVu0FVECTOR ppos[4][4];
+    sceVu0FVECTOR fvec[2][4];
     sceVu0IVECTOR ivec[4][4];
     U32DATA ts[4][4];
     U32DATA tt[4][4];
@@ -4257,6 +4514,10 @@ void SetEneDmgEffect1_Sub2(int num)
         sceVu0MulMatrix(slm, SgWSMtx, wlm);
         sceVu0RotTransPersN(ivec[j], slm, ppos[j], 4, 1);
 
+        /* NDC projection for the MikuPan GL render path below. */
+        sceVu0MulMatrix(slm_ndc, *(sceVu0FMATRIX *)MikuPan_GetWorldClipView(), wlm);
+        sceVu0RotTransPersNF(fvec[j], slm_ndc, ppos[j], 4, 1);
+
         if (j == 0)
         {
             if (enedmg_fileno_tbl[ene_wrk[dmg1->enedmg_no].dat->mdl_no][0] != -1)
@@ -4379,6 +4640,33 @@ void SetEneDmgEffect1_Sub2(int num)
     }
 
     pbuf[bak].ui32[0] = ndpkt + DMAend - bak - 1;
+
+    /* MikuPan GL render: draw the visible billboard quads (enemy damage photo
+     * + ring overlay). The pbuf packet above is legacy scratch. */
+    for (j = st; j < 2; j++)
+    {
+        if (clip[j] != 0)
+        {
+            float verts[4][12];
+            float umax = (float)tw[j] / szw[j];
+            float vmax = (float)th[j] / szh[j];
+
+            for (i = 0; i < 4; i++)
+            {
+                EneWriteTexturedNdcVertex(
+                    verts[i],
+                    (i & 1) ? umax : 0.0f,
+                    (i / 2) ? vmax : 0.0f,
+                    fvec[j][i],
+                    rgb[monochrome_mode][j][dmg1->enedmg_chance][0],
+                    rgb[monochrome_mode][j][dmg1->enedmg_chance][1],
+                    rgb[monochrome_mode][j][dmg1->enedmg_chance][2],
+                    (u_char)dmg1->alp[j]);
+            }
+
+            MikuPan_RenderSprite3D((sceGsTex0 *)&tex0[j], &verts[0][0]);
+        }
+    }
 
     monochrome_mode = mono;
 }
