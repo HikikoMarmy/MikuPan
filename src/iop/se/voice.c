@@ -14,6 +14,7 @@ VOICE voices[VOICE_NUM];
 
 #define VOICE_BUFFER_BYTES (0x15160 * 10)
 #define VOICE_BUFFER_SAMPLES (VOICE_BUFFER_BYTES / (int)sizeof(s16))
+#define VOICE_BUFFER_STEREO_FRAMES (VOICE_BUFFER_SAMPLES / 2)
 #define ADPCM_BLOCK_WORDS 8
 #define ADPCM_BLOCK_SAMPLES 28
 /* Keep roughly this much PCM queued per voice. Decoding is paced against the
@@ -70,19 +71,19 @@ VOICE *GetFreeVoice()
     return NULL;
 }
 
-static s16 *MixSamples(int sampleCount, s16 *samples, VOICE v)
+static void MixStereoSamples(int sampleCount, s16 *samples, const VOICE *v)
 {
-    s16 *buffer = samples;
-    s16 volume = mVolL * v.volL / INT16_MAX;
+    const s32 volume_l =
+        (s32)(((int64_t)mVolL * (int64_t)v->volL) / INT16_MAX);
+    const s32 volume_r =
+        (s32)(((int64_t)mVolR * (int64_t)v->volR) / INT16_MAX);
 
-    for (int i = 0; i < sampleCount; i++)
+    for (int i = sampleCount - 1; i >= 0; i--)
     {
         s16 sample = samples[i];
-        sample = ApplyVolume(sample, volume);
-        //sample = ApplyVolume(sample, v.volL);
-        buffer[i] = sample;
+        samples[i * 2] = ApplyVolume(sample, volume_l);
+        samples[i * 2 + 1] = ApplyVolume(sample, volume_r);
     }
-    return buffer;
 }
 
 static bool EnsureVoiceStream(VOICE *v)
@@ -99,7 +100,7 @@ static bool EnsureVoiceStream(VOICE *v)
 
     SDL_AudioSpec spec;
     SDL_zero(spec);
-    spec.channels = 1;
+    spec.channels = 2;
     spec.format = SDL_AUDIO_S16;
     spec.freq = 48000;
 
@@ -156,7 +157,7 @@ static void StopVoicePlayback(int vNo)
     }
 }
 
-static void FillMono(int vNo)
+static void FillStereo(int vNo)
 {
     s16 *src;
 
@@ -173,10 +174,11 @@ static void FillMono(int vNo)
     int blockCount = 0;
 
     while (v->isPlaying && blockCount < VOICE_MAX_BLOCKS_PER_FILL &&
-           SDL_GetAudioStreamQueued(v->stream) + sampleCount * (int)sizeof(s16)
+           SDL_GetAudioStreamQueued(v->stream)
+                   + sampleCount * 2 * (int)sizeof(s16)
                < VOICE_TARGET_QUEUE_BYTES)
     {
-        if (sampleCount + ADPCM_BLOCK_SAMPLES > VOICE_BUFFER_SAMPLES)
+        if (sampleCount + ADPCM_BLOCK_SAMPLES > VOICE_BUFFER_STEREO_FRAMES)
         {
             info_log("Voice %d decode exceeded host buffer", vNo);
             StopVoicePlayback(vNo);
@@ -218,10 +220,10 @@ static void FillMono(int vNo)
 
     if (sampleCount > 0)
     {
-        MixSamples(sampleCount, v->buffer, *v);
+        MixStereoSamples(sampleCount, v->buffer, v);
         UpdateVoiceFrequencyRatio(v);
         SDL_PutAudioStreamData(v->stream, v->buffer,
-                               sampleCount * (int)sizeof(s16));
+                               sampleCount * 2 * (int)sizeof(s16));
     }
 }
 
@@ -237,7 +239,7 @@ void VoiceRun()
     {
         if (voices[i].isPlaying)
         {
-            FillMono(i);
+            FillStereo(i);
         }
     }
 }
