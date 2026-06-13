@@ -2536,6 +2536,17 @@ void DrawPhotoHinttex2(u_int sw, u_int pri, int num)
         }
     }
 
+    /*
+     * The captured photo (preview) is composited again at frame end
+     * (MikuPan_RenderQueuedPhotoPreviewTexture) so the PS2 frame border and
+     * negative filter cannot cover it. That same redraw would also paint over
+     * this hint overlay if it were drawn immediately. Queue the darkening quad
+     * and the hint sprite into the late-2D overlay queue (the same mechanism
+     * the message box uses) so they are flushed after the preview redraw and
+     * land on top of the photo.
+     */
+    MikuPan_BeginLate2DOverlayQueue();
+
     sq = (SQAR_DAT) {
         .w = 640,
         .h = 448,
