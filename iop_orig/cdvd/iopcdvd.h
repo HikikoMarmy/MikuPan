@@ -98,6 +98,6 @@ void ICdvdCmd(IOP_COMMAND* icp);
 void ICdvdMain();
 void ICdvdBreak();
 
-void ICdvdLoadReqAdpcm(int lsn, u_int size_now, void* buf, u_char channel, u_char req_type, u_char endld_flg);
+void ICdvdLoadReqAdpcm(int lsn, u_int size_now, void* buf, u_char channel, int req_type, int endld_flg);
 
 #endif // IOPCDVD_H_

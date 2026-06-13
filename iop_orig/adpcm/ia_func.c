@@ -25,12 +25,12 @@ void IaInitDev(u_char channel)
     }
 
     if (channel == 0) {
-        AdpcmSpuBuf[0] = 0x1F3740;
+        AdpcmSpuBuf[0] = (u_char*)0x1F3740;
         iop_adpcm[0].core = 0;
         iop_adpcm[0].vl = 0;
         iop_adpcm[0].vr = 2;
     } else {
-        AdpcmSpuBuf[1] = 0x1F6780;
+        AdpcmSpuBuf[1] = (u_char*)0x1F6780;
         iop_adpcm[1].core = 1;
         iop_adpcm[1].vl = 44;
         iop_adpcm[1].vr = 46;
@@ -90,8 +90,8 @@ void IaDbgMemoryCheck()
 
 void IaSetRegSsa(u_char channel)
 {
-    sceSdSetAddr(iop_adpcm[channel].core | iop_adpcm[channel].vl | SD_VA_SSA, AdpcmSpuBuf[channel]);
-    sceSdSetAddr(iop_adpcm[channel].core | iop_adpcm[channel].vr | SD_VA_SSA, AdpcmSpuBuf[channel] + 4096);
+    sceSdSetAddr(iop_adpcm[channel].core | iop_adpcm[channel].vl | SD_VA_SSA, (u_int)AdpcmSpuBuf[channel]);
+    sceSdSetAddr(iop_adpcm[channel].core | iop_adpcm[channel].vr | SD_VA_SSA, (u_int)(AdpcmSpuBuf[channel] + 4096));
 }
 
 void IaSetRegAdsr(u_char channel)

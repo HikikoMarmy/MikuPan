@@ -62,8 +62,8 @@ static void ISePos(IOP_COMMAND* icp);
 static void IopSoundMasterVolChange(IOP_COMMAND* icp);
 static void IopSoundSteMonoChange(IOP_COMMAND* icp);
 
-static int SeChangeSetDataPlay(SE_WRK_SET* swsp, IOP_COMMAND* icp);
-static int SeChangeSetDataPos(SE_WRK_SET* swsp, IOP_COMMAND* icp);
+static void SeChangeSetDataPlay(SE_WRK_SET* swsp, IOP_COMMAND* icp);
+static void SeChangeSetDataPos(SE_WRK_SET* swsp, IOP_COMMAND* icp);
 
 static void GetPrimAndBufNo(short int* prm_no, u_char* buf_no, int v_no);
 static void SeGenerateVolPich(SE_WRK_SET* swsp, int vol_rate, int pan, int phase);
@@ -244,10 +244,7 @@ static int ISePlay(IOP_COMMAND* icp)
     SE_WRK_SET* swsp;
 
     swsp = GetSeWrkSetP(icp->data1);
-    if (swsp == NULL || !SeChangeSetDataPlay(swsp, icp)) {
-        return -1;
-    }
-
+    SeChangeSetDataPlay(swsp, icp);
     SeSetSeWrk(swsp);
     vn = swsp->v_no + 24;
 
@@ -280,12 +277,8 @@ static void ISeStop(IOP_COMMAND* icp)
     int candv;
 
     swsp = GetSeWrkSetP(icp->data1);
-    if (!swsp) {
-        return;
-    }
-
     svp = GetSeVstat(swsp->v_no);
-    if (svp == NULL) {
+    if (!swsp) {
         return;
     }
 
@@ -317,16 +310,12 @@ static void ISeVol(IOP_COMMAND* icp)
     int candv;
 
     swsp = GetSeWrkSetP(icp->data1);
-    if (!swsp || swsp->param == NULL) {
+    if (!swsp) {
         return;
     }
 
     vn = swsp->v_no + 24;
     candv = CidAndVnum(vn, 1);
-    if (candv < 0) {
-        return;
-    }
-
     swsp->pitch = swsp->param->pitch * icp->data2 / 4096;
     sceSdSetParam(candv | 0x200, swsp->pitch);
 }
@@ -347,16 +336,12 @@ static void ISePitch(IOP_COMMAND* icp)
     int candv;
 
     swsp = GetSeWrkSetP(icp->data1);
-    if (!swsp || swsp->param == NULL) {
+    if (!swsp) {
         return;
     }
 
     vn = swsp->v_no + 24;
     candv = CidAndVnum(vn, 1);
-    if (candv < 0) {
-        return;
-    }
-
     swsp->pitch = swsp->param->pitch * icp->data2 / 4096;
     sceSdSetParam(candv | SD_VP_PITCH, swsp->pitch);
 }
@@ -369,6 +354,8 @@ static void ISeAllStop(IOP_COMMAND* icp)
     SE_WRK_SET* swsp;
     SE_VSTAT* svp;
 
+    swsp = GetSeWrkSetP(icp->data1);
+    svp = GetSeVstat(swsp->v_no);
     i = 0;
     swsp = GetSeWrkSetP(0);
     while (i < 24) {
@@ -397,33 +384,18 @@ static void ISePos(IOP_COMMAND* icp)
     int candv;
 
     swsp = GetSeWrkSetP(icp->data1);
-    if (swsp == NULL || !SeChangeSetDataPos(swsp, icp)) {
-        return;
-    }
-
+    SeChangeSetDataPos(swsp, icp);
     candv = CidAndVnum(swsp->v_no + 24, 1);
-    if (candv < 0) {
-        return;
-    }
-
     sceSdSetParam(candv | SD_VP_VOLL, swsp->vol_l);
     sceSdSetParam(candv | SD_VP_VOLR, swsp->vol_r);
     sceSdSetParam(candv | SD_VP_PITCH, swsp->pitch);
 }
 
-static int SeChangeSetDataPlay(SE_WRK_SET* swsp, IOP_COMMAND* icp)
+static void SeChangeSetDataPlay(SE_WRK_SET* swsp, IOP_COMMAND* icp)
 {
-    if (swsp == NULL) {
-        return 0;
-    }
-
     GetPrimAndBufNo(&swsp->prm_no, &swsp->buf_no, icp->data2);
     swsp->v_no = icp->data1;
     swsp->param = SeGetSeParamTbl(swsp->prm_no);
-    if (swsp->param == NULL) {
-        return 0;
-    }
-
     swsp->pitch = (icp->data3 * swsp->param->pitch) / 4096;
     swsp->attribute = swsp->param->attribute;
     SeGenerateVolPich(swsp, icp->data5, icp->data4, 0);
@@ -433,33 +405,20 @@ static int SeChangeSetDataPlay(SE_WRK_SET* swsp, IOP_COMMAND* icp)
     swsp->inc_vol_r = 0;
     swsp->vol_l = swsp->tgt_vol_l;
     swsp->vol_r = swsp->tgt_vol_r;
-    return 1;
 }
 
-static int SeChangeSetDataPos(SE_WRK_SET* swsp, IOP_COMMAND* icp)
+static void SeChangeSetDataPos(SE_WRK_SET* swsp, IOP_COMMAND* icp)
 {
-    if (swsp == NULL) {
-        return 0;
-    }
-
     GetPrimAndBufNo(&swsp->prm_no, &swsp->buf_no, icp->data2);
     swsp->param = SeGetSeParamTbl(swsp->prm_no);
-    if (swsp->param == NULL) {
-        return 0;
-    }
-
     swsp->pitch = icp->data3 * swsp->param->pitch / 4096;
     SeGenerateVolPich(swsp, icp->data5, icp->data4, 0);
     swsp->vol_l = swsp->tgt_vol_l;
     swsp->vol_r = swsp->tgt_vol_r;
-    return 1;
 }
 
 static void GetPrimAndBufNo(short int* prm_no, u_char* buf_no, int v_no)
 {
-    *prm_no = -1;
-    *buf_no = 0;
-
     if (v_no >= 0 && v_no < 30) {
         *prm_no = v_no;
         *buf_no = 0;
@@ -628,10 +587,6 @@ void SeSetStartPoint(u_char type, u_int no)
 
 static void SeGenerateVolPich(SE_WRK_SET* swsp, int vol_rate, int pan, int phase)
 {
-    if (swsp == NULL || swsp->param == NULL) {
-        return;
-    }
-
     swsp->tgt_vol_l = swsp->tgt_vol_r = ((0x1ff * vol_rate * swsp->param->vol) / 0x1000) >> 2;
 
     if (iop_mv.mono == 0) {
@@ -666,7 +621,7 @@ static void SeGenerateVolPich(SE_WRK_SET* swsp, int vol_rate, int pan, int phase
 static SE_VSTAT* GetSeVstat(int sv_no)
 {
     if (sv_no >= 0 && sv_no < 24) {
-        return &iop_stat.sev_stat[sv_no];
+        return &GetIopStatP()->sev_stat[sv_no];
     } else {
         return NULL;
     }
@@ -686,16 +641,8 @@ static void SeSetSeWrk(SE_WRK_SET* swsp)
     int num;
     int candv;
 
-    if (swsp == NULL || swsp->param == NULL) {
-        return;
-    }
-
     num = swsp->v_no;
     candv = CidAndVnum(num + 24, 1);
-    if (candv < 0) {
-        return;
-    }
-
     sceSdSetAddr(candv | SD_VA_SSA, GetSeAdrs(swsp->prm_no) + snd_buf_top[swsp->buf_no]);
     sceSdSetParam(candv | SD_VP_ADSR1, swsp->adsr1);
     sceSdSetParam(candv | SD_VP_ADSR2, swsp->adsr2);

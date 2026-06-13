@@ -12,7 +12,7 @@
 
 IOP_ADPCM iop_adpcm[2];
 u_char* AdpcmIopBuf[2];
-u_int AdpcmSpuBuf[2];
+u_char* AdpcmSpuBuf[2];
 ADPCM_CMD now_cmd;
 ADPCM_CMD cmd_buf[8];
 
@@ -23,7 +23,7 @@ static void IAdpcmFadeVol(IOP_COMMAND*);
 static void IAdpcmPos(IOP_COMMAND*);
 static void IAdpcmMvol(IOP_COMMAND*);
 
-static int AdpcmSpu2IntrHander(int core_bit, void* data);
+static void AdpcmSpu2IntrHander(int core_bit, void* data);
 static int AdpcmTransCB(int channel, void* common);
 static void SetLoopFlgAll(u_short core);
 
@@ -285,8 +285,8 @@ void IAdpcmInit(int dev_init)
     sceSdVoiceTransStatus(0, SD_TRANS_STATUS_WAIT);
     sceSdSetSpu2IntrHandler(0, 0);
     sceSdSetSpu2IntrHandler(AdpcmSpu2IntrHander, iop_adpcm);
-    sceSdSetAddr(iop_adpcm[0].core | SD_A_IRQA, (AdpcmSpuBuf[0] + 2048) & 0xFFFFFFF0);
-    sceSdSetAddr(iop_adpcm[1].core | SD_A_IRQA, (AdpcmSpuBuf[1] + 2048) & 0xFFFFFFF0);
+    sceSdSetAddr(iop_adpcm[0].core | SD_A_IRQA, (u_int)(AdpcmSpuBuf[0] + 2048) & 0xFFFFFFF0);
+    sceSdSetAddr(iop_adpcm[1].core | SD_A_IRQA, (u_int)(AdpcmSpuBuf[1] + 2048) & 0xFFFFFFF0);
     sceSdSetTransIntrHandler(0, 0, 0);
     iop_adpcm[0].stat = 0;
     iop_stat.adpcm.status = 0;
@@ -357,7 +357,7 @@ void IAdpcmPreLoadEnd(int channel)
                        channel,
                        0,
                        &AdpcmIopBuf[channel][2048 * i],
-                       AdpcmSpuBuf[channel] + 2048 * (i / 2) + 4096 * (i & 1),
+                       (u_int)AdpcmSpuBuf[channel] + 2048 * (i / 2) + 4096 * (i & 1),
                        0x800u)
                 < 0) {
 
@@ -389,8 +389,8 @@ void IAdpcmPlay(ADPCM_CMD* acp)
         IaSetRegAdsr(channel);
         IaSetRegSsa(channel);
         sceSdSetTransIntrHandler(channel, AdpcmTransCB, 0);
-        sceSdSetSpu2IntrHandler(AdpcmSpu2IntrHander, iop_adpcm);
-        sceSdSetAddr(iop_adpcm[channel].core | SD_A_IRQA, (AdpcmSpuBuf[channel] + 2048) & 0xFFFFFFF0);
+        sceSdSetSpu2IntrHandler((sceSdSpu2IntrHandler)AdpcmSpu2IntrHander, iop_adpcm);
+        sceSdSetAddr(iop_adpcm[channel].core | SD_A_IRQA, (u_int)(AdpcmSpuBuf[channel] + 2048) & 0xFFFFFFF0);
         IaSetRegKon(channel);
         sceSdSetCoreAttr(iop_adpcm[channel].core | 4, 1u);
         iop_adpcm[channel].stat = ADPCM_STAT_PLAY;
@@ -455,7 +455,7 @@ static void IAdpcmMvol(IOP_COMMAND* icp)
     IaSetMasterVol(mvol);
 }
 
-static int AdpcmSpu2IntrHander(int core_bit, void* data)
+static void AdpcmSpu2IntrHander(int core_bit, void* data)
 {
     IOP_ADPCM* ia = data;
 
@@ -470,8 +470,6 @@ static int AdpcmSpu2IntrHander(int core_bit, void* data)
 
     if ((core_bit & 2) != 0)
         iWakeupThread(ia[1].thread_id);
-
-    return 1;
 }
 
 static int AdpcmTransCB(int channel, void* common)
@@ -484,7 +482,7 @@ static int AdpcmTransCB(int channel, void* common)
                    channel,
                    0,
                    &AdpcmIopBuf[channel][iop_adpcm[channel].pos],
-                   (iop_adpcm[channel].dbids * 2048) + AdpcmSpuBuf[channel] + 4096,
+                   (u_int)((iop_adpcm[channel].dbids * 2048) + AdpcmSpuBuf[channel] + 4096),
                    0x800u)
             < 0)
             ;
@@ -493,7 +491,7 @@ static int AdpcmTransCB(int channel, void* common)
         iop_adpcm[channel].str_tpos += 2048;
         sceSdSetAddr(
             iop_adpcm[channel].core | SD_A_IRQA,
-            (AdpcmSpuBuf[channel] + (iop_adpcm[channel].dbids * 2048)) & 0xFFFFFFF0);
+            ((u_int)AdpcmSpuBuf[channel] + (iop_adpcm[channel].dbids * 2048)) & 0xFFFFFFF0);
         iop_adpcm[channel].dbids ^= 1u;
         iop_adpcm[channel].stat = ADPCM_STAT_PLAY;
         sceSdSetCoreAttr(iop_adpcm[channel].core | 4, 1u);
@@ -566,7 +564,7 @@ void IAdpcmReadCh0()
                            0,
                            0,
                            &AdpcmIopBuf[0][iop_adpcm[0].pos],
-                           (iop_adpcm[0].dbids * 0x800) + AdpcmSpuBuf[0],
+                           (u_int)((iop_adpcm[0].dbids * 0x800) + AdpcmSpuBuf[0]),
                            0x800u)
                     < 0) {
 
@@ -728,7 +726,7 @@ void IAdpcmReadCh1()
                            1,
                            0,
                            &AdpcmIopBuf[1][iop_adpcm[1].pos],
-                           (iop_adpcm[1].dbids * 0x800) + AdpcmSpuBuf[1],
+                           (u_int)((iop_adpcm[1].dbids * 0x800) + AdpcmSpuBuf[1]),
                            0x800u)
                     < 0) {
 
@@ -812,33 +810,33 @@ static void SetLoopFlag(u_int* st_addr, u_int szvag, u_char st_end)
 
 static void SetLoopFlgAll(u_short core)
 {
-    u_int pos;
+    u_char* pos;
     int i;
     int times;
 
     pos = 0;
     times = 32;
     for (i = 0; i < times; i++, pos += 0x2000) {
-        SetLoopFlag((u_int*)&AdpcmIopBuf[core][pos + 0x0000], 0x800u, 1u);
-        SetLoopFlag((u_int*)&AdpcmIopBuf[core][pos + 0x0800], 0x800u, 1u);
-        SetLoopFlag((u_int*)&AdpcmIopBuf[core][pos + 0x1000], 0x800u, 2u);
-        SetLoopFlag((u_int*)&AdpcmIopBuf[core][pos + 0x1800], 0x800u, 2u);
+        SetLoopFlag(&AdpcmIopBuf[core][(u_int)pos] + 0x0000, 0x800u, 1u);
+        SetLoopFlag(&AdpcmIopBuf[core][(u_int)pos] + 0x0800, 0x800u, 1u);
+        SetLoopFlag(&AdpcmIopBuf[core][(u_int)pos] + 0x1000, 0x800u, 2u);
+        SetLoopFlag(&AdpcmIopBuf[core][(u_int)pos] + 0x1800, 0x800u, 2u);
     }
 }
 
 static void SetLoopFlgAll2(u_short core)
 {
-    u_int pos;
+    u_char* pos;
     int i;
     int times;
 
     pos = 0;
     times = 32;
     for (i = 0; i < times; i++, pos += 0x2000) {
-        SetLoopFlag((u_int*)&AdpcmIopBuf[core][pos + 0x0000], 0x800u, 1u);
-        SetLoopFlag((u_int*)&AdpcmIopBuf[core][pos + 0x0800], 0x800u, 1u);
-        SetLoopFlag((u_int*)&AdpcmIopBuf[core][pos + 0x1000], 0x800u, 2u);
-        SetLoopFlag((u_int*)&AdpcmIopBuf[core][pos + 0x1800], 0x800u, 2u);
+        SetLoopFlag(&AdpcmIopBuf[core][(u_int)pos] + 0x0000, 0x800u, 1u);
+        SetLoopFlag(&AdpcmIopBuf[core][(u_int)pos] + 0x0800, 0x800u, 1u);
+        SetLoopFlag(&AdpcmIopBuf[core][(u_int)pos] + 0x1000, 0x800u, 2u);
+        SetLoopFlag(&AdpcmIopBuf[core][(u_int)pos] + 0x1800, 0x800u, 2u);
     }
 }
 

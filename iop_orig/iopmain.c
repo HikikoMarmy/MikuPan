@@ -1,7 +1,6 @@
 #include "iopmain.h"
 
 #include "se/iopse.h"
-#include "se/voice.h"
 #include "adpcm/iopadpcm.h"
 #include "cdvd/iopcdvd.h"
 
@@ -19,7 +18,7 @@ IOP_MASTER_VOL iop_mv;
 IOP_SYS_CTRL iop_sys_ctrl;
 
 static int IopMainLoop();
-void* IopDrvFunc(unsigned int command, void* data, int size);
+static void* IopDrvFunc(unsigned int command, void* data, int size);
 static void IopInitDevice();
 static int IopInitMain();
 static int IopSetTimer();
@@ -67,7 +66,7 @@ static int IopMainLoop()
     return 0;
 }
 
-void* IopDrvFunc(unsigned int command, void* data, int size)
+static void* IopDrvFunc(unsigned int command, void* data, int size)
 {
     IOP_COMMAND* icp;
     int i;
@@ -157,7 +156,7 @@ static int IopSetTimer()
     if ((iop_sys_ctrl.timer_id = AllocHardTimer(1, 32, 1)) <= 0) {
     }
 
-    if (SetTimerHandler(iop_sys_ctrl.timer_id, iop_sys_ctrl.count, (TimerHandler)IopIntrFunc, &iop_sys_ctrl)) {
+    if (SetTimerHandler(iop_sys_ctrl.timer_id, iop_sys_ctrl.count, IopIntrFunc, &iop_sys_ctrl)) {
     }
 
     if (SetupHardTimer(iop_sys_ctrl.timer_id, 1, 0, 1)) {
@@ -194,14 +193,12 @@ static int IopMain()
         ISeMain();
         ICdvdMain();
         IAdpcmMain2();
-        VoiceRun();
     }
 
     return 0;
 }
 
-void IopShutDown()
+IOP_STAT* GetIopStatP()
 {
-    MikuPan_IopHostShutdown();
-    MikuPan_SdShutdown();
+    return &iop_stat;
 }

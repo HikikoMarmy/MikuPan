@@ -1,11 +1,19 @@
 #ifndef IOPMAIN_H_
 #define IOPMAIN_H_
 
-#include "os/eeiop/eeiop.h"
-#include "typedefs.h"
+typedef unsigned char u_char;
+typedef short unsigned int u_short;
+typedef unsigned int u_int;
+typedef long unsigned int u_long;
+typedef unsigned char unchar;
+typedef short unsigned int ushort;
+typedef unsigned int uint;
+typedef long unsigned int ulong;
 
-#ifndef MIKUPAN_IOP_COMMAND_ID_DEFINED
-#define MIKUPAN_IOP_COMMAND_ID_DEFINED
+typedef signed char s_char;
+typedef short int s_short;
+typedef long int s_long;
+
 enum IOP_COMMAND_ID {
     IC_COM_NOTHING = 0,
     IC_SE_INIT = 1,
@@ -46,7 +54,6 @@ enum IOP_COMMAND_ID {
     IC_ADPCM_SET_SPU2IRQ = 36,
     IC_ADPCM_QUIT = 37
 };
-#endif
 
 enum IOP_STEREO_SET {
     IS_STEREO = 0,
@@ -67,6 +74,17 @@ enum TRANS_MEM_TYPE {
     TRANS_MEM_NUM = 4
 };
 
+typedef struct { // 0x20
+    /* 0x00 */ int cmd_no;
+    /* 0x04 */ int data1;
+    /* 0x08 */ int data2;
+    /* 0x0c */ int data3;
+    /* 0x10 */ int data4;
+    /* 0x14 */ int data5;
+    /* 0x18 */ int data6;
+    /* 0x1c */ int data7;
+} IOP_COMMAND;
+
 typedef struct { // 0x414
     /* 0x000 */ int get_cmd[256];
     /* 0x400 */ int cmd_num;
@@ -76,6 +94,42 @@ typedef struct { // 0x414
     /* 0x410 */ unsigned int count;
 } IOP_SYS_CTRL;
 
+typedef struct { // 0x8
+    /* 0x0 */ int file_no;
+    /* 0x4 */ u_char stat;
+    /* 0x5 */ u_char renew;
+} CDVD_LOAD_STAT;
+
+typedef struct { // 0x10c
+    /* 0x000 */ CDVD_LOAD_STAT fstat[32];
+    /* 0x100 */ int stat;
+    /* 0x100 */ u_int ld_addr;
+    /* 0x108 */ int se_trans;
+} CDVD_RET_STAT;
+
+typedef struct { // 0x4
+    /* 0x0 */ int status;
+} SE_VSTAT;
+
+typedef struct { // 0x8
+    /* 0x0 */ int thread_id;
+    /* 0x4 */ int stat;
+} BGM_STAT;
+
+typedef struct { // 0x8
+    /* 0x0 */ short int status;
+    /* 0x2 */ short int tune_no;
+    /* 0x4 */ int count;
+} ADPCM_STAT;
+
+typedef struct { // 0x180
+    /* 0x000 */ SE_VSTAT sev_stat[24];
+    /* 0x060 */ BGM_STAT bgm;
+    /* 0x068 */ CDVD_RET_STAT cdvd;
+    /* 0x174 */ ADPCM_STAT adpcm;
+    /* 0x17c */ int dummy[1];
+} IOP_STAT;
+
 typedef struct { // 0x4
     /* 0x0 */ u_short vol;
     /* 0x2 */ u_char mono;
@@ -83,10 +137,6 @@ typedef struct { // 0x4
 
 extern IOP_STAT iop_stat;
 extern IOP_MASTER_VOL iop_mv;
-extern IOP_SYS_CTRL iop_sys_ctrl;
-
 IOP_STAT* GetIopStatP();
-void* IopDrvFunc(unsigned int command, void* data, int size);
-void IopShutDown();
 
 #endif // IOPMAIN_H_

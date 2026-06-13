@@ -56,6 +56,24 @@ void MikuPan_ReadFullFile(const char *filename, char *buffer)
     infile.close();
 }
 
+void MikuPan_NotifyPs2MemoryLoad(int ps2_address)
+{
+    if (ps2_address < 0)
+    {
+        return;
+    }
+
+    if (std::find(file_loaded_address.begin(), file_loaded_address.end(),
+                  ps2_address)
+        != file_loaded_address.end())
+    {
+        MikuPan_RequestFlushTextureCache();
+        return;
+    }
+
+    file_loaded_address.push_back(ps2_address);
+}
+
 void MikuPan_ReadFileInArchive(int sector, int size, u_int *address)
 {
     const auto archive = MikuPan_GetDataRoot() / "IMG_BD.BIN";
@@ -210,6 +228,10 @@ bool MikuPan_ResolveCdPath(const char* path, char* buffer, size_t buffer_size)
         if (!s.empty() && s.front() == '/') {
             s.erase(0, 1);
         }
+    }
+
+    while (!s.empty() && s.front() == '/') {
+        s.erase(0, 1);
     }
 
     if (!s.empty()) {

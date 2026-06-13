@@ -228,6 +228,7 @@ set(MIKUPAN_SOURCES
         "sdk/sce/devvif1.c"
         "sdk/sce/libpc.c"
         "sdk/sce/libpad.c"
+        "sdk/iop_host.c"
         "sdk/sce/sif.c"
         "sdk/sce/devvu0.c"
         "sdk/sce/libmc.c"
@@ -312,6 +313,7 @@ endif()
 target_include_directories(MikuPan PRIVATE
         "sdk/"
         "src"
+        "src/iop"
         "extern/"
         "extern/glad/include/"
         ${MIKUPAN_GENERATED_DIR}

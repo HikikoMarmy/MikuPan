@@ -13,15 +13,11 @@
 #include "string.h"
 #include "sysmem.h"
 
-#include <SDL3/SDL_mutex.h>
-#include <stdint.h>
-
 CDVD_STAT cdvd_stat;
 CDVD_REQ_BUF cdvd_req[32];
 CDVD_LOAD_STAT load_stat[32];
 CDVD_TRANS_STAT cdvd_trans[2];
 u_int* load_buf_table[2];
-static SDL_Mutex* cdvd_lock;
 
 static void ICdvdInitOnce();
 static void ICdvdInitSoftReset();
@@ -38,9 +34,6 @@ static void ICdvdExecCmd();
 static void ICdvdDataReadOnceSector();
 static int ICdvdCheckLoadError();
 static void ICdvdTransFinishedData();
-static void ICdvdMainLocked();
-static void ICdvdLock();
-static void ICdvdUnlock();
 
 void ICdvdCmd(IOP_COMMAND* icp)
 {
@@ -54,13 +47,7 @@ void ICdvdCmd(IOP_COMMAND* icp)
         ICdvdAddCmd(icp);
         break;
     case IC_CDVD_SE_TRANS:
-        /* The EE->IOP staging DMA for the floating-ghost SE bank has no host
-           transport (iop_stat.cdvd.ld_addr is reported as 0 because the IOP
-           staging buffer is a 64-bit host pointer that does not fit the
-           shared 32-bit field), so load_buf_table[0] never holds the SE
-           data. Keep the SPU upload disabled — as the pre-rewrite port did —
-           instead of pushing stale staging data into the SE bank. The EE
-           side tolerates this: IsEndFgTrans() is stubbed to return 1. */
+        ICdvdTransSe(icp);
         break;
     case IC_CDVD_SE_TRANS_RESET:
         ICdvdTransSeInit();
@@ -98,15 +85,11 @@ static void ICdvdInitOnce()
     memset(&iop_stat.cdvd, 0, sizeof(iop_stat.cdvd));
     memset(cdvd_trans, 0, sizeof(cdvd_trans));
 
-    if (cdvd_lock == NULL) {
-        cdvd_lock = SDL_CreateMutex();
-    }
-
     load_buf_table[0] = AllocSysMemory(0, 0x64000, 0);
     if (!load_buf_table[0]) {
     } else {
-        load_buf_table[1] = (u_int*)((u_char*)load_buf_table[0] + 0x32000);
-        iop_stat.cdvd.ld_addr = 0;
+        load_buf_table[1] = (u_int)load_buf_table[0] + 0x32000;
+        iop_stat.cdvd.ld_addr = (u_int)load_buf_table[0];
     }
 
     if (sceCdSync(1)) {
@@ -179,7 +162,7 @@ static void ICdvdInitOnce()
         }
     }
 
-    sdd.data = (int64_t)load_buf_table[0];
+    sdd.data = (u_int)load_buf_table[0];
     sdd.addr = IMG_BIN_ADDRESS;
     sdd.size = cdlf.size;
     sdd.mode = 0;
@@ -195,26 +178,16 @@ static void ICdvdInitOnce()
 
 static void ICdvdInitSoftReset()
 {
-    ICdvdLock();
     memset(&cdvd_stat, 0, sizeof(cdvd_stat));
     memset(cdvd_req, 0, sizeof(cdvd_req));
     memset(&iop_stat.cdvd, 0, sizeof(iop_stat.cdvd));
-    ICdvdUnlock();
 
     if (sceCdSync(1)) {
         while (!sceCdBreak())
             ;
     }
 }
-
 void ICdvdMain()
-{
-    ICdvdLock();
-    ICdvdMainLocked();
-    ICdvdUnlock();
-}
-
-static void ICdvdMainLocked()
 {
 
     ICdvdTransCheck();
@@ -459,8 +432,8 @@ static void ICdvdTransFinishedData()
 
     switch (cdvd_req[cdvd_stat.start_pos].tmem) {
     case TRANS_MEM_EE:
-        sdd.addr = (int64_t)((u_char*)cdvd_req[cdvd_stat.start_pos].taddr + cdvd_stat.end_size);
-        sdd.data = (int64_t)load_buf_table[cdvd_stat.now_lbuf];
+        sdd.addr = (u_int)cdvd_req[cdvd_stat.start_pos].taddr + cdvd_stat.end_size;
+        sdd.data = (u_int)load_buf_table[cdvd_stat.now_lbuf];
         sdd.size = cdvd_stat.now_size;
         sdd.mode = 0;
         cdvd_trans[cdvd_stat.now_lbuf].stat = 2;
@@ -473,8 +446,8 @@ static void ICdvdTransFinishedData()
 
     case TRANS_MEM_IOP:
         memcpy(
-            (u_char*)cdvd_req[cdvd_stat.start_pos].taddr + cdvd_stat.end_size,
             load_buf_table[cdvd_stat.now_lbuf],
+            (char*)cdvd_req[cdvd_stat.start_pos].taddr + cdvd_stat.end_size,
             cdvd_stat.now_size);
         cdvd_trans[cdvd_stat.now_lbuf].stat = 2;
         cdvd_trans[cdvd_stat.now_lbuf].id = cdvd_req[cdvd_stat.start_pos].id;
@@ -496,7 +469,7 @@ static void ICdvdTransFinishedData()
                    cdvd_trans[cdvd_stat.now_lbuf].tid,
                    0,
                    load_buf_table[cdvd_stat.now_lbuf],
-                   (u_int)((uintptr_t)cdvd_req[cdvd_stat.start_pos].taddr + cdvd_stat.end_size),
+                   ((u_int)cdvd_req[cdvd_stat.start_pos].taddr + cdvd_stat.end_size),
                    trans_size)
             < 0)
             ;
@@ -583,12 +556,10 @@ static int ICdvdCheckLoadError()
 
 void ICdvdBreak()
 {
-    ICdvdLock();
     while (!sceCdBreak())
         ;
     cdvd_stat.stat = 0;
     cdvd_stat.adpcm_req = 0;
-    ICdvdUnlock();
 }
 
 static int ICdvdSectorLoad(CDVD_REQ_BUF* req_bufp)
@@ -649,14 +620,13 @@ static void ICdvdAddCmd(IOP_COMMAND* icp)
         req_buf.tmem = icp->data5;
 
     if (req_buf.tmem == TRANS_MEM_SPU) {
-        req_buf.taddr = (u_int*)(uintptr_t)SeGetSndBufTop(icp->data4);
+        req_buf.taddr = (u_int*)SeGetSndBufTop(icp->data4);
         req_buf.se_buf_no = icp->data4;
     } else {
         req_buf.taddr = (u_int*)icp->data4;
     }
 
     req_buf.id = icp->data6;
-    ICdvdLock();
     if (cdvd_stat.buf_use_num < 32) {
         cdvd_req[cdvd_stat.req_pos] = req_buf;
         cdvd_stat.req_pos = (cdvd_stat.req_pos + 1) % 32;
@@ -664,7 +634,6 @@ static void ICdvdAddCmd(IOP_COMMAND* icp)
         ICdvdSetRetStat(req_buf.id, CDVD_STAT_LOADING);
     } else {
     }
-    ICdvdUnlock();
 }
 
 static void ICdvdTransSe(IOP_COMMAND* icp)
@@ -674,7 +643,7 @@ static void ICdvdTransSe(IOP_COMMAND* icp)
 
     size = icp->data1;
     addr = snd_buf_top[icp->data2];
-    while (sceSdVoiceTrans(1, 0, (u_char*)load_buf_table[0], addr, size) < 0)
+    while (sceSdVoiceTrans(1, 0, (u_char*)load_buf_table[0], (u_int*)addr, size) < 0)
         ;
     iop_stat.cdvd.se_trans = 1;
     SeSetStartPoint(icp->data2, icp->data3);
@@ -758,7 +727,6 @@ void ICdvdSetRetStatClear()
 
 void ICdvdLoadReqPcm(u_int lsn, u_int size_sec, void* buf, u_char pre)
 {
-    ICdvdLock();
     cdvd_stat.pcm.start = lsn;
     cdvd_stat.pcm.size_now = size_sec;
     cdvd_stat.pcm.taddr = (u_int*)buf;
@@ -769,12 +737,10 @@ void ICdvdLoadReqPcm(u_int lsn, u_int size_sec, void* buf, u_char pre)
         cdvd_stat.pcm_pre = 0;
     }
     cdvd_stat.pcm_req = 1;
-    ICdvdUnlock();
 }
 
 void ICdvdLoadReqAdpcm(int lsn, u_int size_now, void* buf, u_char channel, u_char req_type, u_char endld_flg)
 {
-    ICdvdLock();
     cdvd_stat.adpcm[channel].start = lsn + cdvd_stat.cdlf.lsn;
     cdvd_stat.adpcm[channel].size_now = size_now;
     cdvd_stat.adpcm[channel].read_now = 0;
@@ -782,19 +748,4 @@ void ICdvdLoadReqAdpcm(int lsn, u_int size_now, void* buf, u_char channel, u_cha
     cdvd_stat.adpcm[channel].req_type = req_type;
     cdvd_stat.adpcm[channel].endld_flg = endld_flg;
     cdvd_stat.adpcm_req = 1;
-    ICdvdUnlock();
-}
-
-static void ICdvdLock()
-{
-    if (cdvd_lock != NULL) {
-        SDL_LockMutex(cdvd_lock);
-    }
-}
-
-static void ICdvdUnlock()
-{
-    if (cdvd_lock != NULL) {
-        SDL_UnlockMutex(cdvd_lock);
-    }
 }

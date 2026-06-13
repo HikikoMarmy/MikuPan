@@ -125,7 +125,7 @@ enum ADPCM_PLAY_STAT {
 
 extern IOP_ADPCM iop_adpcm[2];
 extern u_char* AdpcmIopBuf[2];
-extern u_int AdpcmSpuBuf[2];
+extern u_char* AdpcmSpuBuf[2];
 extern ADPCM_CMD now_cmd;
 extern ADPCM_CMD cmd_buf[8];
 

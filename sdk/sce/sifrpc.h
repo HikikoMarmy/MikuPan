@@ -14,6 +14,8 @@ struct _sif_queue_data { // 0x18
 };
 
 typedef struct _sif_client_data sceSifClientData;
+typedef struct _sif_queue_data sceSifQueueData;
+typedef struct _sif_serve_data sceSifServeData;
 typedef void* (*sceSifRpcFunc)(/* parameters unknown */);
 
 struct _sif_serve_data { // 0x44
@@ -59,6 +61,9 @@ void sceSifInitRpc(unsigned int mode);
 int sceSifBindRpc(sceSifClientData *client, unsigned int rpc_number, unsigned int mode);
 int sceSifCheckStatRpc(sceSifRpcData *cd);
 int sceSifCallRpc(sceSifClientData *client, unsigned int rpc_number, unsigned int mode, void * send, int ssize, void * receive, int rsize, sceSifEndFunc end_function, void *end_param);
+int sceSifSetRpcQueue(sceSifQueueData *qd, int thread_id);
+int sceSifRegisterRpc(sceSifServeData *sd, unsigned int command, sceSifRpcFunc func, void *buff, sceSifRpcFunc cfunc, void *cbuff, sceSifQueueData *qd);
+void sceSifRpcLoop(sceSifQueueData *qd);
 
 
 #endif // SCE_SIFRPC_H

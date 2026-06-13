@@ -28,7 +28,54 @@
 # A prebuilt binary dropped into extern/shadercross/<platform>/ or found on
 # PATH skips the source build. Override with -DSHADERCROSS_EXECUTABLE=<path>
 # to use a specific binary.
+#
+# CI can compile the shader bytecode once on Windows, publish
+# resources/shaders/{spirv,dxil,msl}/ as an artifact, and configure later jobs
+# with -DMIKUPAN_COMPILE_SHADERS=OFF to reuse that bytecode without building
+# shadercross on Linux/macOS.
 # ---------------------------------------------------------------------------
+
+option(MIKUPAN_COMPILE_SHADERS
+        "Compile HLSL shaders with SDL_shadercross during the build."
+        ON)
+
+set(MIKUPAN_HLSL_DIR ${CMAKE_SOURCE_DIR}/resources/shaders/hlsl)
+
+# CONFIGURE_DEPENDS re-globs on build so newly added shaders are picked up
+# without a manual re-configure.
+file(GLOB MIKUPAN_HLSL_SHADERS  CONFIGURE_DEPENDS ${MIKUPAN_HLSL_DIR}/*.hlsl)
+file(GLOB MIKUPAN_HLSL_INCLUDES CONFIGURE_DEPENDS ${MIKUPAN_HLSL_DIR}/*.hlsli)
+
+# One "<directory>=<extension>" entry per SDL_GPU shader format the game can
+# load at runtime: spirv/*.spv (Vulkan), dxil/*.dxil (Direct3D 12) and
+# msl/*.msl (Metal). shadercross picks the destination format from the output
+# extension. mikupan_shader.c resolves the directory matching the device.
+set(MIKUPAN_SHADER_FORMATS "spirv=spv" "dxil=dxil" "msl=msl")
+
+if(NOT MIKUPAN_COMPILE_SHADERS)
+    foreach(format ${MIKUPAN_SHADER_FORMATS})
+        string(REPLACE "=" ";" _format_parts ${format})
+        list(GET _format_parts 0 format_dir)
+        list(GET _format_parts 1 format_ext)
+
+        foreach(hlsl ${MIKUPAN_HLSL_SHADERS})
+            get_filename_component(hlsl_name ${hlsl} NAME)
+            string(REGEX REPLACE "\\.hlsl$" ".${format_ext}" out_name ${hlsl_name})
+            set(out_src ${CMAKE_SOURCE_DIR}/resources/shaders/${format_dir}/${out_name})
+
+            if(NOT EXISTS ${out_src})
+                message(FATAL_ERROR
+                        "Missing precompiled shader bytecode: ${out_src}\n"
+                        "Configure with -DMIKUPAN_COMPILE_SHADERS=ON or download "
+                        "the compiled shader artifact before configuring.")
+            endif()
+        endforeach()
+    endforeach()
+
+    message(STATUS "shadercross: disabled; using precompiled resources/shaders bytecode")
+    add_custom_target(compile_shaders)
+    return()
+endif()
 
 if(WIN32)
     set(_shadercross_platform windows)
@@ -133,19 +180,6 @@ if(NOT SHADERCROSS_EXECUTABLE)
 else()
     message(STATUS "shadercross: ${SHADERCROSS_EXECUTABLE}")
 endif()
-
-set(MIKUPAN_HLSL_DIR ${CMAKE_SOURCE_DIR}/resources/shaders/hlsl)
-
-# CONFIGURE_DEPENDS re-globs on build so newly added shaders are picked up
-# without a manual re-configure.
-file(GLOB MIKUPAN_HLSL_SHADERS  CONFIGURE_DEPENDS ${MIKUPAN_HLSL_DIR}/*.hlsl)
-file(GLOB MIKUPAN_HLSL_INCLUDES CONFIGURE_DEPENDS ${MIKUPAN_HLSL_DIR}/*.hlsli)
-
-# One "<directory>=<extension>" entry per SDL_GPU shader format the game can
-# load at runtime: spirv/*.spv (Vulkan), dxil/*.dxil (Direct3D 12) and
-# msl/*.msl (Metal). shadercross picks the destination format from the output
-# extension. mikupan_shader.c resolves the directory matching the device.
-set(MIKUPAN_SHADER_FORMATS "spirv=spv" "dxil=dxil" "msl=msl")
 
 set(MIKUPAN_SHADER_OUTPUTS "")
 foreach(format ${MIKUPAN_SHADER_FORMATS})
