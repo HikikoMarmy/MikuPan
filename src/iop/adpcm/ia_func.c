@@ -15,13 +15,17 @@ void IaInitDev(u_char channel)
 {
     memset(&iop_adpcm[channel], 0, sizeof(IOP_ADPCM));
 
-    while (IAdpcmMakeThread(channel))
+    while (!MikuPan_IopHostShouldShutdown() && IAdpcmMakeThread(channel))
         ;
+    if (MikuPan_IopHostShouldShutdown()) {
+        return;
+    }
 
     AdpcmIopBuf[channel] = (u_char*)AllocSysMemory(0, 266240, 0);
     if (!AdpcmIopBuf[channel]) {
-        while (1)
+        while (!MikuPan_IopHostShouldShutdown())
             ;
+        return;
     }
 
     if (channel == 0) {
@@ -211,7 +215,8 @@ void IaSetStopBlock(u_char channel)
     sb_tbl[17] = 7;
     sb_tbl[33] = 7;
     sb_tbl[49] = 7;
-    while (sceSdVoiceTrans(channel, 0, sb_tbl, snd_buf_top[2 * channel + 26], 0x40u) < 0)
+    while (!MikuPan_IopHostShouldShutdown()
+        && sceSdVoiceTrans(channel, 0, sb_tbl, snd_buf_top[2 * channel + 26], 0x40u) < 0)
         ;
     sceSdVoiceTransStatus(channel, 1);
 }

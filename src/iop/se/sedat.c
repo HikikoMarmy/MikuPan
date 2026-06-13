@@ -557,7 +557,7 @@
 SE_PARAM* SeGetSeParamTbl(int num)
 {
     if (num < 0 || num >= SE_PARAM_COUNT) {
-        return NULL;
+        return 0;
     }
 
     return &se_param_tbl[num];

@@ -16,7 +16,7 @@ struct _sif_queue_data { // 0x18
 typedef struct _sif_client_data sceSifClientData;
 typedef struct _sif_queue_data sceSifQueueData;
 typedef struct _sif_serve_data sceSifServeData;
-typedef void* (*sceSifRpcFunc)(/* parameters unknown */);
+typedef void* (*sceSifRpcFunc)(unsigned int command, void* data, int size);
 
 struct _sif_serve_data { // 0x44
 	/* 0x00 */ unsigned int command;

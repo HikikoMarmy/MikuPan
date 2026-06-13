@@ -36,7 +36,7 @@ typedef struct {
 static MikuPanIopThread iop_threads[MIKUPAN_IOP_MAX_THREADS];
 static MikuPanIopTimer iop_timers[MIKUPAN_IOP_MAX_TIMERS];
 static SDL_TLSID iop_thread_tls;
-static int iop_host_shutdown;
+static volatile int iop_host_shutdown;
 
 static MikuPanIopThread* FindThread(int thread_id)
 {
@@ -144,16 +144,20 @@ int MikuPan_IopStartThread(int thread_id, void* arg)
 int MikuPan_IopSleepThread(void)
 {
     MikuPanIopThread* thread = SDL_GetTLS(&iop_thread_tls);
+    if (iop_host_shutdown) {
+        return -1;
+    }
+
     if (thread == NULL || thread->wake == NULL) {
         SDL_Delay(1);
-        return 0;
+        return iop_host_shutdown ? -1 : 0;
     }
 
     if (!iop_host_shutdown) {
         SDL_WaitSemaphore(thread->wake);
     }
 
-    return 0;
+    return iop_host_shutdown ? -1 : 0;
 }
 
 int MikuPan_IopWakeupThread(int thread_id)
@@ -304,8 +308,17 @@ int QueryMaxFreeMemSize(void)
     return 16 * 1024 * 1024;
 }
 
+int MikuPan_IopHostShouldShutdown(void)
+{
+    return iop_host_shutdown;
+}
+
 void MikuPan_IopHostShutdown(void)
 {
+    if (iop_host_shutdown) {
+        return;
+    }
+
     iop_host_shutdown = 1;
 
     for (int i = 0; i < MIKUPAN_IOP_MAX_TIMERS; i++) {
@@ -316,5 +329,30 @@ void MikuPan_IopHostShutdown(void)
         if (iop_threads[i].wake != NULL) {
             SDL_SignalSemaphore(iop_threads[i].wake);
         }
+    }
+
+    for (int i = 0; i < MIKUPAN_IOP_MAX_TIMERS; i++) {
+        if (iop_timers[i].thread != NULL) {
+            SDL_WaitThread(iop_timers[i].thread, NULL);
+            iop_timers[i].thread = NULL;
+        }
+        iop_timers[i].id = 0;
+        iop_timers[i].handler = NULL;
+        iop_timers[i].userdata = NULL;
+        iop_timers[i].compare = 0;
+    }
+
+    for (int i = 0; i < MIKUPAN_IOP_MAX_THREADS; i++) {
+        if (iop_threads[i].thread != NULL) {
+            SDL_WaitThread(iop_threads[i].thread, NULL);
+            iop_threads[i].thread = NULL;
+        }
+        if (iop_threads[i].wake != NULL) {
+            SDL_DestroySemaphore(iop_threads[i].wake);
+            iop_threads[i].wake = NULL;
+        }
+        iop_threads[i].id = 0;
+        iop_threads[i].entry = NULL;
+        iop_threads[i].started = 0;
     }
 }

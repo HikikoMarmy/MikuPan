@@ -189,8 +189,10 @@ static void IopStereoChange(IOP_COMMAND* icp)
 
 static int IopMain()
 {
-    while (1) {
-        SleepThread();
+    while (!MikuPan_IopHostShouldShutdown()) {
+        if (SleepThread() < 0 || MikuPan_IopHostShouldShutdown()) {
+            break;
+        }
         ISeMain();
         ICdvdMain();
         IAdpcmMain2();

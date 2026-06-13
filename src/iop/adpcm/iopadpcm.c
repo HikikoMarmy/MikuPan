@@ -168,8 +168,10 @@ void IAdpcmMain(void)
 {
     IOP_ADPCM* iap = iop_adpcm;
 
-    while (1) {
-        SleepThread();
+    while (!MikuPan_IopHostShouldShutdown()) {
+        if (SleepThread() < 0 || MikuPan_IopHostShouldShutdown()) {
+            break;
+        }
 
         switch (iap->fade_mode) {
         case ADPCM_FADE_NO:
@@ -353,7 +355,8 @@ void IAdpcmPreLoadEnd(int channel)
         sceSdSetCoreAttr(iop_adpcm[channel].core | 4, 0);
         for (i = 0; i < 4; ++i) {
             sceSdVoiceTransStatus(channel, SD_TRANS_STATUS_WAIT);
-            while (sceSdVoiceTrans(
+            while (!MikuPan_IopHostShouldShutdown()
+                && sceSdVoiceTrans(
                        channel,
                        0,
                        &AdpcmIopBuf[channel][2048 * i],
@@ -480,7 +483,8 @@ static int AdpcmTransCB(int channel, void* common)
         iop_adpcm[channel].pos += 2048;
         iop_adpcm[channel].str_tpos += 2048;
         iop_adpcm[channel].stat = ADPCM_STAT_RTRANS;
-        while (sceSdVoiceTrans(
+        while (!MikuPan_IopHostShouldShutdown()
+            && sceSdVoiceTrans(
                    channel,
                    0,
                    &AdpcmIopBuf[channel][iop_adpcm[channel].pos],
@@ -516,8 +520,10 @@ void IAdpcmReadCh0()
     ADPCM_CMD cmd;
     u_char loop_ok;
 
-    while (1) {
-        SleepThread();
+    while (!MikuPan_IopHostShouldShutdown()) {
+        if (SleepThread() < 0 || MikuPan_IopHostShouldShutdown()) {
+            break;
+        }
         if (iop_adpcm[0].stat >= ADPCM_STAT_PRELOAD_TRANS) {
             iop_adpcm[0].count++;
 
@@ -562,7 +568,8 @@ void IAdpcmReadCh0()
 
                 iop_adpcm[0].stat = ADPCM_STAT_LTRANS;
 
-                while (sceSdVoiceTrans(
+                while (!MikuPan_IopHostShouldShutdown()
+                    && sceSdVoiceTrans(
                            0,
                            0,
                            &AdpcmIopBuf[0][iop_adpcm[0].pos],
@@ -678,8 +685,10 @@ void IAdpcmReadCh1()
     ADPCM_CMD cmd;
     u_char loop_ok;
 
-    while (1) {
-        SleepThread();
+    while (!MikuPan_IopHostShouldShutdown()) {
+        if (SleepThread() < 0 || MikuPan_IopHostShouldShutdown()) {
+            break;
+        }
         if (iop_adpcm[1].stat >= ADPCM_STAT_PRELOAD_TRANS) {
             iop_adpcm[1].count++;
 
@@ -724,7 +733,8 @@ void IAdpcmReadCh1()
 
                 iop_adpcm[1].stat = ADPCM_STAT_LTRANS;
 
-                while (sceSdVoiceTrans(
+                while (!MikuPan_IopHostShouldShutdown()
+                    && sceSdVoiceTrans(
                            1,
                            0,
                            &AdpcmIopBuf[1][iop_adpcm[1].pos],

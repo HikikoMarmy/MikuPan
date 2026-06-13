@@ -15,6 +15,7 @@ int MikuPan_IopSleepThread(void);
 int MikuPan_IopWakeupThread(int thread_id);
 int MikuPan_IopWakeupThreadFromInterrupt(int thread_id);
 int MikuPan_IopGetThreadId(void);
+int MikuPan_IopHostShouldShutdown(void);
 void MikuPan_IopHostShutdown(void);
 
 #ifndef MIKUPAN_IOP_THREAD_NO_COMPAT_MACROS

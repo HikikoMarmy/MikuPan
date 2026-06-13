@@ -12,6 +12,7 @@
 #include "sif.h"
 #include "string.h"
 #include "sysmem.h"
+#include "thread.h"
 
 #include <SDL3/SDL_mutex.h>
 #include <stdint.h>
@@ -110,34 +111,36 @@ static void ICdvdInitOnce()
     }
 
     if (sceCdSync(1)) {
-        while (!sceCdBreak())
+        while (!MikuPan_IopHostShouldShutdown() && !sceCdBreak())
             ;
     }
 
     strcpy(fname, "\\IMG_HD.BIN;1");
     if (!sceCdSearchFile(&cdlf, fname)) {
-        while (1)
+        while (!MikuPan_IopHostShouldShutdown())
             ;
+        return;
     }
     strcpy(fname, "\\IMG_BD.BIN;1");
     if (!sceCdSearchFile(&cdvd_stat.cdlf, fname)) {
-        while (1)
+        while (!MikuPan_IopHostShouldShutdown())
             ;
+        return;
     }
 
     cdvd_stat.rmode.trycount = 0;
     cdvd_stat.rmode.spindlctrl = 1;
     cdvd_stat.rmode.datapattern = 0;
 
-    while (1) {
+    while (!MikuPan_IopHostShouldShutdown()) {
         ld_error = 0;
         if (sceCdDiskReady(1) == 2) {
             if (!sceCdRead(cdlf.lsn, (cdlf.size + 2047) >> 11, load_buf_table[0], &cdvd_stat.rmode)) {
                 ret_count0 = 0;
-                while (sceCdSync(1)) {
+                while (!MikuPan_IopHostShouldShutdown() && sceCdSync(1)) {
                     ret_count0++;
                     if (ret_count0 > 0xF00000) {
-                        while (!sceCdBreak())
+                        while (!MikuPan_IopHostShouldShutdown() && !sceCdBreak())
                             ;
                         break;
                     }
@@ -145,13 +148,13 @@ static void ICdvdInitOnce()
                 ld_error = 1;
             } else {
                 ret_count0 = 0;
-                while (sceCdSync(1)) {
+                while (!MikuPan_IopHostShouldShutdown() && sceCdSync(1)) {
                     ret_count0++;
                     for (ret_count1 = 0; ret_count1 <= 0x7FFFFF; ++ret_count1)
                         ;
 
                     if (ret_count0 >= 0x33) {
-                        while (!sceCdBreak())
+                        while (!MikuPan_IopHostShouldShutdown() && !sceCdBreak())
                             ;
                         ld_error = 1;
                         break;
@@ -179,6 +182,10 @@ static void ICdvdInitOnce()
         }
     }
 
+    if (MikuPan_IopHostShouldShutdown()) {
+        return;
+    }
+
     sdd.data = (int64_t)load_buf_table[0];
     sdd.addr = IMG_BIN_ADDRESS;
     sdd.size = cdlf.size;
@@ -186,7 +193,7 @@ static void ICdvdInitOnce()
     CpuSuspendIntr(&oldstat);
     dma_id = sceSifSetDma(&sdd, 1);
     CpuResumeIntr(oldstat);
-    while (sceSifDmaStat(dma_id) >= 0)
+    while (!MikuPan_IopHostShouldShutdown() && sceSifDmaStat(dma_id) >= 0)
         ;
     tmp = QueryMemSize();
     tmp = QueryTotalFreeMemSize();
@@ -202,7 +209,7 @@ static void ICdvdInitSoftReset()
     ICdvdUnlock();
 
     if (sceCdSync(1)) {
-        while (!sceCdBreak())
+        while (!MikuPan_IopHostShouldShutdown() && !sceCdBreak())
             ;
     }
 }
@@ -492,7 +499,8 @@ static void ICdvdTransFinishedData()
         if (!sceSdVoiceTransStatus(cdvd_trans[cdvd_stat.now_lbuf].tid, 0))
             sceSdVoiceTransStatus(cdvd_trans[cdvd_stat.now_lbuf].tid, 1);
 
-        while (sceSdVoiceTrans(
+        while (!MikuPan_IopHostShouldShutdown()
+            && sceSdVoiceTrans(
                    cdvd_trans[cdvd_stat.now_lbuf].tid,
                    0,
                    load_buf_table[cdvd_stat.now_lbuf],
@@ -584,7 +592,7 @@ static int ICdvdCheckLoadError()
 void ICdvdBreak()
 {
     ICdvdLock();
-    while (!sceCdBreak())
+    while (!MikuPan_IopHostShouldShutdown() && !sceCdBreak())
         ;
     cdvd_stat.stat = 0;
     cdvd_stat.adpcm_req = 0;
@@ -674,7 +682,8 @@ static void ICdvdTransSe(IOP_COMMAND* icp)
 
     size = icp->data1;
     addr = snd_buf_top[icp->data2];
-    while (sceSdVoiceTrans(1, 0, (u_char*)load_buf_table[0], addr, size) < 0)
+    while (!MikuPan_IopHostShouldShutdown()
+        && sceSdVoiceTrans(1, 0, (u_char*)load_buf_table[0], addr, size) < 0)
         ;
     iop_stat.cdvd.se_trans = 1;
     SeSetStartPoint(icp->data2, icp->data3);
