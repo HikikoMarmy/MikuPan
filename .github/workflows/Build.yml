@@ -1,4 +1,4 @@
-name: Build Obscura
+name: Build MikuPan
 
 on:
   push:
@@ -51,11 +51,14 @@ jobs:
 
   build:
     needs: shaders
-    runs-on: ${{ matrix.os }}
+    runs-on: ${{ matrix.sys.os }}
     strategy:
       fail-fast: false
       matrix:
-        os: [windows-latest, ubuntu-latest, macos-latest]
+        sys:
+          - { os: windows-latest, name: windows }
+          - { os: ubuntu-latest,  name: linux  }
+          - { os: macos-latest,   name: macos  }
 
     steps:
     - uses: actions/checkout@v4
@@ -73,7 +76,7 @@ jobs:
     # prebuilt MinGW FFmpeg import libs in extern/ffmpeg. It cannot build with
     # MSVC, so the Windows runner builds with MinGW via MSYS2.
     - name: Set up MSYS2 (Windows)
-      if: ${{ matrix.os == 'windows-latest' }}
+      if: ${{ matrix.sys.os == 'windows-latest' }}
       uses: msys2/setup-msys2@v2
       with:
         msystem: MINGW64
@@ -85,7 +88,7 @@ jobs:
           mingw-w64-x86_64-ninja
 
     - name: Install Dependencies
-      if: ${{ matrix.os == 'ubuntu-latest' }}
+      if: ${{ matrix.sys.os == 'ubuntu-latest' }}
       run: |
           sudo apt update
           sudo apt install zip libxrandr-dev libxinerama-dev libxcursor-dev libxi-dev libgl1-mesa-dev libglu1-mesa-dev build-essential git make pkg-config cmake ninja-build gnome-desktop-testing libasound2-dev libpulse-dev libaudio-dev libfribidi-dev libjack-dev libsndio-dev libx11-dev libxext-dev libxrandr-dev libxcursor-dev libxfixes-dev libxi-dev libxss-dev libxtst-dev libxkbcommon-dev libdrm-dev libgbm-dev libgl1-mesa-dev libgles2-mesa-dev libegl1-mesa-dev libdbus-1-dev libibus-1.0-dev libudev-dev libthai-dev libusb-1.0-0-dev
@@ -93,7 +96,7 @@ jobs:
           sudo apt upgrade
 
     - name: Build (Windows / MinGW)
-      if: ${{ matrix.os == 'windows-latest' }}
+      if: ${{ matrix.sys.os == 'windows-latest' }}
       shell: msys2 {0}
       run: |
         git config --global --add safe.directory '*'
@@ -101,7 +104,33 @@ jobs:
         cmake --build build --target MikuPan
 
     - name: Build (Unix)
-      if: ${{ matrix.os != 'windows-latest' }}
+      if: ${{ matrix.sys.os != 'windows-latest' }}
       run: |
         cmake -B build -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} -DMIKUPAN_COMPILE_SHADERS=OFF
         cmake --build build --config ${{ env.BUILD_TYPE }} --target MikuPan
+
+    - name: Zip Windows App
+      if: ${{ matrix.sys.os == 'windows-latest' }}
+      working-directory: build
+      shell: pwsh
+      run: |
+        Compress-Archive -Path MikuPan/* -DestinationPath MikuPan_${{ matrix.sys.name }}_build.zip
+
+    - name: Zip macOS App
+      if: ${{ matrix.sys.os == 'macos-latest' }}
+      working-directory: build
+      run: |
+        zip -r MikuPan_${{ matrix.sys.name }}_build.zip MikuPan/*
+
+    - name: Zip Ubuntu App
+      if: ${{ matrix.sys.os == 'ubuntu-latest' }}
+      working-directory: build
+      run: |
+        zip -r MikuPan_${{ matrix.sys.name }}_build.zip MikuPan/*
+
+    - name: Upload build artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: MikuPan-${{ matrix.sys.name }}-build
+        if-no-files-found: error
+        path: build/MikuPan_${{ matrix.sys.name }}_build.zip
