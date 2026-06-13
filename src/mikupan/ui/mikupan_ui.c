@@ -349,12 +349,12 @@ static void MikuPan_UiSaveConfiguration(void)
     if (MikuPan_SaveConfiguration(NULL))
     {
         snprintf(config_save_status, sizeof(config_save_status),
-                 "Saved to mikupan.ini");
+                 "Saved configuration");
     }
     else
     {
         snprintf(config_save_status, sizeof(config_save_status),
-                 "Failed to save mikupan.ini");
+                 "Failed to save configuration");
     }
 }
 

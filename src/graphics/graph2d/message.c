@@ -1225,6 +1225,11 @@ int SetMessageV2_2(DISP_STR *s)
     nx = s->pos_x;
     ny = s->pos_y;
 
+    if (c == 0 || c == (void*)0)
+    {
+        return 0;
+    }
+
     selnum = 0;
 
     draw_mpri[nmdpri][0] = npri;
@@ -2013,6 +2018,11 @@ int SubMessageV3(u_char *s, int pri, int delflg)
     msdat.selnum = 0;
 
     c = msdat.stp;
+
+    if (c == 0 || c == (void*)0)
+    {
+        return 0;
+    }
 
     npri = msdat.pri;
     nx = msdat.bx;

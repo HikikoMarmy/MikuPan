@@ -18,6 +18,17 @@ namespace
 {
 using Ini = inipp::Ini<char>;
 
+std::filesystem::path GetDefaultConfigurationPath()
+{
+    const char *base = SDL_GetBasePath();
+    if (base != nullptr && base[0] != '\0')
+    {
+        return std::filesystem::path(base) / "MikuPan" / "mikupan.ini";
+    }
+
+    return std::filesystem::path("MikuPan") / "mikupan.ini";
+}
+
 template <typename T>
 std::string ConfigValueToString(T value)
 {
@@ -327,7 +338,10 @@ extern "C" void MikuPan_LoadConfiguration(const char *filename)
     }
     else
     {
-        TryLoadConfigurationFile("mikupan.ini");
+        if (!TryLoadConfigurationFile(GetDefaultConfigurationPath()))
+        {
+            TryLoadConfigurationFile("mikupan.ini");
+        }
     }
 
     // Default the data folder to the executable's resource directory (SDL's
@@ -354,5 +368,5 @@ extern "C" int MikuPan_SaveConfiguration(const char *filename)
         return TrySaveConfigurationFile(filename) ? 1 : 0;
     }
 
-    return TrySaveConfigurationFile("mikupan.ini") ? 1 : 0;
+    return TrySaveConfigurationFile(GetDefaultConfigurationPath()) ? 1 : 0;
 }
