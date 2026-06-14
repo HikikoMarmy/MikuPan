@@ -464,12 +464,10 @@ void MissionDataLoadAfterInit(MSN_LOAD_DAT* dat)
             memcpy(&map_cam_dat, (void *)MikuPan_GetHostPointer(dat->addr), sizeof(map_cam_dat));
             break;
 
-        
         case 4:
             memcpy(&map_cam_dat2, (void *)MikuPan_GetHostPointer(dat->addr), sizeof(map_cam_dat2));
             break;
 
-        
         case 5:
             memcpy(&map_cam_dat3, (void *)MikuPan_GetHostPointer(dat->addr), sizeof(map_cam_dat3));
             break;
@@ -484,12 +482,12 @@ void MissionDataLoadAfterInit(MSN_LOAD_DAT* dat)
             break;
 
         case 8:
-            motInitEnemyMdl((void *)MikuPan_GetHostPointer(dat->addr), dat->file_no - 799);
+            motInitEnemyMdl((void *)MikuPan_GetHostPointer(dat->addr), dat->file_no - M000_MIKU_MDL);
             break;
 
         case 9:
         case 10:
-            motInitEnemyAnm((void *)MikuPan_GetHostPointer(dat->addr), dat->tmp_no, dat->file_no - 867);
+            motInitEnemyAnm((void *)MikuPan_GetHostPointer(dat->addr), dat->tmp_no, dat->file_no -  M000_MIKU_ANM);
             break;
         
         case 11:
