@@ -59,6 +59,20 @@ void Key_Off(int vNo);
 void VoiceRun();
 void VoiceSetKeySwitch(int core, u_int value, int key_on);
 
+static inline u_short DecodeSpu2PositiveVolume(u_short val)
+{
+    if ((val & 0x8000) != 0)
+    {
+        return 0;
+    }
+
+    if (val > 0x3fff)
+    {
+        val = 0x3fff;
+    }
+
+    return val << 1;
+}
 
 static inline void SetPitch(int vNo, u_short val)
 {
@@ -67,12 +81,12 @@ static inline void SetPitch(int vNo, u_short val)
 
 static inline void SetVolLeft(int vNo, u_short val)
 {
-    voices[vNo].volL = val << 1;
+    voices[vNo].volL = DecodeSpu2PositiveVolume(val);
 }
 
 static inline void SetVolRight(int vNo, u_short val)
 {
-    voices[vNo].volR = val << 1;
+    voices[vNo].volR = DecodeSpu2PositiveVolume(val);
 }
 
 static inline void SetAdsr1(int vNo, u_short val)
