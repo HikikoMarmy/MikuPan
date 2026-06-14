@@ -3,6 +3,7 @@
 #include "mikupan_config.h"
 #include "mikupan_logging_c.h"
 #include "mikupan_utils.h"
+#include "os/key_cnf.h"
 #include <SDL3/SDL_keyboard.h>
 
 #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
@@ -23,6 +24,8 @@ static int remap_stick_mode = 0;
 
 SDL_Gamepad *mikupan_gamepad = NULL;
 static int mikupan_preferred_gamepad_index = MIKUPAN_CONTROLLER_AUTO_INDEX;
+
+static int MikuPan_ControllerConfigActionProfileTarget(int layout, int target);
 
 static const char *mikupan_controller_labels[MIKUPAN_CONTROLLER_LOGICAL_COUNT] = {
     "Triangle",
@@ -350,6 +353,8 @@ void MikuPan_ControllerResetBindings(void)
         mikupan_stick_controller_map[i] = mikupan_stick_controller_map_defaults[i];
         mikupan_stick_keyboard_map[i] = mikupan_stick_keyboard_map_defaults[i];
     }
+    MikuPan_ResetCustomActionProfile();
+    MikuPan_SetCustomActionProfileEnabled(0);
 }
 
 void MikuPan_ControllerStoreBindingsToConfig(void)
@@ -369,6 +374,29 @@ void MikuPan_ControllerStoreBindingsToConfig(void)
         cfg->stick_kb_neg[i] = mikupan_stick_keyboard_map[i].neg_scancode;
         cfg->stick_kb_pos[i] = mikupan_stick_keyboard_map[i].pos_scancode;
     }
+    cfg->action_profile_saved = 1;
+    cfg->action_profile_layout = 2;
+    cfg->action_profile_enabled =
+        MikuPan_IsCustomActionProfileEnabled();
+    cfg->action_profile_subjective_move =
+        MikuPan_CustomActionProfileUsesSubjectiveMove();
+    cfg->action_profile_dpad_subjective_move =
+        MikuPan_CustomActionProfileUsesDpadSubjectiveMove();
+    cfg->action_profile_stick_subjective_move =
+        MikuPan_CustomActionProfileUsesStickSubjectiveMove();
+    cfg->action_profile_finder_reverse_y =
+        MikuPan_CustomActionProfileUsesFinderReverseY();
+    cfg->action_profile_finder_swap_sticks =
+        MikuPan_CustomActionProfileSwapsFinderSticks();
+    for (int i = 0; i < MIKUPAN_ACTION_PROFILE_ACTION_COUNT; i++)
+    {
+        cfg->action_profile_normal[i] =
+            MikuPan_GetCustomActionProfileTarget(
+                MIKUPAN_ACTION_PROFILE_MODE_NORMAL, i);
+        cfg->action_profile_finder[i] =
+            MikuPan_GetCustomActionProfileTarget(
+                MIKUPAN_ACTION_PROFILE_MODE_FINDER, i);
+    }
 
     cfg->bindings_saved = 1;
 }
@@ -376,6 +404,9 @@ void MikuPan_ControllerStoreBindingsToConfig(void)
 void MikuPan_ControllerLoadBindingsFromConfig(void)
 {
     const MikuPan_ConfigInput *cfg = &mikupan_configuration.input;
+
+    MikuPan_ResetCustomActionProfile();
+    MikuPan_SetCustomActionProfileEnabled(0);
 
     /* Only apply when the config actually holds saved bindings; otherwise keep
      * the runtime defaults set up at init. */
@@ -397,6 +428,40 @@ void MikuPan_ControllerLoadBindingsFromConfig(void)
         mikupan_stick_keyboard_map[i].neg_scancode   = cfg->stick_kb_neg[i];
         mikupan_stick_keyboard_map[i].pos_scancode   = cfg->stick_kb_pos[i];
     }
+    if (cfg->action_profile_saved)
+    {
+        if (cfg->action_profile_layout >= 2)
+        {
+            MikuPan_SetCustomActionProfileDpadSubjectiveMove(
+                cfg->action_profile_dpad_subjective_move);
+            MikuPan_SetCustomActionProfileStickSubjectiveMove(
+                cfg->action_profile_stick_subjective_move);
+        }
+        else
+        {
+            MikuPan_SetCustomActionProfileSubjectiveMove(
+                cfg->action_profile_subjective_move);
+        }
+        MikuPan_SetCustomActionProfileFinderReverseY(
+            cfg->action_profile_finder_reverse_y);
+        MikuPan_SetCustomActionProfileFinderSwapSticks(
+            cfg->action_profile_finder_swap_sticks);
+        for (int i = 0; i < MIKUPAN_ACTION_PROFILE_ACTION_COUNT; i++)
+        {
+            MikuPan_SetCustomActionProfileTarget(
+                MIKUPAN_ACTION_PROFILE_MODE_NORMAL, i,
+                MikuPan_ControllerConfigActionProfileTarget(
+                    cfg->action_profile_layout,
+                    cfg->action_profile_normal[i]));
+            MikuPan_SetCustomActionProfileTarget(
+                MIKUPAN_ACTION_PROFILE_MODE_FINDER, i,
+                MikuPan_ControllerConfigActionProfileTarget(
+                    cfg->action_profile_layout,
+                    cfg->action_profile_finder[i]));
+        }
+    }
+    MikuPan_SetCustomActionProfileEnabled(
+        cfg->action_profile_saved ? cfg->action_profile_enabled : 0);
 }
 
 int MikuPan_ReadController(unsigned char *rdata)
@@ -582,6 +647,25 @@ int MikuPan_ControllerRumble(const unsigned char *data)
     return SDL_RumbleGamepad(mikupan_gamepad, data[0] * 32896, data[1] * 257, 100);
 }
 
+static int MikuPan_ControllerConfigActionProfileTarget(int layout, int target)
+{
+    static const int legacy_target_to_current[MIKUPAN_ACTION_PROFILE_ACTION_COUNT] = {
+        4, 5, 6, 7, 0, 1, 2, 3, 15, 13, 12, 14, 10, 9, 11, 8,
+    };
+
+    if (target < 0 || target >= MIKUPAN_ACTION_PROFILE_ACTION_COUNT)
+    {
+        return MIKUPAN_ACTION_PROFILE_TARGET_NONE;
+    }
+
+    if (layout <= 0)
+    {
+        return legacy_target_to_current[target];
+    }
+
+    return target;
+}
+
 static ImU32 col_if(int pressed, ImU32 normal, ImU32 active)
 {
     return pressed ? active : normal;
@@ -682,7 +766,7 @@ static void MikuPan_ControllerDrawControllerImage(SDL_Gamepad *gp)
     const float H = 270.0f;
 
     ImVec2 origin = igGetCursorScreenPos();
-    igInvisibleButton("##gp_canvas", (ImVec2){W, H}, 0);
+    igInvisibleButton("##controller_remap_gp_canvas", (ImVec2){W, H}, 0);
 
     ImDrawList *dl = igGetWindowDrawList();
 
@@ -1094,67 +1178,228 @@ static void MikuPan_ControllerDrawStickKeyboardList(void)
     }
 }
 
+static void MikuPan_ControllerDrawActionTargetCombo(int mode, int action)
+{
+    int target = MikuPan_GetCustomActionProfileTarget(mode, action);
+    const char *preview = MikuPan_ActionProfileTargetLabel(target);
+
+    if (igBeginCombo("##target", preview, 0))
+    {
+        const bool none_selected = target == MIKUPAN_ACTION_PROFILE_TARGET_NONE;
+        if (igSelectable_Bool("<unmapped>", none_selected, 0, (ImVec2){0, 0}))
+        {
+            MikuPan_SetCustomActionProfileTarget(
+                mode, action, MIKUPAN_ACTION_PROFILE_TARGET_NONE);
+        }
+        if (none_selected)
+        {
+            igSetItemDefaultFocus();
+        }
+
+        for (int i = 0; i < MIKUPAN_ACTION_PROFILE_ACTION_COUNT; i++)
+        {
+            const bool selected = target == i;
+            if (igSelectable_Bool(MikuPan_ActionProfileTargetLabel(i), selected,
+                                  0, (ImVec2){0, 0}))
+            {
+                MikuPan_SetCustomActionProfileTarget(mode, action, i);
+            }
+            if (selected)
+            {
+                igSetItemDefaultFocus();
+            }
+        }
+
+        igEndCombo();
+    }
+}
+
+static void MikuPan_ControllerDrawActionProfileList(int mode)
+{
+    for (int i = 0; i < MIKUPAN_ACTION_PROFILE_ACTION_COUNT; i++)
+    {
+        igPushID_Int(0x500 + mode * 0x100 + i);
+
+        igText("%-24s", MikuPan_ActionProfileActionLabel(mode, i));
+        igSameLine(230.0f, -1.0f);
+        igSetNextItemWidth(180.0f);
+        MikuPan_ControllerDrawActionTargetCombo(mode, i);
+        igSameLine(0.0f, -1.0f);
+
+        if (igButton("Default", (ImVec2){72, 0}))
+        {
+            MikuPan_SetCustomActionProfileTarget(
+                mode, i, MikuPan_GetDefaultActionProfileTarget(i));
+        }
+
+        igPopID();
+    }
+}
+
+static void MikuPan_ControllerDrawMovementModeCombo(
+    const char *label, int subjective, void (*setter)(int))
+{
+    const char *preview = subjective ? "Subjective" : "Objective";
+
+    igSetNextItemWidth(150.0f);
+    if (igBeginCombo(label, preview, 0))
+    {
+        if (igSelectable_Bool("Objective", !subjective, 0, (ImVec2){0, 0}))
+        {
+            setter(0);
+        }
+        if (!subjective)
+        {
+            igSetItemDefaultFocus();
+        }
+
+        if (igSelectable_Bool("Subjective", subjective, 0, (ImVec2){0, 0}))
+        {
+            setter(1);
+        }
+        if (subjective)
+        {
+            igSetItemDefaultFocus();
+        }
+
+        igEndCombo();
+    }
+}
+
+static void MikuPan_ControllerDrawActionProfileSettingsUi(void)
+{
+    bool enabled = MikuPan_IsCustomActionProfileEnabled() != 0;
+    if (igCheckbox("Enable custom action profile", &enabled))
+    {
+        MikuPan_SetCustomActionProfileEnabled(enabled ? 1 : 0);
+    }
+
+    igTextDisabled("Normal movement");
+    MikuPan_ControllerDrawMovementModeCombo(
+        "DPad##normal_move_dpad",
+        MikuPan_CustomActionProfileUsesDpadSubjectiveMove(),
+        MikuPan_SetCustomActionProfileDpadSubjectiveMove);
+
+    igSameLine(0.0f, 24.0f);
+    MikuPan_ControllerDrawMovementModeCombo(
+        "Stick##normal_move_stick",
+        MikuPan_CustomActionProfileUsesStickSubjectiveMove(),
+        MikuPan_SetCustomActionProfileStickSubjectiveMove);
+
+    bool reverse_y = MikuPan_CustomActionProfileUsesFinderReverseY() != 0;
+    if (igCheckbox("Reverse finder vertical aim", &reverse_y))
+    {
+        MikuPan_SetCustomActionProfileFinderReverseY(reverse_y ? 1 : 0);
+    }
+
+    bool swap_sticks = MikuPan_CustomActionProfileSwapsFinderSticks() != 0;
+    if (igCheckbox("Swap finder sticks", &swap_sticks))
+    {
+        MikuPan_SetCustomActionProfileFinderSwapSticks(swap_sticks ? 1 : 0);
+    }
+
+    if (igButton("Reset custom profile", (ImVec2){0, 0}))
+    {
+        MikuPan_ResetCustomActionProfile();
+    }
+
+    igSameLine(0.0f, -1.0f);
+    igTextDisabled("(keeps the custom profile enabled state)");
+}
+
+static void MikuPan_ControllerDrawActionProfileMapsUi(void)
+{
+    if (igCollapsingHeader_TreeNodeFlags("Normal Mode Actions", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        MikuPan_ControllerDrawActionProfileList(
+            MIKUPAN_ACTION_PROFILE_MODE_NORMAL);
+    }
+
+    if (igCollapsingHeader_TreeNodeFlags("Finder Mode Actions", 0))
+    {
+        MikuPan_ControllerDrawActionProfileList(
+            MIKUPAN_ACTION_PROFILE_MODE_FINDER);
+    }
+}
+
 void MikuPan_ControllerDrawRemapWindow(void)
 {
+    static int last_draw_frame = -1;
+
     if (!MikuPan_ShowControllerRemapWindow())
     {
         return;
     }
 
-    igSetNextWindowSize((ImVec2){600.0f, 720.0f}, ImGuiCond_FirstUseEver);
-    igBegin("Controller Mapping", NULL, 0);
+    int frame = igGetFrameCount();
+    if (last_draw_frame == frame)
+    {
+        return;
+    }
+    last_draw_frame = frame;
 
-    MikuPan_ControllerDrawDeviceSelectorUi();
-    igSpacing();
+    igSetNextWindowSize((ImVec2){900.0f, 760.0f}, ImGuiCond_FirstUseEver);
+    igBegin("Controller Mapping", NULL, 0);
 
     SDL_Gamepad *gp = MikuPan_GetController();
 
-    if (gp != NULL)
+    if (igCollapsingHeader_TreeNodeFlags("Device", ImGuiTreeNodeFlags_DefaultOpen))
     {
-        igText("Connected: %s", SDL_GetGamepadName(gp));
-    }
-    else
-    {
-        igTextDisabled("No controller connected (keyboard fallback active).");
-    }
+        MikuPan_ControllerDrawDeviceSelectorUi();
+        igSpacing();
 
-    MikuPan_ControllerDrawControllerImage(gp);
-
-    if (igButton("Reset to defaults", (ImVec2){0, 0}))
-    {
-        MikuPan_ControllerResetBindings();
-        remap_target = -1;
-        remap_stick_target = -1;
-    }
-
-    igSameLine(0.0f, -1.0f);
-    igTextDisabled("(restores buttons, sticks, and keyboard mappings)");
-
-    igSpacing();
-
-    if (igBeginTabBar("##remap_tabs", 0))
-    {
-        if (igBeginTabItem("Gamepad Buttons", NULL, 0))
+        if (gp != NULL)
         {
+            igText("Connected: %s", SDL_GetGamepadName(gp));
+        }
+        else
+        {
+            igTextDisabled("No controller connected (keyboard fallback active).");
+        }
+
+        if (igButton("Reset to defaults", (ImVec2){0, 0}))
+        {
+            MikuPan_ControllerResetBindings();
+            remap_target = -1;
+            remap_stick_target = -1;
+        }
+
+        igSameLine(0.0f, -1.0f);
+        igTextDisabled("Restores all input settings.");
+
+        if (igCollapsingHeader_TreeNodeFlags("Controller Preview", 0))
+        {
+            MikuPan_ControllerDrawControllerImage(gp);
+        }
+    }
+
+    if (igCollapsingHeader_TreeNodeFlags("Profile & Movement", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        MikuPan_ControllerDrawActionProfileSettingsUi();
+    }
+
+    if (igCollapsingHeader_TreeNodeFlags("Physical Bindings", ImGuiTreeNodeFlags_DefaultOpen))
+    {
+        if (igCollapsingHeader_TreeNodeFlags("Gamepad Bindings", ImGuiTreeNodeFlags_DefaultOpen))
+        {
+            igSeparatorText("Buttons##gamepad_buttons");
             MikuPan_ControllerDrawControllerBindingList(gp);
-            igEndTabItem();
-        }
-        if (igBeginTabItem("Gamepad Sticks", NULL, 0))
-        {
+            igSeparatorText("Sticks##gamepad_sticks");
             MikuPan_ControllerDrawStickGamepadList(gp);
-            igEndTabItem();
         }
-        if (igBeginTabItem("Keyboard Buttons", NULL, 0))
+
+        if (igCollapsingHeader_TreeNodeFlags("Keyboard Bindings", 0))
         {
+            igSeparatorText("Buttons##keyboard_buttons");
             MikuPan_ControllerDrawKeyboardBindingList();
-            igEndTabItem();
-        }
-        if (igBeginTabItem("Keyboard Sticks", NULL, 0))
-        {
+            igSeparatorText("Sticks##keyboard_sticks");
             MikuPan_ControllerDrawStickKeyboardList();
-            igEndTabItem();
         }
-        igEndTabBar();
+    }
+
+    if (igCollapsingHeader_TreeNodeFlags("Action Maps", 0))
+    {
+        MikuPan_ControllerDrawActionProfileMapsUi();
     }
 
     igEnd();

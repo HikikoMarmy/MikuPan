@@ -140,6 +140,19 @@ typedef struct
     int stick_invert[4];
     int stick_kb_neg[4];
     int stick_kb_pos[4];
+
+    /* Optional gameplay action profile. These maps are action slot -> game
+     * button slot, using the same 16-slot sizes as key_cnf.c. */
+    int action_profile_saved;
+    int action_profile_layout;
+    int action_profile_enabled;
+    int action_profile_subjective_move;
+    int action_profile_dpad_subjective_move;
+    int action_profile_stick_subjective_move;
+    int action_profile_finder_reverse_y;
+    int action_profile_finder_swap_sticks;
+    int action_profile_normal[16];
+    int action_profile_finder[16];
 } MikuPan_ConfigInput;
 
 typedef struct

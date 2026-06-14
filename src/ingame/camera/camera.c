@@ -24,6 +24,7 @@
 #include "camera.h"
 #include "enums.h"
 #include "main/glob.h"
+#include "os/key_cnf.h"
 
 #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
 #include "cimgui.h"
@@ -2580,8 +2581,16 @@ int FinderModePadChk(char *pad_x, char *pad_y, float *ax, float *ay,
 
         if (*ax == 0.0f && *ay == 0.0f)
         {
-            *ax = pad[0].analog[2] - 128.0f;
-            *ay = pad[0].analog[3] - 128.0f;
+            if (MikuPan_KeyProfileSwapsFinderSticks())
+            {
+                *ax = pad[0].analog[0] - 128.0f;
+                *ay = pad[0].analog[1] - 128.0f;
+            }
+            else
+            {
+                *ax = pad[0].analog[2] - 128.0f;
+                *ay = pad[0].analog[3] - 128.0f;
+            }
         }
 
         if (*ax >= 40.0f)
@@ -2602,9 +2611,7 @@ int FinderModePadChk(char *pad_x, char *pad_y, float *ax, float *ay,
             *pad_y = -1;
         }
 
-        if (*pad_y != 0
-            && (opt_wrk.key_type == 4 || opt_wrk.key_type == 5
-                || opt_wrk.key_type == 6 || opt_wrk.key_type == 7))
+        if (*pad_y != 0 && MikuPan_KeyProfileUsesFinderReverseY())
         {
             *pad_y = -*pad_y;
         }

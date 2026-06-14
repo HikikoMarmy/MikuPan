@@ -39,6 +39,7 @@
 #include "mikupan/rendering/mikupan_renderer.h"
 #include "mikupan/rendering/mikupan_shader.h"
 #include "os/eeiop/eese.h"
+#include "os/key_cnf.h"
 #include "os/pad.h"
 
 #include <common/ul_math.h>
@@ -334,7 +335,7 @@ void PlyrFinderModeChk()
 
     if (plyr_wrk.mode == PMODE_NORMAL)
     {
-        if (opt_wrk.key_type == 0 || opt_wrk.key_type == 1 || opt_wrk.key_type == 4 || opt_wrk.key_type == 5)
+        if (!MikuPan_KeyProfileUsesFinderShoulderToggle())
         {
             pad_finder = CIRCLE_PRESSED();
 
@@ -365,7 +366,7 @@ void PlyrFinderModeChk()
     }
     else if (plyr_wrk.mode == PMODE_FINDER && (plyr_wrk.sta & 0x1000) == 0)
     {
-        if (opt_wrk.key_type == 0 || opt_wrk.key_type == 1 || opt_wrk.key_type == 4 || opt_wrk.key_type == 5)
+        if (!MikuPan_KeyProfileUsesFinderShoulderToggle())
         {
             pad_finder = *key_now[7];
             pad_finder_bk = *key_bak[7];
@@ -1885,7 +1886,7 @@ void PlyrPhotoChk()
         return;
     }
 
-    if (opt_wrk.key_type < 2 || opt_wrk.key_type == 4 || opt_wrk.key_type == 5)
+    if (!MikuPan_KeyProfileUsesFinderShoulderToggle())
     {
         pad_shutter = *key_now[10];
     }
@@ -2983,7 +2984,7 @@ void PlyrNModeMoveCtrl()
         {
             PlyrKonwakuMove(mb, tv);
         }
-        else if (opt_wrk.key_type == 1 || opt_wrk.key_type == 3 || opt_wrk.key_type == 5 || opt_wrk.key_type == 7)
+        else if (MikuPan_KeyProfileUsesSubjectiveMove())
         {
             PlyrMovePadV(mb, tv);
         }
@@ -3010,7 +3011,7 @@ void PlyrHitTurnChk(MOVE_BOX *mb, sceVu0FVECTOR tv)
 {
     float rot;
 
-    if (opt_wrk.key_type == 1 || opt_wrk.key_type == 3 || opt_wrk.key_type == 5 || opt_wrk.key_type == 7)
+    if (MikuPan_KeyProfileUsesSubjectiveMove())
     {
         return;
     }
@@ -3991,7 +3992,15 @@ void PlyrMovePadFind(MOVE_BOX *mb, sceVu0FVECTOR tv)
     PLYR_WRK *wrk = &plyr_wrk; // not in STAB
 
     frame = 10;
-    rot = GetMovePad(1);
+    if (MikuPan_KeyProfileSwapsFinderSticks() &&
+        (plyr_wrk.mvsta & 0x200000) == 0)
+    {
+        rot = pad[0].an_dir[0] != 0xff ? pad[0].an_rot[0] : 10.0f;
+    }
+    else
+    {
+        rot = GetMovePad(1);
+    }
 
     if (rot != 10.0f)
     {
@@ -4051,7 +4060,7 @@ float GetMovePad(u_char id)
     }
     else if (id == 0)
     {
-        if (opt_wrk.key_type == 1 || opt_wrk.key_type == 3 || opt_wrk.key_type == 5 || opt_wrk.key_type == 7)
+        if (MikuPan_KeyProfileUsesSubjectiveMove())
         {
             if (*key_now[0] != 0)
             {

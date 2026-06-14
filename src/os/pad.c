@@ -8,6 +8,7 @@
 #include "sce/libpad.h"
 #include "sce/misc/diei.h"
 #include "main/glob.h"
+#include "os/key_cnf.h"
 #include "graphics/graph3d/sglib.h"
 
 u_short sce_pad[16] = {
@@ -360,6 +361,11 @@ int PadReadFunc(PAD_STRUCT *psp, int p_id)
         }
         
         SetAnlgInfo(psp, p_id);
+    }
+
+    if (p_id == 0)
+    {
+        SetKeyType();
     }
     
     return 0;
