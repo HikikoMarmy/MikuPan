@@ -29,6 +29,7 @@
         android:enableOnBackInvokedCallback="false"
         android:extractNativeLibs="true"
         android:hardwareAccelerated="true"
+        android:icon="@drawable/mikupan"
         android:label="@MIKUPAN_ANDROID_LABEL@"
         android:theme="@android:style/Theme.NoTitleBar.Fullscreen">
 

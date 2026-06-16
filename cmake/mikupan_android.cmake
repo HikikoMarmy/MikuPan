@@ -208,6 +208,41 @@ configure_file(
         "${MIKUPAN_ANDROID_MANIFEST}"
         @ONLY)
 
+set(MIKUPAN_ANDROID_ICON_RESOURCE
+        "${MIKUPAN_ANDROID_GENERATED_DIR}/res/drawable/mikupan.png")
+set(MIKUPAN_ANDROID_ICON_FLAT
+        "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/MikuPan-apk-res.dir/drawable_mikupan.png.flat")
+set(MIKUPAN_ANDROID_ICON_AAPT2_INPUT "android/res/drawable/mikupan.png")
+if(CMAKE_HOST_WIN32)
+    string(REPLACE "/" "\\" MIKUPAN_ANDROID_ICON_AAPT2_INPUT
+            "${MIKUPAN_ANDROID_ICON_AAPT2_INPUT}")
+endif()
+add_custom_command(
+        OUTPUT "${MIKUPAN_ANDROID_ICON_RESOURCE}"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory
+                "${MIKUPAN_ANDROID_GENERATED_DIR}/res/drawable"
+        COMMAND "${CMAKE_COMMAND}" -E copy_if_different
+                "${CMAKE_SOURCE_DIR}/resources/mikupan.png"
+                "${MIKUPAN_ANDROID_ICON_RESOURCE}"
+        DEPENDS "${CMAKE_SOURCE_DIR}/resources/mikupan.png"
+        VERBATIM)
+add_custom_command(
+        OUTPUT "${MIKUPAN_ANDROID_ICON_FLAT}"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory
+                "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/MikuPan-apk-res.dir"
+        COMMAND SdlAndroid::aapt2 compile
+                -o "${CMAKE_CURRENT_BINARY_DIR}/CMakeFiles/MikuPan-apk-res.dir"
+                "${MIKUPAN_ANDROID_ICON_AAPT2_INPUT}"
+        DEPENDS "${MIKUPAN_ANDROID_ICON_RESOURCE}"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+        VERBATIM)
+add_custom_target(MikuPan-apk-res
+        DEPENDS "${MIKUPAN_ANDROID_ICON_FLAT}")
+set_property(TARGET MikuPan-apk-res PROPERTY OUTPUTS
+        "${MIKUPAN_ANDROID_ICON_FLAT}")
+set_property(TARGET MikuPan-apk-res PROPERTY SOURCES
+        "${MIKUPAN_ANDROID_ICON_RESOURCE}")
+
 if(TARGET SDL3::Jar)
     set(MIKUPAN_ANDROID_SDL_JAR "$<TARGET_PROPERTY:SDL3::Jar,JAR_FILE>")
     set(MIKUPAN_ANDROID_SDL_JAR_DEPENDS "${MIKUPAN_ANDROID_SDL_JAR}")
@@ -272,6 +307,7 @@ sdl_android_link_resources(MikuPan-apk-linked
         PACKAGE "${MIKUPAN_ANDROID_PACKAGE}"
         MIN_SDK_VERSION "${MIKUPAN_ANDROID_MIN_SDK}"
         TARGET_SDK_VERSION "${MIKUPAN_ANDROID_TARGET_SDK}"
+        RES_TARGETS MikuPan-apk-res
 )
 
 set(MIKUPAN_ANDROID_DEX_DIR
