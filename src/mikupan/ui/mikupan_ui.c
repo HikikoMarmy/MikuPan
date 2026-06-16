@@ -3207,7 +3207,7 @@ void MikuPan_UiMenuBar(void)
 
             MikuPan_UiShadowResolutionCombo("Shadow Resolution");
 
-            const char* display_lighting_modes[] = {"Pixel (Mordern)",
+            const char* display_lighting_modes[] = {"Pixel (Modern)",
                                                     "Vertex (PS2)"};
             igCombo_Str_arr("Lighting Mode", &mesh_lighting_mode,
                             display_lighting_modes, 2, -1);
