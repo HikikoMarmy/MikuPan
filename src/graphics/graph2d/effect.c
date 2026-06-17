@@ -1584,7 +1584,7 @@ void tes_p20()
     static float off_x = 0.0f;
     static float off_z = 0.0f;
 
-    if (dbg_wrk.eff_new_ene_ef_sw == 0)
+    if (dbg_wrk.eff_new_ene_ef_sw != 0)
     {
         if (ingame_wrk.mode != INGAME_MODE_MENU && plyr_wrk.mode != 1)
         {

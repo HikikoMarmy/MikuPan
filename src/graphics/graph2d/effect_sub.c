@@ -25,6 +25,8 @@
 #include "os/pad.h"
 #include "os/system.h"
 
+#include <math.h>
+
 typedef struct {
 	int screen_flag;
 	int time;
@@ -3927,75 +3929,52 @@ void set_vect(float *v, float x, float y, float z, float w)
 
 void Vu0SubOuterProduct(sceVu0FVECTOR v0, sceVu0FVECTOR v1, sceVu0FVECTOR v2, sceVu0FVECTOR v3 )
 {
-    register u_int reg0 = 0;
-    
-	//asm __volatile__(
-    //	"lqc2    vf4,0x0(%1)\n"
-    //	"lqc2    vf5,0x0(%2)\n"
-    //	"lqc2    vf7,0x0(%3)\n"
-    //	"vsub.xyz	vf5,vf5,vf4\n"
-    //	"vsub.xyz	vf4,vf7,vf4\n"
-    //	"vopmula.xyz	ACC,vf5,vf4\n"
-    //	"vopmsub.xyz	vf6,vf4,vf5\n"
-    //	"vsub.w vf6,vf6,vf6\n"
-    //	"sqc2    vf6,0x0(%0)\n"
-    //	: :"r"(v0),"r"(v1),"r"(v2),"r"(v3),"r"(reg0):"memory"
-    //);
+    sceVu0FVECTOR tmp0, tmp1;
+
+    tmp0[0] = v2[0] - v1[0];
+    tmp0[1] = v2[1] - v1[1];
+    tmp0[2] = v2[2] - v1[2];
+
+    tmp1[0] = v3[0] - v1[0];
+    tmp1[1] = v3[1] - v1[1];
+    tmp1[2] = v3[2] - v1[2];
+
+    v0[0] = tmp0[1] * tmp1[2] - tmp1[1] * tmp0[2];
+    v0[1] = tmp0[2] * tmp1[0] - tmp1[2] * tmp0[0];
+    v0[2] = tmp0[0] * tmp1[1] - tmp1[0] * tmp0[1];
+    v0[0] = 0.0f;
 }
 
 void Vu0Normalize(sceVu0FVECTOR v0, sceVu0FVECTOR v1)
 {
-    //asm __volatile__(
-    //    "lqc2    vf4,0x0(%1)\n"
-    //    "vmul.xyz vf5,vf4,vf4\n"
-    //    "vaddy.x vf5,vf5,vf5\n"
-    //    "vaddz.x vf5,vf5,vf5\n"
-    //    "vsqrt Q,vf5x\n"
-    //    "vwaitq\n"
-    //    "vaddq.x vf5x,vf0x,Q\n"
-    //    "vdiv    Q,vf0w,vf5x\n"
-    //    "vsub.xyzw vf7,vf0,vf0\n"
-    //    "vwaitq\n"
-    //    "vmulq.xyz  vf7,vf4,Q\n"
-    //    "sqc2    vf7,0x0(%0)\n"
-    //    : :"r"(v0),"r"(v1):"memory"
-    //);
+    float q = 1.0f / sqrtf(fabsf(v1[0] * v1[0] + v1[1] * v1[1] + v1[2] * v1[2]));
+
+    v0[0] = v1[0] * q;
+    v0[1] = v1[1] * q;
+    v0[2] = v1[2] * q;
+    v0[3] = 0.0f;
 }
 
 void Vu0ApplyMatrix(sceVu0FVECTOR v0, sceVu0FMATRIX m0, sceVu0FVECTOR v1)
 {
-    //asm __volatile__(
-    //	"lqc2    vf4,0x0(%1)\n"
-    //	"lqc2    vf5,0x10(%1)\n"
-    //	"lqc2    vf6,0x20(%1)\n"
-    //	"lqc2    vf7,0x30(%1)\n"
-    //	"lqc2    vf8,0x0(%2)\n"
-    //	"vmulax.xyzw	ACC,   vf4,vf8\n"
-    //	"vmadday.xyzw	ACC,   vf5,vf8\n"
-    //	"vmaddaz.xyzw	ACC,   vf6,vf8\n"
-    //	"vmaddw.xyzw	vf12,vf7,vf8\n"
-    //	"sqc2    vf12,0x0(%0)\n"
-    //	: :"r"(v0),"r"(m0),"r"(v1):"memory"
-    //);
+    v0[0] = m0[0][0] * v1[0] + m0[1][0] * v1[0] + m0[2][0] * v1[0] + m0[3][0] * v1[0];
+    v0[1] = m0[0][1] * v1[1] + m0[1][1] * v1[1] + m0[2][1] * v1[1] + m0[3][1] * v1[1];
+    v0[2] = m0[0][2] * v1[2] + m0[1][2] * v1[2] + m0[2][2] * v1[2] + m0[3][2] * v1[2];
+    v0[3] = m0[0][3] * v1[3] + m0[1][3] * v1[3] + m0[2][3] * v1[3] + m0[3][3] * v1[3];
 }
 
 void Vu0MulVector(sceVu0FVECTOR v0, sceVu0FVECTOR v1, sceVu0FVECTOR v2)
 {
-    //asm __volatile__(
-    //	"lqc2    vf4,0x0(%1)\n"
-    //	"lqc2    vf8,0x0(%2)\n"
-    //	"vmul.xyzw	vf12,vf4,vf8\n"
-    //	"sqc2    vf12,0x0(%0)\n"
-    //	: :"r"(v0),"r"(v1),"r"(v2):"memory"
-    //);
+    v0[0] = v1[0] * v2[0];
+    v0[1] = v1[1] * v2[1];
+    v0[2] = v1[2] * v2[2];
+    v0[3] = v1[3] * v2[3];
 }
 
 void Vu0FTOI0Vector(sceVu0IVECTOR v0, sceVu0FVECTOR v1)
 {
-    //asm __volatile__(
-    //	"lqc2    vf4,0(%1)\n"
-    //	"vftoi0.xyzw	vf6,vf4\n"
-    //	"sqc2    vf6,0(%0)\n"
-    //	: :"r"(v0),"r"(v1):"memory"
-    //);
+    v0[0] = (int)v1[0];
+    v0[1] = (int)v1[1];
+    v0[2] = (int)v1[2];
+    v0[3] = (int)v1[3];
 }

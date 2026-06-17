@@ -15,6 +15,8 @@
 #include "ingame/map/map_area.h"
 #include "main/glob.h"
 #include "mikupan/mikupan_logging.h"
+#include "mikupan/mikupan_utils.h"
+#include "mikupan/rendering/mikupan_renderer.h"
 
 typedef struct {
     SPRT_DAT *spr;
@@ -57,6 +59,36 @@ typedef struct {
 #define PI 3.1415928f
 #define PI_HALF 1.5707964f
 
+static RARE_ENE_DAT *GetRareEneDat(int tblno)
+{
+    if (tblno < 0)
+    {
+        info_log("DrawRareEne_Sub received negative enemy table index %d", tblno);
+        return NULL;
+    }
+
+    if (tblno < 0x80)
+    {
+        if (tblno >= (int)(sizeof(rare_ene) / sizeof(rare_ene[0])))
+        {
+            info_log("DrawRareEne_Sub received request for rare_ene[%d] that went beyond the array limit", tblno);
+            return NULL;
+        }
+
+        return &rare_ene[tblno];
+    }
+
+    tblno -= 0x80;
+
+    if (tblno >= (int)(sizeof(pazz_ene) / sizeof(pazz_ene[0])))
+    {
+        info_log("DrawRareEne_Sub received request for pazz_ene[%d] that went beyond the array limit", tblno);
+        return NULL;
+    }
+
+    return &pazz_ene[tblno];
+}
+
 void LoadRareEneTex()
 {
     return;
@@ -81,10 +113,13 @@ void DrawRareEne_Sub(int mno, int dno, sceVu0FVECTOR pos, int tblno, int ani, in
     RARE_ENE_DAT *redp;
     RARE_ENE_1DAT *re1dp;
     SPRT_DAT *sdp;
+    SPRT_DAT *spr;
     Q_WORDDATA qw[1024];
+    sceVu0FMATRIX gl_slm;
     sceVu0FMATRIX slm;
     sceVu0FMATRIX wlm;
     sceVu0IVECTOR ivec[4];
+    sceVu0FVECTOR glvec[4];
     sceVu0FVECTOR fvec[4];
     sceVu0FVECTOR bpos  = { 25000.0f, -400.0f, 6500.0f, 1.0f };
     sceVu0FVECTOR fzero = { 0.0f, 0.0f, 0.0f, 1.0f };
@@ -101,22 +136,19 @@ void DrawRareEne_Sub(int mno, int dno, sceVu0FVECTOR pos, int tblno, int ani, in
 
     Vu0CopyVector(bpos, pos);
 
-    if (tblno > sizeof(rare_ene)/sizeof(rare_ene[0]) && tblno < 0x80)
+    redp = GetRareEneDat(tblno);
+
+    if (redp == NULL)
     {
-        info_log("DrawRareEne_Sub received request for rare_ene[%d] that went beyond the array limit", tblno);
         return;
     }
 
-    if (tblno < 0x80)
+    if (ani < 0 || ani >= redp->pat)
     {
-        redp = &rare_ene[tblno];
-    }
-    else
-    {
-        redp = &((RARE_ENE_DAT *)&draw_mpri[902])[tblno];
+        ani = 0;
     }
 
-    re1dp = redp[ani].re1d;
+    re1dp = &redp->re1d[ani];
     sdp = re1dp->spr;
 
     rx = (redp->attr & 0x4000) != 0 || (redp->attr & 0x8000) != 0;
@@ -200,28 +232,31 @@ void DrawRareEne_Sub(int mno, int dno, sceVu0FVECTOR pos, int tblno, int ani, in
 
             sceVu0TransMatrix(wlm, wlm, bpos);
             sceVu0MulMatrix(slm, SgWSMtx, wlm);
+            sceVu0MulMatrix(gl_slm, *(sceVu0FMATRIX *)MikuPan_GetWorldClipView(), wlm);
 
-            tx0 = *(sceGsTex0*)&(sdp + i*2 + monochrome_mode)->tex0;
+            spr = &sdp[i * 2 + (monochrome_mode != 0)];
+
+            tx0 = *(sceGsTex0*)&spr->tex0;
             tx0.TBP0 += offset;
             tx0.CBP += offset;
 
-            fvec[0][0] = sdp[i].x;
-            fvec[0][1] = sdp[i].y;
+            fvec[0][0] = spr->x;
+            fvec[0][1] = spr->y;
             fvec[0][2] = 0.0f;
             fvec[0][3] = 1.0f;
 
-            fvec[1][0] = sdp[i].x + sdp[i].w;
-            fvec[1][1] = sdp[i].y;
+            fvec[1][0] = spr->x + spr->w;
+            fvec[1][1] = spr->y;
             fvec[1][2] = 0.0f;
             fvec[1][3] = 1.0f;
 
-            fvec[2][0] = sdp[i].x;
-            fvec[2][1] = sdp[i].y + sdp[i].h;
+            fvec[2][0] = spr->x;
+            fvec[2][1] = spr->y + spr->h;
             fvec[2][2] = 0.0f;
             fvec[2][3] = 1.0f;
 
-            fvec[3][0] = sdp[i].x + sdp[i].w;
-            fvec[3][1] = sdp[i].y + sdp[i].h;
+            fvec[3][0] = spr->x + spr->w;
+            fvec[3][1] = spr->y + spr->h;
             fvec[3][2] = 0.0f;
             fvec[3][3] = 1.0f;
 
@@ -249,17 +284,17 @@ void DrawRareEne_Sub(int mno, int dno, sceVu0FVECTOR pos, int tblno, int ani, in
 
             if (!k)
             {
-                tx[0] = sdp[i].u * 16;
-                ty[0] = sdp[i].v * 16;
+                tx[0] = spr->u * 16;
+                ty[0] = spr->v * 16;
 
-                tx[1] = (sdp[i].u + sdp[i].w) * 16;
-                ty[1] = sdp[i].v * 16;
+                tx[1] = (spr->u + spr->w) * 16;
+                ty[1] = spr->v * 16;
 
-                tx[2] = sdp[i].u * 16;
-                ty[2] = (sdp[i].v + sdp[i].h) * 16;
+                tx[2] = spr->u * 16;
+                ty[2] = (spr->v + spr->h) * 16;
 
-                tx[3] = (sdp[i].u + sdp[i].w) * 16;
-                ty[3] = (sdp[i].v + sdp[i].h) * 16;
+                tx[3] = (spr->u + spr->w) * 16;
+                ty[3] = (spr->v + spr->h) * 16;
 
                 pbuf[ndpkt].ul64[0] = SCE_GIF_SET_TAG(6, SCE_GS_FALSE, SCE_GS_FALSE, 0, SCE_GIF_PACKED, 1);
                 pbuf[ndpkt++].ul64[1] = SCE_GIF_PACKED_AD;
@@ -299,27 +334,59 @@ void DrawRareEne_Sub(int mno, int dno, sceVu0FVECTOR pos, int tblno, int ani, in
 
                     fm = k != 0 ? (a ? (float)b : -(float)b) * 3.0f : 0.0f;
 
-                    fvec[0][0] = sdp[i].x + fm;
-                    fvec[0][1] = sdp[i].y;
+                    fvec[0][0] = spr->x + fm;
+                    fvec[0][1] = spr->y;
                     fvec[0][2] = 0.0f;
                     fvec[0][3] = 1.0f;
 
-                    fvec[1][0] = sdp[i].x + sdp[i].w + fm;
-                    fvec[1][1] = sdp[i].y;
+                    fvec[1][0] = spr->x + spr->w + fm;
+                    fvec[1][1] = spr->y;
                     fvec[1][2] = 0.0f;
                     fvec[1][3] = 1.0f;
 
-                    fvec[2][0] = sdp[i].x + fm;
-                    fvec[2][1] = sdp[i].y + sdp[i].h;
+                    fvec[2][0] = spr->x + fm;
+                    fvec[2][1] = spr->y + spr->h;
                     fvec[2][2] = 0.0f;
                     fvec[2][3] = 1.0f;
 
-                    fvec[3][0] = sdp[i].x + sdp[i].w + fm;
-                    fvec[3][1] = sdp[i].y + sdp[i].h;
+                    fvec[3][0] = spr->x + spr->w + fm;
+                    fvec[3][1] = spr->y + spr->h;
                     fvec[3][2] = 0.0f;
                     fvec[3][3] = 1.0f;
 
                     sceVu0RotTransPersN(ivec, slm, fvec, 4, 0);
+                    sceVu0RotTransPersNF(glvec, gl_slm, fvec, 4, 0);
+
+                    {
+                        float tex_w = (float)(1 << tx0.TW);
+                        float tex_h = (float)(1 << tx0.TH);
+                        float render_buffer[4][12];
+                        float u0 = (float)spr->u / tex_w;
+                        float v0 = (float)spr->v / tex_h;
+                        float u1 = (float)(spr->u + spr->w) / tex_w;
+                        float v1 = (float)(spr->v + spr->h) / tex_h;
+                        float u[4] = { u0, u1, u0, u1 };
+                        float v[4] = { v0, v0, v1, v1 };
+                        u_char draw_alp = alp / (b * 2 + 1);
+
+                        for (j = 0; j < 4; j++)
+                        {
+                            render_buffer[j][0] = u[j];
+                            render_buffer[j][1] = v[j];
+                            render_buffer[j][2] = 0.0f;
+                            render_buffer[j][3] = 0.0f;
+                            render_buffer[j][4] = MikuPan_ConvertScaleColor(0x80);
+                            render_buffer[j][5] = MikuPan_ConvertScaleColor(0x80);
+                            render_buffer[j][6] = MikuPan_ConvertScaleColor(0x80);
+                            render_buffer[j][7] = MikuPan_ConvertScaleColor(draw_alp);
+                            render_buffer[j][8] = glvec[j][0];
+                            render_buffer[j][9] = glvec[j][1];
+                            render_buffer[j][10] = glvec[j][2];
+                            render_buffer[j][11] = 1.0f;
+                        }
+
+                        MikuPan_RenderSprite3D(&tx0, &render_buffer[0][0]);
+                    }
 
                     for (j = 0; j < 4; j++)
                     {
@@ -413,13 +480,11 @@ void DrawRareEne()
                     nene = rg_dsp_wrk[i].rg_no;
                     alp[i] = rg_dsp_wrk[i].alpha;
 
-                    if (nene < 0x80)
+                    redp = GetRareEneDat(nene);
+
+                    if (redp == NULL)
                     {
-                        redp = &rare_ene[nene];
-                    }
-                    else
-                    {
-                        redp = &((RARE_ENE_DAT *)&draw_mpri[902])[nene];
+                        continue;
                     }
 
                     if (efbuf[i] != 0)

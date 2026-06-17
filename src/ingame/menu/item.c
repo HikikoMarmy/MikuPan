@@ -1805,8 +1805,6 @@ void PutSpriteYW(u_short top_label, u_short end_label, float pos_x, float pos_y,
     u_char g;
     u_char b;
 
-    YW_DBG();
-
     for (i = top_label; i <= end_label; i++)
     {
         CopySprDToSpr(&ds,spr_dat + i);

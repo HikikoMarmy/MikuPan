@@ -60,9 +60,6 @@ extern void DPS_PROLOGUE()   ;
 #define VU0_CLIP_Z_POS (1 << 4)
 #define VU0_CLIP_Z_NEG (1 << 5)
 
-extern sceVu0FMATRIX __work_matrix_0; // in [vf4:vf7]
-extern sceVu0FMATRIX __work_matrix_1; // in [vf8:vf11]
-
 void ShadowDbgOn()
 {
     shadow_dbg_flg = 1;
@@ -286,50 +283,12 @@ void SetVU1HeaderShadow()
 
 static void _CalcWeightedVertexSM(sceVu0FVECTOR dp, sceVu0FVECTOR *v)
 {
-    sceVu0FVECTOR *wk0 = __work_matrix_0; // in [vf4:vf7]
-    sceVu0FVECTOR *wk1 = __work_matrix_1; // in [vf8:vf11]
-    sceVu0FVECTOR vf13, vf14;
-
-    vf13[0] = (wk0[0][0] * v[0][0]) + (wk0[1][0] * v[0][1]) + (wk0[2][0] * v[0][2]) + (wk0[3][0] * 1.0f);
-    vf13[1] = (wk0[0][1] * v[0][0]) + (wk0[1][1] * v[0][1]) + (wk0[2][1] * v[0][2]) + (wk0[3][1] * 1.0f);
-    vf13[2] = (wk0[0][2] * v[0][0]) + (wk0[1][2] * v[0][1]) + (wk0[2][2] * v[0][2]) + (wk0[3][2] * 1.0f);
-    vf13[3] = v[0][3];
-
-    vf14[0] = (wk1[0][0] * v[1][0]) + (wk1[1][0] * v[1][1]) + (wk1[2][0] * v[1][2]) + (wk1[3][0] * 1.0f);
-    vf14[1] = (wk1[0][1] * v[1][0]) + (wk1[1][1] * v[1][1]) + (wk1[2][1] * v[1][2]) + (wk1[3][1] * 1.0f);
-    vf14[2] = (wk1[0][2] * v[1][0]) + (wk1[1][2] * v[1][1]) + (wk1[2][2] * v[1][2]) + (wk1[3][2] * 1.0f);
-    vf14[3] = 1.0f - v[0][3];
-
-    dp[0] = vf13[0] * vf13[3] + vf14[0] * vf14[3];
-    dp[1] = vf13[1] * vf13[3] + vf14[1] * vf14[3];
-    dp[2] = vf13[2] * vf13[3] + vf14[2] * vf14[3];
-    dp[3] = 1.0f;
-
-    calc_skinned_position(dp, (sceVu0FVECTOR *) v);
+    calc_skinned_position(dp, v);
 }
 
 static void _CalcWeightedVertexBufferSM(sceVu0FVECTOR dp, sceVu0FVECTOR *v)
 {
-    sceVu0FVECTOR *wk0 = __work_matrix_0; // in [vf4:vf7]
-    sceVu0FVECTOR *wk1 = __work_matrix_1; // in [vf8:vf11]
-    sceVu0FVECTOR vf13, vf14;
-
-    vf13[0] = (wk0[0][0] * v[0][0]) + (wk0[1][0] * v[0][1]) + (wk0[2][0] * v[0][2]) + (wk0[3][0] * 1.0f);
-    vf13[1] = (wk0[0][1] * v[0][0]) + (wk0[1][1] * v[0][1]) + (wk0[2][1] * v[0][2]) + (wk0[3][1] * 1.0f);
-    vf13[2] = (wk0[0][2] * v[0][0]) + (wk0[1][2] * v[0][1]) + (wk0[2][2] * v[0][2]) + (wk0[3][2] * 1.0f);
-    vf13[3] = v[0][3];
-
-    vf14[0] = (wk1[0][0] * v[1][0]) + (wk1[1][0] * v[1][1]) + (wk1[2][0] * v[1][2]) + (wk1[3][0] * 1.0f);
-    vf14[1] = (wk1[0][1] * v[1][0]) + (wk1[1][1] * v[1][1]) + (wk1[2][1] * v[1][2]) + (wk1[3][1] * 1.0f);
-    vf14[2] = (wk1[0][2] * v[1][0]) + (wk1[1][2] * v[1][1]) + (wk1[2][2] * v[1][2]) + (wk1[3][2] * 1.0f);
-    vf14[3] = 1.0f - v[0][3];
-
-    dp[0] = vf13[0] * vf13[3] + vf14[0] * vf14[3];
-    dp[1] = vf13[1] * vf13[3] + vf14[1] * vf14[3];
-    dp[2] = vf13[2] * vf13[3] + vf14[2] * vf14[3];
-    dp[3] = 1.0f;
-
-    calc_skinned_position(dp, (sceVu0FVECTOR *) v);
+    calc_skinned_position(dp, v);
 }
 
 
@@ -355,7 +314,7 @@ static void *GetShadowVuvnHostPointer(u_int ps2_addr, int index, int vtype)
 
 static void _CalcVertexSM(sceVu0FVECTOR dp, sceVu0FVECTOR v)
 {
-    sceVu0FVECTOR *wk0 = __work_matrix_0; // in [vf4:vf7]
+    sceVu0FVECTOR *wk0 = work_matrix_0; // in [vf4:vf7]
 
     // regular matrix*vec multiply
     dp[0] = (wk0[0][0] * v[0]) + (wk0[1][0] * v[1]) + (wk0[2][0] * v[2]) + (wk0[3][0] * v[3]);
@@ -391,8 +350,8 @@ void CalcVertexBufferShadow(u_int *prim)
 
     for (i = 0; i < vli->list_num; i++)
     {
-        _SetLWMatrix0(lcp[vli->lists[i].cn0].workm);
-        _SetLWMatrix1(lcp[vli->lists[i].cn1].workm);
+        _SetLWMatrix0(lcp[vli->lists[i].cn0].lwmtx);
+        _SetLWMatrix1(lcp[vli->lists[i].cn1].lwmtx);
 
         for (j = 0; j < vli->lists[i].vIdx; vpd++, vps += 2, j++)
         {
@@ -455,8 +414,8 @@ u_int *SetVUVNDataShadowModel(u_int *prim)
                 cn = (char *) GetShadowVuvnHostPointer(*prim, 0, vh->vtype);
                 if (cn == NULL) return NULL;
 
-                _SetLWMatrix0(lcp[cn[0x1c]].workm);
-                _SetLWMatrix1(lcp[cn[0x1d]].workm);
+                _SetLWMatrix0(lcp[cn[0x1c]].lwmtx);
+                _SetLWMatrix1(lcp[cn[0x1d]].lwmtx);
 
                 for (i = 0; i < vh->vnum; i++, vp++, prim += 2)
                 {
@@ -482,8 +441,8 @@ u_int *SetVUVNDataShadowModel(u_int *prim)
                 {
                     cn = (char *) GetShadowVuvnHostPointer(*prim, i, vh->vtype);
                     if (cn == NULL) return NULL;
-                    _SetLWMatrix0(lcp[cn[0x1c]].workm);
-                    _SetLWMatrix1(lcp[cn[0x1d]].workm);
+                    _SetLWMatrix0(lcp[cn[0x1c]].lwmtx);
+                    _SetLWMatrix1(lcp[cn[0x1d]].lwmtx);
                     _CalcWeightedVertexSM(*vp, (sceVu0FVECTOR *) cn);
                     vp++;
                     prim += 2;
@@ -530,7 +489,7 @@ void ShadowModelMesh(u_int *prim)
                 break;
             }
 
-            //MikuPan_RenderShadowSilhouettePrepared(vuvnprim, prim, GetPreparedShadowPositions(vuvnprim, read_p));
+            MikuPan_RenderShadowSilhouettePrepared(vuvnprim, prim, GetPreparedShadowPositions(vuvnprim, read_p));
 
             read_p[0] = 0x14000000 | ((u_int) SHADOWDRAWTYPE0 >> 3);
             read_p[1] = 0x17000000;
@@ -869,7 +828,7 @@ int ClipCheckShadow(sceVu0FMATRIX vec, sceVu0FVECTOR cul)
 
 int ShadowBoundClip(sceVu0FVECTOR v0, sceVu0FVECTOR v1)
 {
-    sceVu0FVECTOR *wk0 = __work_matrix_0; // in [vf4:vf7]
+    sceVu0FVECTOR *wk0 = work_matrix_0; // in [vf4:vf7]
     int ret = 0;
 
     v0[0] = (wk0[0][0] * v1[0]) + (wk0[1][0] * v1[1]) + (wk0[2][0] * v1[2]) + (wk0[3][0] * 1.0f);

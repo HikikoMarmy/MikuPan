@@ -190,10 +190,10 @@ static void EffectSub2CopyDepthBiasedQuad(
 }
 
 #include "data/fall_table.h" /* data 270e30 */ // FALL_TABLE fall_table[/*4*/];
-/* sdata 3563e8 */ short int fallen_effect_switch = 0;
-/* sdata 3563ea */ short int gus_effect_switch = 0;
-/* sdata 3563ec */ short int hole_effect_switch = 0;
-/* sdata 3563f0 */ short int line_effect_switch[4] = { 0, 0, 0, 0 };
+short int fallen_effect_switch = 0;
+short int gus_effect_switch = 0;
+short int hole_effect_switch = 0;
+short int line_effect_switch[4] = { 0, 0, 0, 0 };
 
 #include "data/btl_strt.h"  /* data 270f30 */ // SPRT_SDAT btl_strt[11];
 #include "data/btl_rslt.h"  /* data 270fd0 */ // SPRT_SDAT btl_rslt[23];
@@ -210,21 +210,13 @@ static void EffectSub2CopyDepthBiasedQuad(
 #include "data/line_wrk.h"  /* data 27ab20 */ // LEAVES_TABLE line_wrk[4];
 /* data 2809e0 */ BTL_ANM_LOAD banm = {0};
 
-/* bss 359f90 */ static sceVu0FVECTOR leaves[600];
-/* bss 35c510 */ static sceVu0FVECTOR leavesaim[600];
-/* bss 35ea90 */ static sceVu0FVECTOR accel[600];
-/* bss 361010 */ static sceVu0FVECTOR rots[600];
-/* bss 363590 */ static sceVu0FVECTOR hole_gus[200];
-/* bss 364210 */ static sceVu0FVECTOR line_gus[4][80];
+static sceVu0FVECTOR leaves[600];
+static sceVu0FVECTOR leavesaim[600];
+static sceVu0FVECTOR accel[600];
+static sceVu0FVECTOR rots[600];
+static sceVu0FVECTOR hole_gus[200];
+static sceVu0FVECTOR line_gus[4][80];
 
-/*
- * On PS2 the fall quads were appended to the 2D packet buffer and DMA-kicked
- * at end of frame, after the 3D world. The modern renderer draws immediately,
- * but FallenObjects runs from game logic (FActWrkMain) before the map is
- * rendered, so an immediate draw always ends up depth-occluded by the map.
- * Batch the quads here and flush them via FallenObjectsDraw once the 3D
- * scene has been drawn.
- */
 static float fall_render_buffer[EFFECT_SUB2_MAX_FALL_VERTICES][12];
 static int fall_render_vertices = 0;
 static u_long fall_render_tex0 = 0;

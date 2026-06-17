@@ -113,10 +113,10 @@ int FodNextFrame(FOD_CTRL *fc)
         eff_addr = eff_addr + fc->eff_frame->size;
         fc->eff_frame = (FOD_EFF_FRAME *)eff_addr;
 
-        return NULL;
+        return 0;
     }
 
-    // no return ...
+    return 0;
 }
 
 void FodSetFrame(FOD_CTRL *fc, u_int frame)
