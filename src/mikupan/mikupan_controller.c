@@ -734,10 +734,7 @@ void MikuPan_FinderMouseRequest(void)
 
 void MikuPan_FinderMouseUpdate(void)
 {
-    /* Engage relative mouse mode only while finder aiming asked for it this
-     * frame and the dev menu bar is closed, so toggling the menu (F1) always
-     * hands the cursor back. */
-    int want = finder_mouse_requested && finder_mouse_enabled && !show_menu_bar;
+    int want = finder_mouse_requested && finder_mouse_enabled;
     finder_mouse_requested = 0;
 
     if (want == finder_mouse_active)

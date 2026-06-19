@@ -345,3 +345,33 @@ void MikuPan_ConvertScreenToNDCCoord(int *out, float ref_width,
         out[1] = (int) ((ref_height - (float)out[3]) / 2);
     }
 }
+
+int MikuPan_ClampInt(int value, int min_value, int max_value)
+{
+    if (value < min_value)
+    {
+        return min_value;
+    }
+
+    if (value > max_value)
+    {
+        return max_value;
+    }
+
+    return value;
+}
+
+float MikuPan_ClampFloat(float value, float min_value, float max_value)
+{
+    if (value < min_value)
+    {
+        return min_value;
+    }
+
+    if (value > max_value)
+    {
+        return max_value;
+    }
+
+    return value;
+}

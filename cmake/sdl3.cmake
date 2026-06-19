@@ -69,16 +69,3 @@ if(ANDROID)
         endif()
     endif()
 endif()
-
-FetchContent_Declare(
-        sdl_mixer
-        GIT_REPOSITORY https://github.com/libsdl-org/SDL_mixer.git
-        GIT_TAG release-3.2.0
-)
-
-if(ANDROID)
-    set(SDLMIXER_GME OFF CACHE BOOL "Disable Game Music Emu on Android." FORCE)
-    set(SDLMIXER_GME_SHARED OFF CACHE BOOL "Disable dynamic Game Music Emu on Android." FORCE)
-endif()
-
-FetchContent_MakeAvailable(sdl_mixer)

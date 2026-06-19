@@ -9,6 +9,43 @@
 extern "C" {
 #endif
 
+    /// CPU section IDs (must match MikuPan_PerfSection in mikupan_profiler.h)
+#define MP_PERF_MESH_RENDER 0
+#define MP_PERF_SPRITE_RENDER 1
+#define MP_PERF_BATCH_FLUSH 2
+#define MP_PERF_DRAWUI 3
+#define MP_PERF_RENDERUI 4
+#define MP_PERF_DRAW_SUBMIT 5
+#define MP_PERF_BUFFER_UPLOAD 6
+#define MP_PERF_STATE_CHANGE 7
+
+    /// Sub-sections decomposing MP_PERF_STATE_CHANGE (sum ≈ STATE_CHANGE).
+#define MP_PERF_SC_SHADER 8
+#define MP_PERF_SC_TEXTURE 9
+#define MP_PERF_SC_RS3D 10
+#define MP_PERF_SC_VAO 11
+
+    /// Per-mesh-type sub-sections decomposing MP_PERF_MESH_RENDER.
+#define MP_PERF_MESH_0x2 12
+#define MP_PERF_MESH_0xA 13
+#define MP_PERF_MESH_0x10 14
+#define MP_PERF_MESH_0x12 15
+#define MP_PERF_MESH_0x32 16
+#define MP_PERF_MESH_0x82 17
+
+    /// Sub-sections decomposing MP_PERF_SC_TEXTURE — fine-grained breakdown of
+/// where MikuPan_SetTexture spends its time.
+#define MP_PERF_TEX_L1_LOOKUP 18
+#define MP_PERF_TEX_HASH 19
+#define MP_PERF_TEX_L2_LOOKUP 20
+#define MP_PERF_TEX_CREATE 21
+#define MP_PERF_TEX_BIND 22
+
+    /// "Other / unknown" breakdown — uninstrumented PS2/SG scene-graph emulation.
+#define MP_PERF_SKIN_PREP 23
+#define MP_PERF_COORD_CALC 24
+#define MP_PERF_LIGHT_SETUP 25
+
 /// CPU section IDs for the per-section perf graph. Stable integers — the UI
 /// panel feeds matching values into MikuPan_PerfGetSectionMs(). Append new
 /// IDs at the end so existing IDs keep their values.

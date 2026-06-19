@@ -11,13 +11,12 @@
 extern "C" {
 #include "mikupan/ui/mikupan_ui.h"
 #include "mikupan/mikupan_utils.h"
+#include "mikupan/ui/mikupan_ui_debug.h"
 }
 
 GS::GSHelper gsHelper;
 std::vector<uint8_t> texture_buffer = std::vector<uint8_t>(4096 * 4096 * 8);
 
-/// Per-frame GS instrumentation. Reset by MikuPan_GsResetFrameMetrics() at the
-/// start of each frame; sampled by the perf graph.
 struct GsFrameMetrics
 {
     int    upload_count;
@@ -508,8 +507,6 @@ void __attribute__((optimize("O3"))) GS::GSHelper::DownloadImagePSMT8(unsigned c
             outbuf[dst_addr + 0x01] = mem_[p + 0x01];
             outbuf[dst_addr + 0x02] = mem_[p + 0x02];
 
-            /* Keep alpha_reg as int: -1 is the "use CLUT alpha" sentinel, and
-             * plain char is unsigned on Android/ARM. */
             if (alpha_reg >= 0)
             {
                 outbuf[dst_addr + 0x03] = alpha_reg;
@@ -579,10 +576,6 @@ void MikuPan_GsUpload(sceGsLoadImage *image_load, unsigned char *image)
         return;
     }
 
-    // spdlog::debug() always formats its arguments at runtime (only the *write*
-    // is gated by log level), so leaving it on the hot path is wasteful even
-    // with debug logging disabled. Use SPDLOG_DEBUG so the entire call site is
-    // eliminated by the preprocessor when SPDLOG_ACTIVE_LEVEL > debug.
     SPDLOG_DEBUG("GS upload request for DBP {:#x} DPSM {} X: {} Y: {}",
                  static_cast<int>(image_load->bitbltbuf.DBP),
                  static_cast<int>(image_load->bitbltbuf.DPSM),
@@ -591,11 +584,6 @@ void MikuPan_GsUpload(sceGsLoadImage *image_load, unsigned char *image)
 
     MikuPan_FirstUploadDone();
 
-    // Record the upload's affected GS-memory region so the L1 cache can
-    // selectively invalidate just the entries it overlaps (instead of
-    // wiping the entire L1, which forced an XXH3 over GS memory for every
-    // fresh-this-frame tex0). Region uses the same byte-address convention
-    // as MikuPan_GetTextureHash so overlap testing is symmetrical.
     {
         int up_addr;
         int up_size;
@@ -652,8 +640,7 @@ void MikuPan_GsUpload(sceGsLoadImage *image_load, unsigned char *image)
     Uint64 t1 = SDL_GetPerformanceCounter();
     g_gs_frame_metrics.upload_count++;
     g_gs_frame_metrics.upload_bytes += upload_w * upload_h * 4; // approximate
-    g_gs_frame_metrics.upload_ms +=
-        (double)(t1 - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency();
+    g_gs_frame_metrics.upload_ms += (double)(t1 - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency();
 }
 
 unsigned char *MikuPan_GsDownloadTexture(sceGsTex0 *tex0, uint64_t* hash)
@@ -726,8 +713,7 @@ unsigned char *MikuPan_GsDownloadTexture(sceGsTex0 *tex0, uint64_t* hash)
     Uint64 t1 = SDL_GetPerformanceCounter();
     g_gs_frame_metrics.download_count++;
     g_gs_frame_metrics.download_bytes += width * height * 4;
-    g_gs_frame_metrics.download_ms +=
-        (double)(t1 - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency();
+    g_gs_frame_metrics.download_ms += (double)(t1 - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency();
 
     return image_data;
 }
@@ -804,14 +790,12 @@ void MikuPan_GsConsumePendingUploads(
             cb(r.addr, r.size, ud);
         }
     }
+
     g_pending_uploads.clear();
 }
 
 void MikuPan_GetTextureGsRegion(sceGsTex0 *tex0, int *out_addr, int *out_size)
 {
-    // Cover every GS-memory byte that can affect the decoded GL texture. For
-    // indexed textures that includes the CLUT, otherwise black/white CLUT
-    // swaps can leave a stale color texture cached behind the same TEX0.
     if (!MikuPan_GetTextureInvalidationRegion(tex0, out_addr, out_size))
     {
         *out_addr = 0;

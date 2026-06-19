@@ -694,7 +694,7 @@ SPRT_DAT title_sprt[11] = {
             mc_slot1 = mc_ctrl.port + 1;
             mc_file1 = mc_ctrl.sel_file + 1;
 
-            memcpy((void *)0xE80000, (void *)0x5a0000, 0x180000);
+            memcpy((void *)MikuPan_GetHostPointer(0xE80000), (void *)MikuPan_GetHostPointer(0x5a0000), 0x180000);
 
             mcInit(6, (u_int *)MikuPan_GetHostPointer(MC_WORK_ADDRESS), 0);
 
@@ -724,7 +724,7 @@ SPRT_DAT title_sprt[11] = {
             mc_atyp2 = mc_album_type;
             mc_slot2 = mc_ctrl.port + 1;
             mc_file2 = mc_ctrl.sel_file + 1;
-            memcpy((void *)0x1000000, (void *)0x5a0000, 0x180000);
+            memcpy((void *)MikuPan_GetHostPointer(0x1000000), (void *)MikuPan_GetHostPointer(0x5a0000), 0x180000);
 
             MemAlbmInit(1, mc_pnum1, mc_pnum2, mc_atyp1, mc_atyp2, mc_slot1, mc_slot2, mc_file1, mc_file2 & 0xff);
 
@@ -741,7 +741,7 @@ SPRT_DAT title_sprt[11] = {
             mc_slot2 = 0;
             mc_file2 = 0;
 
-            memcpy((void *)0x1000000, (void *)0x5a0000, 0x180000);
+            memcpy((void *)MikuPan_GetHostPointer(0x1000000), (void *)MikuPan_GetHostPointer(0x5a0000), 0x180000);
 
             MemAlbmInit(1, mc_pnum1, mc_pnum2, mc_atyp1, mc_atyp2, mc_slot1, mc_slot2, mc_file1, mc_file2 & 0xff);
             NewAlbumInit(1);
@@ -774,7 +774,7 @@ SPRT_DAT title_sprt[11] = {
         {
         case 0: break;
         case 1:
-            memcpy((void *)0x5a0000, (void *)0xe80000, 0x180000);
+            memcpy((void *)MikuPan_GetHostPointer(0x5a0000), (void *)MikuPan_GetHostPointer(0xe80000), 0x180000);
 
             mcInit(2, (u_int *)MikuPan_GetHostAddress(MC_WORK_ADDRESS), 0);
 
@@ -787,7 +787,7 @@ SPRT_DAT title_sprt[11] = {
             title_wrk.mode = TITLE_ALBM_SAVE_PRE;
         break;
         case 2:
-            memcpy((void *)0x5a0000, (void *)0x1000000, 0x180000);
+            memcpy((void *)MikuPan_GetHostPointer(0x5a0000), (void *)MikuPan_GetHostPointer(0x1000000), 0x180000);
 
             mcInit(2, (u_int *)MikuPan_GetHostAddress(MC_WORK_ADDRESS), 0);
 
@@ -853,7 +853,7 @@ SPRT_DAT title_sprt[11] = {
         case 1:
             if (title_wrk.load_side == 0)
             {
-                memcpy((void *)0xe80000, (void *)0x5a0000, 0x180000);
+                memcpy((void *)MikuPan_GetHostPointer(0xe80000), (void *)MikuPan_GetHostPointer(0x5a0000), 0x180000);
 
                 mc_pnum1 = mc_photo_num;
                 mc_atyp1 = mc_album_type;
@@ -866,7 +866,7 @@ SPRT_DAT title_sprt[11] = {
             }
             else
             {
-                memcpy((void *)0x1000000, (void *)0x5a0000, 0x180000);
+                memcpy((void *)MikuPan_GetHostPointer(0x1000000), (void *)MikuPan_GetHostPointer(0x5a0000), 0x180000);
 
                 mc_pnum2 = mc_photo_num;
                 mc_atyp2 = mc_album_type;

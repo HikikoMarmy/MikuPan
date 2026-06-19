@@ -289,6 +289,12 @@ set(MIKUPAN_SOURCES
         src/mikupan/mikupan_screenshot.h
         src/mikupan/mikupan_rng.c
         src/mikupan/mikupan_rng.h
+        src/mikupan/ui/mikupan_framegraph.c
+        src/mikupan/ui/mikupan_framegraph.h
+        src/mikupan/ui/mikupan_ui_cheats.c
+        src/mikupan/ui/mikupan_ui_cheats.h
+        src/mikupan/ui/mikupan_ui_debug.c
+        src/mikupan/ui/mikupan_ui_debug.h
 )
 
 # --- Build version info (git tag + commit) -------------------------------------
@@ -344,7 +350,6 @@ target_link_libraries(MikuPan PRIVATE
         m
         cimgui
         SDL3::SDL3
-        SDL3_mixer::SDL3_mixer
         spdlog::spdlog
         cglm
         avcodec

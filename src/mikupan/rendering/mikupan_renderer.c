@@ -1,8 +1,8 @@
 #include "mikupan_renderer.h"
-#include "mikupan_renderer_internal.h"
 #include "../mikupan_types.h"
 #include "SDL3/SDL_hints.h"
 #include "SDL3/SDL_init.h"
+#include "SDL3/SDL_timer.h"
 #include "cglm/cglm.h"
 #include "graphics/graph2d/message.h"
 #include "graphics/graph3d/sgsu.h"
@@ -12,10 +12,11 @@
 #include "mikupan/mikupan_logging_c.h"
 #include "mikupan/mikupan_screenshot.h"
 #include "mikupan/ui/mikupan_ui.h"
+#include "mikupan/ui/mikupan_ui_debug.h"
 #include "mikupan_gpu.h"
 #include "mikupan_profiler.h"
+#include "mikupan_renderer_internal.h"
 #include "mikupan_shader.h"
-#include "SDL3/SDL_timer.h"
 
 #include <mikupan_version.h>
 #include <stdlib.h>
@@ -756,20 +757,6 @@ int MikuPan_GetWindowWidth()
 int MikuPan_GetWindowHeight()
 {
     return render_back_msaa.texture.height;
-}
-
-static int MikuPan_ClampInt(int value, int min_value, int max_value)
-{
-    if (value < min_value) return min_value;
-    if (value > max_value) return max_value;
-    return value;
-}
-
-static float MikuPan_ClampFloat(float value, float min_value, float max_value)
-{
-    if (value < min_value) return min_value;
-    if (value > max_value) return max_value;
-    return value;
 }
 
 void MikuPan_EnableMirrorScissorFromGsBounds(int xmin, int ymin, int xmax, int ymax)

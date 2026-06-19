@@ -27,5 +27,7 @@ float MikuPan_ConvertGsDepthToNDC(float gs_z);
 void MikuPan_ConvertScreenToNDCCoord(int* out, float ref_width, float ref_height, float target_width, float target_height);
 void MikuPan_ConvertPs2GSCoordToNDC(float* out, float window_width, float window_height, float gs_x, float gs_y);
 void MikuPan_ConvertPs2GSSubPixelToNDC(float* out, float window_width, float window_height, int gs_sub_x, int gs_sub_y);
+int MikuPan_ClampInt(int value, int min_value, int max_value);
+float MikuPan_ClampFloat(float value, float min_value, float max_value);
 
 #endif//MIKUPAN_MIKUPAN_UTILS_H

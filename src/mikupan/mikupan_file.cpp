@@ -1239,9 +1239,19 @@ u_char MikuPan_CreateFolder(const char *folder)
     return 1;
 }
 
-int MikuPan_GetListFiles(const char *folder, MikuPan_McTblGetDir *table)
+int MikuPan_GetListFiles(const char *folder, MikuPan_McTblGetDir *table, int max_entries)
 {
-    auto relative_path = std::filesystem::path(MikuPan_GetRelativePath(folder));
+    std::string regex_folder(folder);
+    size_t wildcard = regex_folder.find('*');
+
+    if (wildcard != std::string::npos)
+    {
+        regex_folder = regex_folder.substr(0, wildcard);
+    }
+
+    std::filesystem::path regex_folder_path(regex_folder);
+
+    auto relative_path = std::filesystem::path(MikuPan_GetRelativePath(regex_folder.c_str()));
 
     if (!std::filesystem::is_directory(relative_path))
     {
@@ -1249,12 +1259,22 @@ int MikuPan_GetListFiles(const char *folder, MikuPan_McTblGetDir *table)
     }
 
     int i = 0;
-    for (const auto& entry : std::filesystem::directory_iterator(relative_path))
+    for (const auto& entry : std::filesystem::recursive_directory_iterator(relative_path))
     {
+        if (entry.path().compare(regex_folder_path) == std::string::npos)
+        {
+            continue;
+        }
+
+        if (entry.is_directory())
+        {
+            continue;
+        }
+
         table[i].FileSizeByte = entry.file_size();
         strncpy(reinterpret_cast<char *>(table[i].EntryName), entry.path().filename().generic_u8string().c_str(), sizeof(table[i].EntryName));
 
-        if (i++, i > 18)
+        if (++i > max_entries)
         {
             break;
         }

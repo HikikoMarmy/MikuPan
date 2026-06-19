@@ -2,36 +2,23 @@
 
 #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
 #include "cimgui.h"
-
-#include "glad/gl.h"
-#include "graphics/graph2d/g2d_debug.h"
+#include "SDL3/SDL_dialog.h"
+#include "SDL3/SDL_hints.h"
+#include "SDL3/SDL_platform.h"
 #include "ingame/camera/camera.h"
-#include "ingame/menu/item.h"
 #include "main/glob.h"
-#include "mikupan/gs/mikupan_texture_manager_c.h"
+#include "mikupan/mikupan_config.h"
 #include "mikupan/mikupan_controller.h"
 #include "mikupan/mikupan_file_c.h"
 #include "mikupan/mikupan_screenshot.h"
 #include "mikupan/mikupan_utils.h"
 #include "mikupan/rendering/mikupan_gpu.h"
-#include "mikupan/rendering/mikupan_meshcache.h"
-#include "mikupan/rendering/mikupan_profiler.h"
 #include "mikupan/rendering/mikupan_renderer.h"
-#include "mikupan/rendering/mikupan_shader.h"
 #include "mikupan/ui/mikupan_ui.h"
-#include "outgame/mode_slct.h"
-#include "typedefs.h"
-
-#include "mikupan/mikupan_config.h"
-
-#include "SDL3/SDL_dialog.h"
-#include "SDL3/SDL_hints.h"
-#include "SDL3/SDL_platform.h"
-
+#include "mikupan_ui_cheats.h"
+#include "mikupan_ui_debug.h"
 #include "mikupan_version.h"
-
 #include <limits.h>
-#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -43,71 +30,11 @@ void MikuPan_ImGui_ImplNewFrame(void);
 void MikuPan_ImGui_ImplProcessEvent(SDL_Event* event);
 void MikuPan_ImGui_ImplRenderDrawData(void);
 
-// -- Renderer-side timing accessors (defined in mikupan_renderer.c) ----------
-float MikuPan_GetLastFrameCpuMs(void);
-float MikuPan_GetLastFrameGpuMs(void);
-float MikuPan_PerfGetSectionMs(int section);
-int MikuPan_PerfGetTexL1Hits(void);
-int MikuPan_PerfGetTexL1Misses(void);
-
-/// CPU section IDs (must match MikuPan_PerfSection in mikupan_profiler.h)
-#define MP_PERF_MESH_RENDER 0
-#define MP_PERF_SPRITE_RENDER 1
-#define MP_PERF_BATCH_FLUSH 2
-#define MP_PERF_DRAWUI 3
-#define MP_PERF_RENDERUI 4
-#define MP_PERF_DRAW_SUBMIT 5
-#define MP_PERF_BUFFER_UPLOAD 6
-#define MP_PERF_STATE_CHANGE 7
-
-/// Sub-sections decomposing MP_PERF_STATE_CHANGE (sum ≈ STATE_CHANGE).
-#define MP_PERF_SC_SHADER 8
-#define MP_PERF_SC_TEXTURE 9
-#define MP_PERF_SC_RS3D 10
-#define MP_PERF_SC_VAO 11
-
-/// Per-mesh-type sub-sections decomposing MP_PERF_MESH_RENDER.
-#define MP_PERF_MESH_0x2 12
-#define MP_PERF_MESH_0xA 13
-#define MP_PERF_MESH_0x10 14
-#define MP_PERF_MESH_0x12 15
-#define MP_PERF_MESH_0x32 16
-#define MP_PERF_MESH_0x82 17
-
-/// Sub-sections decomposing MP_PERF_SC_TEXTURE — fine-grained breakdown of
-/// where MikuPan_SetTexture spends its time.
-#define MP_PERF_TEX_L1_LOOKUP 18
-#define MP_PERF_TEX_HASH 19
-#define MP_PERF_TEX_L2_LOOKUP 20
-#define MP_PERF_TEX_CREATE 21
-#define MP_PERF_TEX_BIND 22
-
-/// "Other / unknown" breakdown — uninstrumented PS2/SG scene-graph emulation.
-#define MP_PERF_SKIN_PREP 23
-#define MP_PERF_COORD_CALC 24
-#define MP_PERF_LIGHT_SETUP 25
-
-// -- GS instrumentation (defined in mikupan_gs.cpp) --------------------------
-int MikuPan_GsGetUploadCount(void);
-int MikuPan_GsGetUploadBytes(void);
-float MikuPan_GsGetUploadMs(void);
-int MikuPan_GsGetDownloadCount(void);
-int MikuPan_GsGetDownloadBytes(void);
-float MikuPan_GsGetDownloadMs(void);
-
 // -- State -------------------------------------------------------------------
 const int msaa_list[] = {0, 2, 4, 8};
-int show_fps = 0;
 int show_menu_bar = 0;
-
-static int show_frame_time_graph = 0;
-static int render_wireframe = 0;
-static int render_normals = 0;
+static int show_controller_remap = 0;
 static int msaa_samples = 0;
-
-// Render resolution defaults to the primary display's current mode. The combo
-// box below is populated from the primary display's supported fullscreen modes
-// in MikuPan_InitUi; until that runs it falls back to a sensible 1080p.
 static int render_resolution_width = 1920;
 static int render_resolution_height = 1080;
 
@@ -120,75 +47,22 @@ static const char* resolution_label_ptrs[MIKUPAN_MAX_RESOLUTIONS];
 static int resolution_count = 0;
 static int resolution_selected = 0;
 
-/* SDL_GPU backend selector. Index 0 is always "Auto" (empty driver name); the
- * rest mirror SDL_GetGPUDriver. Populated once in MikuPan_InitUi. Drivers that
- * consume none of the shipped shader formats (MIKUPAN_GPU_SHADER_FORMATS)
- * stay listed but disabled. The device is created once at startup, so a
- * change applies on the next launch. */
 #define MIKUPAN_MAX_GPU_DRIVERS 8
 static char gpu_driver_names[MIKUPAN_MAX_GPU_DRIVERS + 1][32];
 static char gpu_driver_labels[MIKUPAN_MAX_GPU_DRIVERS + 1][64];
 static int gpu_driver_supported[MIKUPAN_MAX_GPU_DRIVERS + 1];
 static int gpu_driver_count = 0;
 static int gpu_driver_selected = 0;
-
-static int show_texture_list = 0;
-static int show_controller_remap = 0;
-static int show_shader_reload = 0;
-static int show_draw_inspector = 0;
-static int show_camera_debug = 0;
-static int show_photo_debug_window = 0;
-static int show_shadow_debug_window = 0;
-static int cheat_photo_mode = 0;
-static int cheat_photo_mode_previous_cam_mode = 0;
-static int cheat_tofu_mode = 0;
-static float cheat_tofu_color[3] = {0.86f, 0.81f, 0.63f};
-static int shadow_debug_auto_probe = 0;
-static int shadow_debug_flip_y = 1;
-static float shadow_debug_preview_size = 384.0f;
-static float photo_debug_preview_size = 256.0f;
 static char config_save_status[128] = {0};
 static SDL_Window* ui_window = NULL;
-
-// Last reload error (per-shader: index 0..MAX-1; index MAX = "reload all")
-// — kept around so the user can read why the last reload failed without it
-// flying past in the log.
-static char last_reload_error[1280] = {0};
-
 static int is_fullscreen = 0;
-static int window_mode =
-    0; /* MikuPan_WindowMode: 0=windowed, 1=fullscreen, 2=borderless */
-static int is_vsync = 0;
-static int disable_gs_uploads = 0;
-static int show_bounding_boxes = 0;
-static int show_mesh_0x82 = 1;
-static int show_mesh_0x32 = 1;
-static int show_mesh_0x10 = 1;
-static int show_mesh_0x12 = 1;
-static int show_mesh_0x2 = 1;
-static int disable_lighting = 0;
-static int show_static_lighting = 0;
-static int mesh_lighting_mode = 1;// 0 = per-fragment, 1 = per-vertex
-static float normal_length = 10.0f;
+static int window_mode = 0; /* MikuPan_WindowMode: 0=windowed, 1=fullscreen, 2=borderless */
 
 const int no_navigation_window =
     ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDecoration
     | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_AlwaysAutoResize
     | ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoInputs;
 
-// The perf panel has interactive controls (collapsible trees) so it can't use
-// no_navigation_window — NoInputs/NoNav would eat every click. But keep it fixed
-// and chrome-free like before: no move, no decoration/title bar, transparent
-// background, auto-sized. The only difference from no_navigation_window is that
-// inputs/nav stay enabled so the sub-sections can actually expand.
-const int perf_window_flags =
-    ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoDecoration
-    | ImGuiWindowFlags_NoBackground | ImGuiWindowFlags_AlwaysAutoResize;
-
-// Post-process tone controls — applied by the POSTPROCESS_SHADER on the
-// final scene-to-window blit. Defaults are no-ops (1.0 brightness, 1.0
-// gamma); the renderer reads them via the getters below each frame and
-// pushes them as uniforms.
 static float brightness = 1.0f;
 static float gamma_value = 1.0f;
 
@@ -237,36 +111,6 @@ static int MikuPan_ClampFontIndex(int font)
     }
 
     return font;
-}
-
-static float MikuPan_ClampFloat(float value, float min_value, float max_value)
-{
-    if (value < min_value)
-    {
-        return min_value;
-    }
-
-    if (value > max_value)
-    {
-        return max_value;
-    }
-
-    return value;
-}
-
-static int MikuPan_ClampInt(int value, int min_value, int max_value)
-{
-    if (value < min_value)
-    {
-        return min_value;
-    }
-
-    if (value > max_value)
-    {
-        return max_value;
-    }
-
-    return value;
 }
 
 static float MikuPan_CalculateUiDisplayScale(SDL_Window* window)
@@ -388,8 +232,7 @@ static void MikuPan_UiStoreRuntimeConfiguration(void)
     mikupan_configuration.renderer.window_mode = window_mode;
     is_fullscreen = (window_mode != MIKUPAN_WINDOW_WINDOWED);
     mikupan_configuration.renderer.is_fullscreen = is_fullscreen;
-    mikupan_configuration.renderer.vsync = is_vsync;
-    mikupan_configuration.renderer.lighting_mode = mesh_lighting_mode;
+    mikupan_configuration.renderer.lighting_mode = MikuPan_GetMeshLightingMode();
     mikupan_configuration.renderer.msaa_index = msaa_samples;
     mikupan_configuration.renderer.shadow_resolution =
         MikuPan_GetShadowResolution();
@@ -420,654 +263,6 @@ static void MikuPan_UiStoreRuntimeConfiguration(void)
     MikuPan_ControllerStoreBindingsToConfig();
 }
 
-// -- FrameTimeGraph ----------------------------------------------------------
-#define FRAME_GRAPH_CAPACITY 600
-
-typedef struct
-{
-    float times[FRAME_GRAPH_CAPACITY];///< total wall-clock per frame (ms)
-    float cpu[FRAME_GRAPH_CAPACITY];  ///< CPU command-submission time (ms)
-    float gpu
-        [FRAME_GRAPH_CAPACITY];///< SDL_GPU idle/present wait after submit (ms)
-    int count;
-    int max_samples;
-    float ms_scale;
-} FrameTimeGraph;
-
-static FrameTimeGraph g_frame_graph = {.count = 0,
-                                       .max_samples = 600,
-                                       .ms_scale = -1.0f};
-
-static void FrameTimeGraph_Update(FrameTimeGraph* g, float total_ms,
-                                  float cpu_ms, float gpu_ms)
-{
-    if (g->count >= g->max_samples)
-    {
-        memmove(g->times, g->times + 1, (g->count - 1) * sizeof(float));
-        memmove(g->cpu, g->cpu + 1, (g->count - 1) * sizeof(float));
-        memmove(g->gpu, g->gpu + 1, (g->count - 1) * sizeof(float));
-        g->count--;
-    }
-    g->times[g->count] = total_ms;
-    g->cpu[g->count] = cpu_ms;
-    g->gpu[g->count] = gpu_ms;
-    g->count++;
-}
-
-/* ── Condensed perf-table helpers ───────────────────────────────────────────
- * A "perf row" is label | milliseconds | share-of-total, laid out as a borderless
- * 3-column table so each section lines up tightly instead of sprawling down a
- * flat igText list. `total` is the denominator for the share column (CPU frame
- * time for the top-level buckets, or a parent bucket for sub-rows). */
-static int PerfTableBegin(const char* id)
-{
-    if (!igBeginTable(id, 3,
-                      ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH
-                          | ImGuiTableFlags_SizingFixedFit
-                          | ImGuiTableFlags_NoHostExtendX,
-                      (ImVec2) {0.0f, 0.0f}, 0.0f))
-    {
-        return 0;
-    }
-    igTableSetupColumn("Section", ImGuiTableColumnFlags_WidthStretch, 0.0f, 0);
-    igTableSetupColumn("ms", ImGuiTableColumnFlags_WidthFixed, 0.0f, 0);
-    igTableSetupColumn("share", ImGuiTableColumnFlags_WidthFixed, 0.0f, 0);
-    return 1;
-}
-
-static void PerfRow(const char* label, float ms, float total)
-{
-    igTableNextRow(0, 0.0f);
-    igTableSetColumnIndex(0);
-    igTextUnformatted(label, NULL);
-    igTableSetColumnIndex(1);
-    igText("%6.2f", ms);
-    igTableSetColumnIndex(2);
-    if (total > 0.001f)
-    {
-        igText("%3.0f%%", 100.0f * ms / total);
-    }
-    else
-    {
-        igTextUnformatted("--", NULL);
-    }
-}
-
-static void FrameTimeGraph_Draw(FrameTimeGraph* g)
-{
-    if (g->count == 0)
-    {
-        igTextUnformatted("No frame data yet", NULL);
-        return;
-    }
-
-    igBegin("Frame Time Graph", NULL, perf_window_flags);
-
-    float total_sum = 0.0f, total_max = g->times[0];
-    float cpu_sum = 0.0f, cpu_max = g->cpu[0];
-    float gpu_sum = 0.0f, gpu_max = g->gpu[0];
-
-    for (int i = 0; i < g->count; i++)
-    {
-        total_sum += g->times[i];
-        if (g->times[i] > total_max)
-        {
-            total_max = g->times[i];
-        }
-        cpu_sum += g->cpu[i];
-        if (g->cpu[i] > cpu_max)
-        {
-            cpu_max = g->cpu[i];
-        }
-        gpu_sum += g->gpu[i];
-        if (g->gpu[i] > gpu_max)
-        {
-            gpu_max = g->gpu[i];
-        }
-    }
-
-    float total_avg = total_sum / (float) g->count;
-    float cpu_avg = cpu_sum / (float) g->count;
-    float gpu_avg = gpu_sum / (float) g->count;
-    float total_latest = g->times[g->count - 1];
-    float cpu_latest = g->cpu[g->count - 1];
-    float gpu_latest = g->gpu[g->count - 1];
-
-    // One-line headline: current frame, FPS, and where this frame waited.
-    // The SDL_GPU value is a post-submit idle wait, not a hardware GPU timer.
-    igText("%.2f ms   %.0f FPS", total_latest,
-           total_latest > 0.0f ? 1000.0f / total_latest : 0.0f);
-    igSameLine(0.0f, -1.0f);
-    if (gpu_latest < cpu_latest * 0.25f)
-    {
-        igTextColored((ImVec4) {1.0f, 0.6f, 0.3f, 1.0f}, "   - CPU submit");
-    }
-    else if (gpu_latest > cpu_latest)
-    {
-        igTextColored((ImVec4) {0.4f, 0.7f, 1.0f, 1.0f},
-                      "   - GPU/present wait");
-    }
-    else
-    {
-        igTextColored((ImVec4) {0.6f, 0.9f, 0.6f, 1.0f}, "   - balanced");
-    }
-
-    // Frame / CPU / GPU now / avg / max in an aligned 4-column table.
-    if (igBeginTable("##perf_summary", 4,
-                     ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH
-                         | ImGuiTableFlags_SizingFixedFit
-                         | ImGuiTableFlags_NoHostExtendX,
-                     (ImVec2) {0.0f, 0.0f}, 0.0f))
-    {
-        igTableSetupColumn("", ImGuiTableColumnFlags_WidthStretch, 0.0f, 0);
-        igTableSetupColumn("now", ImGuiTableColumnFlags_WidthFixed, 0.0f, 0);
-        igTableSetupColumn("avg", ImGuiTableColumnFlags_WidthFixed, 0.0f, 0);
-        igTableSetupColumn("max", ImGuiTableColumnFlags_WidthFixed, 0.0f, 0);
-
-#define MP_SUMMARY_ROW(name, now, avg, mx)                                     \
-    igTableNextRow(0, 0.0f);                                                   \
-    igTableSetColumnIndex(0);                                                  \
-    igTextUnformatted(name, NULL);                                             \
-    igTableSetColumnIndex(1);                                                  \
-    igText("%6.2f", now);                                                      \
-    igTableSetColumnIndex(2);                                                  \
-    igText("%6.2f", avg);                                                      \
-    igTableSetColumnIndex(3);                                                  \
-    igText("%6.2f", mx)
-
-        MP_SUMMARY_ROW("Frame", total_latest, total_avg, total_max);
-        MP_SUMMARY_ROW("CPU", cpu_latest, cpu_avg, cpu_max);
-        MP_SUMMARY_ROW("GPU wait", gpu_latest, gpu_avg, gpu_max);
-#undef MP_SUMMARY_ROW
-        igEndTable();
-    }
-    igTextDisabled("CPU = submit; GPU wait = SDL_WaitForGPUIdle after submit");
-    if (MikuPan_IsVsync())
-    {
-        igTextDisabled(
-            "VSync is on: wait can converge to the display interval.");
-    }
-
-    igSpacing();
-
-    // Shared y-axis scale so the three plots are directly comparable.
-    float scale = total_max;
-    if (cpu_max > scale)
-    {
-        scale = cpu_max;
-    }
-    if (gpu_max > scale)
-    {
-        scale = gpu_max;
-    }
-    if (g->ms_scale > 0.0f)
-    {
-        scale = g->ms_scale;
-    }
-    if (scale < 16.7f)
-    {
-        scale = 16.7f;// always show at least the 60-fps line
-    }
-
-    char total_overlay[64], cpu_overlay[64], gpu_overlay[64];
-    snprintf(total_overlay, sizeof(total_overlay), "Total: %.2f ms",
-             total_latest);
-    snprintf(cpu_overlay, sizeof(cpu_overlay), "CPU:   %.2f ms", cpu_latest);
-    snprintf(gpu_overlay, sizeof(gpu_overlay), "GPU wait: %.2f ms", gpu_latest);
-
-    const ImVec2 plot_size = (ImVec2) {0.0f, 60.0f};
-    igPlotLines_FloatPtr("##frame_total", g->times, g->count, 0, total_overlay,
-                         0.0f, scale, plot_size, (int) sizeof(float));
-    igPlotLines_FloatPtr("##frame_cpu", g->cpu, g->count, 0, cpu_overlay, 0.0f,
-                         scale, plot_size, (int) sizeof(float));
-    igPlotLines_FloatPtr("##frame_gpu", g->gpu, g->count, 0, gpu_overlay, 0.0f,
-                         scale, plot_size, (int) sizeof(float));
-
-    igSpacing();
-    igSeparatorText("CPU breakdown (last frame)");
-
-    float perf_mesh = MikuPan_PerfGetSectionMs(MP_PERF_MESH_RENDER);
-    float perf_sprite = MikuPan_PerfGetSectionMs(MP_PERF_SPRITE_RENDER);
-    float perf_flush = MikuPan_PerfGetSectionMs(MP_PERF_BATCH_FLUSH);
-    float perf_drawui = MikuPan_PerfGetSectionMs(MP_PERF_DRAWUI);
-    float perf_render = MikuPan_PerfGetSectionMs(MP_PERF_RENDERUI);
-    float perf_gs_up = MikuPan_GsGetUploadMs();
-    float perf_gs_dl = MikuPan_GsGetDownloadMs();
-
-    /// "Other" breakdown — uninstrumented PS2/SG scene-graph emulation, now
-    /// partially attributed to leaf timers (these are also subtracted from the
-    /// residual "Other / unknown" so the columns still sum to the CPU total).
-    float perf_skin = MikuPan_PerfGetSectionMs(MP_PERF_SKIN_PREP);
-    float perf_coord = MikuPan_PerfGetSectionMs(MP_PERF_COORD_CALC);
-    float perf_light = MikuPan_PerfGetSectionMs(MP_PERF_LIGHT_SETUP);
-
-    float perf_known = perf_mesh + perf_sprite + perf_flush + perf_drawui
-                       + perf_render + perf_gs_up + perf_gs_dl + perf_skin
-                       + perf_coord + perf_light;
-    float perf_other = cpu_latest - perf_known;
-    if (perf_other < 0.0f)
-    {
-        perf_other = 0.0f;
-    }
-
-    if (PerfTableBegin("##cpu_breakdown"))
-    {
-        PerfRow("Mesh render", perf_mesh, cpu_latest);
-        PerfRow("Sprite / UI render", perf_sprite, cpu_latest);
-        PerfRow("Batch flushes", perf_flush, cpu_latest);
-        PerfRow("DrawUi (game)", perf_drawui, cpu_latest);
-        PerfRow("RenderUi (ImGui)", perf_render, cpu_latest);
-        PerfRow("GS uploads", perf_gs_up, cpu_latest);
-        PerfRow("GS downloads", perf_gs_dl, cpu_latest);
-        PerfRow("Skin prep (SetVUVN)", perf_skin, cpu_latest);
-        PerfRow("Coord calc (SetLWS)", perf_coord, cpu_latest);
-        PerfRow("Light setup", perf_light, cpu_latest);
-        PerfRow("Other / unknown", perf_other, cpu_latest);
-        igEndTable();
-    }
-
-    // Per-mesh-type breakdown (sub-sections of MESH_RENDER) — collapsed by
-    // default. Sum ≈ Mesh render minus the per-renderer dispatch overhead; the
-    // share column here is relative to the Mesh render total.
-    if (igTreeNode_Str("Mesh types"))
-    {
-        if (PerfTableBegin("##mesh_types"))
-        {
-            PerfRow("0x2", MikuPan_PerfGetSectionMs(MP_PERF_MESH_0x2),
-                    perf_mesh);
-            PerfRow("0xA", MikuPan_PerfGetSectionMs(MP_PERF_MESH_0xA),
-                    perf_mesh);
-            PerfRow("0x10", MikuPan_PerfGetSectionMs(MP_PERF_MESH_0x10),
-                    perf_mesh);
-            PerfRow("0x12", MikuPan_PerfGetSectionMs(MP_PERF_MESH_0x12),
-                    perf_mesh);
-            PerfRow("0x32", MikuPan_PerfGetSectionMs(MP_PERF_MESH_0x32),
-                    perf_mesh);
-            PerfRow("0x82", MikuPan_PerfGetSectionMs(MP_PERF_MESH_0x82),
-                    perf_mesh);
-            igEndTable();
-        }
-        igTextDisabled("share is relative to Mesh render total");
-        igTreePop();
-    }
-
-    // Cross-cutting slices — these overlap the buckets above (they are NOT
-    // additive frame time), so they live in a collapsed tree. Descriptions are
-    // folded into the row labels to keep each one to a single line. Indented
-    // labels show the State-changes → per-call → per-texture-step nesting.
-    if (igTreeNode_Str("Cross-cutting & state changes"))
-    {
-        float perf_draw = MikuPan_PerfGetSectionMs(MP_PERF_DRAW_SUBMIT);
-        float perf_upload = MikuPan_PerfGetSectionMs(MP_PERF_BUFFER_UPLOAD);
-        float perf_state = MikuPan_PerfGetSectionMs(MP_PERF_STATE_CHANGE);
-        float perf_sc_shader = MikuPan_PerfGetSectionMs(MP_PERF_SC_SHADER);
-        float perf_sc_texture = MikuPan_PerfGetSectionMs(MP_PERF_SC_TEXTURE);
-        float perf_sc_rs3d = MikuPan_PerfGetSectionMs(MP_PERF_SC_RS3D);
-        float perf_sc_vao = MikuPan_PerfGetSectionMs(MP_PERF_SC_VAO);
-        float perf_tex_l1 = MikuPan_PerfGetSectionMs(MP_PERF_TEX_L1_LOOKUP);
-        float perf_tex_hash = MikuPan_PerfGetSectionMs(MP_PERF_TEX_HASH);
-        float perf_tex_l2 = MikuPan_PerfGetSectionMs(MP_PERF_TEX_L2_LOOKUP);
-        float perf_tex_create = MikuPan_PerfGetSectionMs(MP_PERF_TEX_CREATE);
-        float perf_tex_bind = MikuPan_PerfGetSectionMs(MP_PERF_TEX_BIND);
-        int l1_hits = MikuPan_PerfGetTexL1Hits();
-        int l1_misses = MikuPan_PerfGetTexL1Misses();
-
-        if (PerfTableBegin("##cross_cutting"))
-        {
-            PerfRow("glDraw* submit (driver/call)", perf_draw, cpu_latest);
-            PerfRow("Buffer uploads (map+memcpy)", perf_upload, cpu_latest);
-            PerfRow("State changes (cached path)", perf_state, cpu_latest);
-            PerfRow("    Shader (glUseProgram)", perf_sc_shader, cpu_latest);
-            PerfRow("    Texture (lookup+bind)", perf_sc_texture, cpu_latest);
-            PerfRow("        L1 lookup (tex0->info)", perf_tex_l1, cpu_latest);
-            PerfRow("        Hash (XXH3/GS mem)", perf_tex_hash, cpu_latest);
-            PerfRow("        L2 lookup (hash->info)", perf_tex_l2, cpu_latest);
-            PerfRow("        Create (glTexImage+mip)", perf_tex_create,
-                    cpu_latest);
-            PerfRow("        Bind (glBindTexture)", perf_tex_bind, cpu_latest);
-            PerfRow("    RenderState (depth/cull/blend)", perf_sc_rs3d,
-                    cpu_latest);
-            PerfRow("    VAO (glBindVertexArray)", perf_sc_vao, cpu_latest);
-            igEndTable();
-        }
-        igText("Texture L1: %d hits / %d misses  (miss -> XXH3 over GS memory)",
-               l1_hits, l1_misses);
-        igTextDisabled("subsets of the buckets above — not additional time");
-        igTreePop();
-    }
-
-    igSpacing();
-    igSeparatorText("GS texture traffic (last frame)");
-
-    int ul_count = MikuPan_GsGetUploadCount();
-    int ul_bytes = MikuPan_GsGetUploadBytes();
-    int dl_count = MikuPan_GsGetDownloadCount();
-    int dl_bytes = MikuPan_GsGetDownloadBytes();
-
-    igText("Up %d calls / %.1f KB     Down %d calls / %.1f KB", ul_count,
-           ul_bytes / 1024.0f, dl_count, dl_bytes / 1024.0f);
-
-    igEnd();
-}
-
-// -- Texture list helpers ----------------------------------------------------
-#define TEXTURE_LIST_MAX 4096
-
-static MikuPan_TextureInfo* tex_list[TEXTURE_LIST_MAX];
-static int tex_list_count = 0;
-
-static void CollectTexture(MikuPan_TextureInfo* tex, void* ud)
-{
-    int* count = (int*) ud;
-    if (*count < TEXTURE_LIST_MAX)
-    {
-        tex_list[(*count)++] = tex;
-    }
-}
-
-static int CompareTextureById(const void* a, const void* b)
-{
-    const MikuPan_TextureInfo* ta = *(const MikuPan_TextureInfo**) a;
-    const MikuPan_TextureInfo* tb = *(const MikuPan_TextureInfo**) b;
-    return (int) ta->id - (int) tb->id;
-}
-
-// -- Hot shader reload window ------------------------------------------------
-
-void MikuPan_UiShaderReloadWindow(void)
-{
-    if (!show_shader_reload)
-    {
-        return;
-    }
-
-    igSetNextWindowSize((ImVec2) {560.0f, 480.0f}, ImGuiCond_FirstUseEver);
-    if (!igBegin("Shader Reload", (bool*) &show_shader_reload, 0))
-    {
-        igEnd();
-        return;
-    }
-
-    igTextDisabled(
-        "Edits to .vert/.frag/.geom files take effect after Reload.");
-    igTextDisabled(
-        "Failed reloads keep the live program — no need to restart.");
-    igSpacing();
-
-    if (igButton("Reload All  (F5)", (ImVec2) {160.0f, 0.0f}))
-    {
-        last_reload_error[0] = '\0';
-        MikuPan_ReloadAllShaders(last_reload_error,
-                                 (int) sizeof(last_reload_error));
-    }
-    igSameLine(0.0f, -1.0f);
-    igTextDisabled("9 programs");
-
-    igSpacing();
-    igSeparator();
-    igSpacing();
-
-    for (int i = 0; i < MAX_SHADER_PROGRAMS; i++)
-    {
-        igPushID_Int(i);
-
-        if (igButton("Reload", (ImVec2) {80.0f, 0.0f}))
-        {
-            last_reload_error[0] = '\0';
-            MikuPan_ReloadShader(i, last_reload_error,
-                                 (int) sizeof(last_reload_error));
-        }
-        igSameLine(0.0f, -1.0f);
-        igText("%-26s id=%u", MikuPan_GetShaderName(i),
-               (unsigned) shader_list[i]);
-
-        // Source paths underneath, indented — handy when there's any doubt
-        // about which file an edit has to land in for a given shader.
-        const char* vp = MikuPan_GetShaderVertSource(i);
-        const char* gp = MikuPan_GetShaderGeomSource(i);
-        const char* fp = MikuPan_GetShaderFragSource(i);
-        if (vp)
-        {
-            igText("    vert: %s", vp);
-        }
-        if (gp)
-        {
-            igText("    geom: %s", gp);
-        }
-        if (fp)
-        {
-            igText("    frag: %s", fp);
-        }
-
-        igSpacing();
-        igPopID();
-    }
-
-    if (last_reload_error[0] != '\0')
-    {
-        igSpacing();
-        igSeparator();
-        igTextColored((ImVec4) {1.0f, 0.4f, 0.4f, 1.0f}, "Last reload error:");
-        igTextWrapped("%s", last_reload_error);
-        if (igButton("Clear", (ImVec2) {0, 0}))
-        {
-            last_reload_error[0] = '\0';
-        }
-    }
-
-    igEnd();
-}
-
-// -- Per-draw-call inspector -------------------------------------------------
-
-static const char* GlPrimName(GLenum mode)
-{
-    switch (mode)
-    {
-        case GL_POINTS:
-            return "POINTS";
-        case GL_LINES:
-            return "LINES";
-        case GL_LINE_LOOP:
-            return "LINE_LOOP";
-        case GL_LINE_STRIP:
-            return "LINE_STRIP";
-        case GL_TRIANGLES:
-            return "TRIANGLES";
-        case GL_TRIANGLE_STRIP:
-            return "TRIANGLE_STRIP";
-        case GL_TRIANGLE_FAN:
-            return "TRIANGLE_FAN";
-        default:
-            return "?";
-    }
-}
-
-void MikuPan_UiDrawCallInspector(void)
-{
-    if (!show_draw_inspector)
-    {
-        // Auto-disable capture when the panel closes — no point paying the
-        // capture cost (small but nonzero) when nothing is reading it.
-        if (MikuPan_DrawCapEnabled())
-        {
-            MikuPan_DrawCapEnable(0);
-        }
-        return;
-    }
-
-    igSetNextWindowSize((ImVec2) {780.0f, 540.0f}, ImGuiCond_FirstUseEver);
-    if (!igBegin("Draw Call Inspector", (bool*) &show_draw_inspector, 0))
-    {
-        igEnd();
-        return;
-    }
-
-    int enabled = MikuPan_DrawCapEnabled();
-    if (igCheckbox("Capture", (bool*) &enabled))
-    {
-        MikuPan_DrawCapEnable(enabled);
-    }
-
-    igSameLine(0.0f, -1.0f);
-    int isolate = MikuPan_DrawCapGetIsolate();
-    if (isolate >= 0)
-    {
-        igTextColored((ImVec4) {1.0f, 0.7f, 0.2f, 1.0f}, "  ISOLATING #%d",
-                      isolate);
-        igSameLine(0.0f, -1.0f);
-        if (igButton("Show All", (ImVec2) {0, 0}))
-        {
-            MikuPan_DrawCapSetIsolate(-1);
-        }
-    }
-    else
-    {
-        igTextDisabled("  (click 'Solo' on a row to render only that draw)");
-    }
-
-    int count = MikuPan_DrawCapLastCount();
-    igText("Last frame: %d draw calls captured", count);
-
-    igSpacing();
-    igSeparator();
-
-    // Header row + scrollable child so long captures stay manageable.
-    igText("%-4s %-6s %-16s %-26s %-7s %-7s %-9s %s", "#", "skip?", "primitive",
-           "shader", "vao", "tex0", "ms", "");
-
-    igBeginChild_Str("##draw_list", (ImVec2) {0.0f, 0.0f}, 0, 0);
-
-    for (int i = 0; i < count; i++)
-    {
-        const MikuPan_DrawCapEntry* e = MikuPan_DrawCapLastEntryAt(i);
-        if (e == NULL)
-        {
-            break;
-        }
-
-        igPushID_Int(i);
-
-        ImVec4 col = e->skipped ? (ImVec4) {0.6f, 0.6f, 0.6f, 1.0f}
-                                : (ImVec4) {0.9f, 0.9f, 0.9f, 1.0f};
-
-        igTextColored(col, "%-4d %-6s %-16s %-26s %-7u %-7u %7.3f  count=%d%s",
-                      i, e->skipped ? "skip" : "draw", GlPrimName(e->mode),
-                      e->shader_idx >= 0 ? MikuPan_GetShaderName(e->shader_idx)
-                                         : "<external>",
-                      (unsigned) e->vao, (unsigned) e->texture0, e->ms,
-                      e->count, e->is_elements ? " (elements)" : "");
-
-        igSameLine(0.0f, -1.0f);
-
-        if (isolate == i)
-        {
-            if (igButton("Unsolo", (ImVec2) {70.0f, 0.0f}))
-            {
-                MikuPan_DrawCapSetIsolate(-1);
-            }
-        }
-        else
-        {
-            if (igButton("Solo", (ImVec2) {70.0f, 0.0f}))
-            {
-                MikuPan_DrawCapSetIsolate(i);
-            }
-        }
-
-        igPopID();
-    }
-
-    igEndChild();
-    igEnd();
-}
-
-static const char* MikuPan_CameraDebugKindName(int kind)
-{
-    switch (kind)
-    {
-        case 0:
-            return "Normal";
-        case 1:
-            return "Battle";
-        case 2:
-            return "Drama";
-        case 3:
-            return "Door";
-        default:
-            return "Unknown";
-    }
-}
-
-static void MikuPan_CameraDebugVec3(const char* label, const sceVu0FVECTOR v,
-                                    ImVec4 color)
-{
-    igTextColored(color, "%-15s %8.1f %8.1f %8.1f", label, v[0], v[1], v[2]);
-}
-
-static void MikuPan_UiCameraDebugWindow(void)
-{
-    if (!show_camera_debug)
-    {
-        return;
-    }
-
-    const CAMERA_DEBUG_PATH* path = CameraGetDebugPath();
-    sceVu0FVECTOR view_vec = {camera.i[0] - camera.p[0],
-                              camera.i[1] - camera.p[1],
-                              camera.i[2] - camera.p[2], 0.0f};
-    float view_dist =
-        sqrtf(view_vec[0] * view_vec[0] + view_vec[1] * view_vec[1]
-              + view_vec[2] * view_vec[2]);
-
-    igSetNextWindowSize((ImVec2) {360.0f, 0.0f}, ImGuiCond_FirstUseEver);
-    if (!igBegin("Camera World Info", NULL, ImGuiWindowFlags_AlwaysAutoResize))
-    {
-        igEnd();
-        return;
-    }
-
-    if (path->active)
-    {
-        igText("Map camera: %s  no=%u old=%u  type=%u",
-               MikuPan_CameraDebugKindName(path->kind), path->no, path->no_old,
-               path->type);
-    }
-    else
-    {
-        igText("Map camera: runtime/free camera");
-    }
-
-    igText("Distance camera -> interest: %.1f", view_dist);
-    igSeparator();
-
-    MikuPan_CameraDebugVec3("camera.p", camera.p,
-                            (ImVec4) {1.0f, 0.78f, 0.10f, 1.0f});
-    MikuPan_CameraDebugVec3("camera.i", camera.i,
-                            (ImVec4) {0.15f, 1.0f, 0.35f, 1.0f});
-    MikuPan_CameraDebugVec3("view line", view_vec,
-                            (ImVec4) {1.0f, 1.0f, 1.0f, 1.0f});
-
-    if (path->active)
-    {
-        igSeparator();
-        igTextColored((ImVec4) {1.0f, 0.42f, 0.08f, 1.0f},
-                      "authored camera path points: %u",
-                      path->camera_path_points);
-        igTextColored((ImVec4) {0.05f, 0.80f, 1.0f, 1.0f},
-                      "authored interest path points: %u",
-                      path->interest_path_points);
-
-        if (path->change || path->no != path->no_old)
-        {
-            igTextColored((ImVec4) {1.0f, 0.10f, 0.30f, 1.0f},
-                          "transition target active");
-        }
-    }
-
-    igEnd();
-}
-
 // -- Public API --------------------------------------------------------------
 
 static int CompareResolutionDesc(const void* a, const void* b)
@@ -1079,7 +274,6 @@ static int CompareResolutionDesc(const void* a, const void* b)
     return area_b - area_a;
 }
 
-/* Write a reduced aspect-ratio string (e.g. "16:9") into buf. */
 static void MikuPan_AspectRatioStr(int w, int h, char* buf, int buf_size)
 {
     int a = w, b = h;
@@ -1259,10 +453,6 @@ static void MikuPan_PopulateGpuDriverList(void)
     }
 }
 
-/* GPU backend dropdown (Settings > Display > Graphics). Writes the choice
- * straight into the configuration so Save Configuration persists it; the
- * device cannot be swapped while running, so the new backend is only used on
- * the next launch. */
 static void MikuPan_UiGpuBackendCombo(void)
 {
     if (igBeginCombo("GPU Backend", gpu_driver_labels[gpu_driver_selected], 0))
@@ -1339,9 +529,6 @@ static float MikuPan_ClampFontScale(float scale)
     return scale;
 }
 
-/* Apply the user font-size multiplier to the whole UI. FontScaleMain is the
- * ImGui 1.92 dynamic global font scale (in ImGuiStyle), so this stays crisp at
- * any size. */
 static void MikuPan_ApplyUiFontScale(void)
 {
     ImGuiStyle* style = igGetStyle();
@@ -2074,6 +1261,7 @@ void MikuPan_InitUi(SDL_Window* window)
     MikuPan_ApplyFatalFrameStyle(mikupan_configuration.selected_theme);
 
     SDL_DisplayID primary = SDL_GetPrimaryDisplay();
+
     if (primary != 0)
     {
         const SDL_DisplayMode* mode = SDL_GetCurrentDisplayMode(primary);
@@ -2087,7 +1275,6 @@ void MikuPan_InitUi(SDL_Window* window)
     brightness = mikupan_configuration.renderer.brightness;
     gamma_value = mikupan_configuration.renderer.gamma;
     window_mode = mikupan_configuration.renderer.window_mode;
-    show_fps = mikupan_configuration.show_fps;
 
     if (window_mode == MIKUPAN_WINDOW_WINDOWED
         && mikupan_configuration.renderer.is_fullscreen)
@@ -2100,32 +1287,28 @@ void MikuPan_InitUi(SDL_Window* window)
     {
         window_mode = MIKUPAN_WINDOW_WINDOWED;
     }
+
     mikupan_configuration.renderer.window_mode = window_mode;
     is_fullscreen = (window_mode != MIKUPAN_WINDOW_WINDOWED);
     mikupan_configuration.renderer.is_fullscreen = is_fullscreen;
-    mesh_lighting_mode = mikupan_configuration.renderer.lighting_mode;
-    is_vsync = mikupan_configuration.renderer.vsync;
     MikuPan_PopulateGpuDriverList();
 
     if (mikupan_configuration.renderer.shadow_resolution <= 0)
     {
         mikupan_configuration.renderer.shadow_resolution = 256;
     }
-    MikuPan_SetShadowResolution(
-        mikupan_configuration.renderer.shadow_resolution);
+
+    MikuPan_SetShadowResolution(mikupan_configuration.renderer.shadow_resolution);
     crt_settings = mikupan_configuration.crt;
     MikuPan_ClampCrtSettings(&crt_settings);
     mikupan_configuration.crt = crt_settings;
     MikuPan_ApplyThirdPersonCameraConfiguration();
-    MikuPan_ControllerSetPreferredGamepadIndex(
-        mikupan_configuration.input.selected_gamepad_index);
-    mikupan_configuration.input.selected_gamepad_index =
-        MikuPan_ControllerGetPreferredGamepadIndex();
+    MikuPan_ControllerSetPreferredGamepadIndex(mikupan_configuration.input.selected_gamepad_index);
+    mikupan_configuration.input.selected_gamepad_index = MikuPan_ControllerGetPreferredGamepadIndex();
     MikuPan_ControllerLoadBindingsFromConfig();
 
-    if (mesh_lighting_mode > 1 || mesh_lighting_mode < 0)
+    if (mikupan_configuration.renderer.lighting_mode > 1 || mikupan_configuration.renderer.lighting_mode < 0)
     {
-        mesh_lighting_mode = 0;
         mikupan_configuration.renderer.lighting_mode = 0;
     }
 
@@ -2157,385 +1340,12 @@ void MikuPan_StartFrameUi(void)
     igNewFrame();
 }
 
-static void MikuPan_UiShadowDebugWindow(void)
-{
-    if (!show_shadow_debug_window)
-    {
-        return;
-    }
-
-    igSetNextWindowSize((ImVec2) {560.0f, 680.0f}, ImGuiCond_FirstUseEver);
-    if (!igBegin("Shadow Debug", (bool*) &show_shadow_debug_window, 0))
-    {
-        igEnd();
-        return;
-    }
-
-    int shadows_on = MikuPan_IsShadowEnabled();
-    if (igCheckbox("Enable Shadows", (bool*) &shadows_on))
-    {
-        MikuPan_SetShadowEnabled(shadows_on);
-    }
-
-    int receiver_debug_view = MikuPan_IsShadowReceiverDebugViewEnabled();
-    if (igCheckbox("Receiver Debug Colors", (bool*) &receiver_debug_view))
-    {
-        MikuPan_SetShadowReceiverDebugViewEnabled(receiver_debug_view);
-    }
-
-    int inspect = MikuPan_IsShadowInspectEnabled();
-    if (igCheckbox("Inspect Caster (orbit camera)", (bool*) &inspect))
-    {
-        MikuPan_SetShadowInspectEnabled(inspect);
-    }
-    if (inspect)
-    {
-        float yaw = 0.0f, pitch = 0.0f;
-        MikuPan_GetShadowInspectAngles(&yaw, &pitch);
-        int changed = 0;
-        changed |= igSliderFloat("Yaw", &yaw, -3.14159f, 3.14159f, "%.2f", 0);
-        changed |= igSliderFloat("Pitch", &pitch, -1.55f, 1.55f, "%.2f", 0);
-        if (changed)
-        {
-            MikuPan_SetShadowInspectAngles(yaw, pitch);
-        }
-
-        int wireframe = MikuPan_IsShadowInspectWireframe();
-        if (igCheckbox("Wireframe", (bool*) &wireframe))
-        {
-            MikuPan_SetShadowInspectWireframe(wireframe);
-        }
-
-        igTextDisabled("Orbits the shadow camera; the preview shows the");
-        igTextDisabled("caster model from this angle (cast shadow is");
-        igTextDisabled("overridden while this is on).");
-    }
-
-    if (shadow_debug_auto_probe)
-    {
-        MikuPan_ShadowDebugProbeTexture();
-    }
-
-    const MikuPan_ShadowDebugInfo* shadow_debug = MikuPan_GetShadowDebugInfo();
-
-    igText("FBO: %s  status: 0x%04x",
-           shadow_debug->fbo_initialized
-               ? (shadow_debug->fbo_complete ? "complete" : "incomplete")
-               : "not created",
-           shadow_debug->fbo_status);
-    igText("Matrix: %s  texture: %u (%dx%d)",
-           shadow_debug->matrix_valid ? "valid" : "missing",
-           shadow_debug->texture_id, shadow_debug->texture_size,
-           shadow_debug->texture_size);
-
-    igSeparator();
-    igText("Passes: caster %d  receiver %d", shadow_debug->caster_passes,
-           shadow_debug->receiver_passes);
-    igText("Draws:  caster %d (%d indices)  receiver %d (%d indices)",
-           shadow_debug->caster_draws, shadow_debug->caster_indices,
-           shadow_debug->receiver_draws, shadow_debug->receiver_indices);
-    igText(
-        "Caster mesh types: 0x00=%d 0x02=%d 0x40=%d 0x42=%d 0x80=%d 0x82=%d "
-        "other=%d",
-        shadow_debug->caster_type_0, shadow_debug->caster_type_2,
-        shadow_debug->caster_type_80, shadow_debug->caster_type_82,
-        shadow_debug->caster_type_other);
-    igText(
-        "Caster draw types: 0x00=%d 0x02=%d 0x40=%d 0x42=%d 0x80=%d 0x82=%d "
-        "other=%d",
-        shadow_debug->caster_draw_type_0, shadow_debug->caster_draw_type_2,
-        shadow_debug->caster_draw_type_80, shadow_debug->caster_draw_type_82,
-        shadow_debug->caster_draw_type_other);
-    igText("Receiver mesh types: 0x00=%d 0x10=%d 0x12=%d 0x32=%d other=%d",
-           shadow_debug->receiver_type_0, shadow_debug->receiver_type_10,
-           shadow_debug->receiver_type_12, shadow_debug->receiver_type_32,
-           shadow_debug->receiver_type_other);
-
-    if (!shadow_debug->fbo_complete && shadow_debug->fbo_initialized)
-    {
-        igTextColored(
-            (ImVec4) {1.0f, 0.4f, 0.3f, 1.0f},
-            "Shadow target is incomplete; caster rendering cannot write.");
-    }
-    else if (shadow_debug->caster_passes == 0)
-    {
-        igTextColored((ImVec4) {1.0f, 0.7f, 0.2f, 1.0f},
-                      "No caster pass this frame.");
-    }
-    else if (shadow_debug->caster_draws == 0
-             && (shadow_debug->caster_type_0 != 0
-                 || shadow_debug->caster_type_80 != 0
-                 || shadow_debug->caster_type_other != 0))
-    {
-        igTextColored(
-            (ImVec4) {1.0f, 0.7f, 0.2f, 1.0f},
-            "Caster meshes were found, but none reached a GL shadow draw.");
-    }
-    else if (shadow_debug->receiver_passes != 0
-             && shadow_debug->receiver_draws == 0)
-    {
-        igTextColored(
-            (ImVec4) {1.0f, 0.7f, 0.2f, 1.0f},
-            "Receiver traversal ran, but no receiver meshes were drawn.");
-    }
-
-    igSeparator();
-    if (igButton("Probe Shadow Map", (ImVec2) {0.0f, 0.0f}))
-    {
-        MikuPan_ShadowDebugProbeTexture();
-        shadow_debug = MikuPan_GetShadowDebugInfo();
-    }
-    igSameLine(0.0f, -1.0f);
-    igCheckbox("Auto Probe", (bool*) &shadow_debug_auto_probe);
-
-    if (shadow_debug->probe_valid)
-    {
-        igText("Map probe: nonzero %d / %d (%.2f%%), max %d, avg %.3f",
-               shadow_debug->probe_nonzero_pixels,
-               shadow_debug->texture_size * shadow_debug->texture_size,
-               shadow_debug->probe_coverage * 100.0f,
-               shadow_debug->probe_max_value, shadow_debug->probe_average);
-
-        if (shadow_debug->caster_draws != 0
-            && shadow_debug->probe_nonzero_pixels == 0)
-        {
-            igTextColored(
-                (ImVec4) {1.0f, 0.7f, 0.2f, 1.0f},
-                "Caster draws happened, but the shadow map is empty.");
-        }
-    }
-    else
-    {
-        igTextDisabled("Map probe: not sampled yet");
-    }
-
-    igSeparator();
-    igText("Shadow Map (R8 occlusion, white = caster)");
-    igSliderFloat("Texture Preview Size", &shadow_debug_preview_size, 64.0f,
-                  768.0f, "%.0f", 0);
-    igCheckbox("Flip Y", (bool*) &shadow_debug_flip_y);
-
-    if (shadow_debug->texture_id != 0)
-    {
-        ImVec2 uv0 =
-            shadow_debug_flip_y ? (ImVec2) {0.0f, 1.0f} : (ImVec2) {0.0f, 0.0f};
-        ImVec2 uv1 =
-            shadow_debug_flip_y ? (ImVec2) {1.0f, 0.0f} : (ImVec2) {1.0f, 1.0f};
-
-        // Draw on a mid-grey background with a visible frame so the 256x256
-        // extent is obvious even when the map is empty (all-black). The R8
-        // channel is swizzled to RGB at texture creation, so this shows the
-        // occlusion silhouette as proper grayscale rather than dark red.
-        ImVec2 img_min = igGetCursorScreenPos();
-        ImVec2 img_size =
-            (ImVec2) {shadow_debug_preview_size, shadow_debug_preview_size};
-
-        igImageWithBg(
-            (ImTextureRef_c) {
-                ._TexID = (ImTextureID) (uintptr_t) MikuPan_GPUGetTextureHandle(
-                    shadow_debug->texture_id)},
-            img_size, uv0, uv1,
-            (ImVec4) {0.15f, 0.15f, 0.18f,
-                      1.0f}, /* bg behind transparent/black */
-            (ImVec4) {1.0f, 1.0f, 1.0f, 1.0f}); /* tint */
-
-        ImDrawList* draw_list = igGetWindowDrawList();
-        ImVec2 img_max =
-            (ImVec2) {img_min.x + img_size.x, img_min.y + img_size.y};
-        ImDrawList_AddRect(
-            draw_list, img_min, img_max,
-            igGetColorU32_Vec4((ImVec4) {0.55f, 0.85f, 1.0f, 0.9f}), 0.0f, 0,
-            0);
-    }
-    else
-    {
-        igTextDisabled("Shadow texture has not been created yet.");
-    }
-
-    igEnd();
-}
-
-static void MikuPan_UiPhotoDebugWindow(void)
-{
-    if (!show_photo_debug_window)
-    {
-        return;
-    }
-
-    igSetNextWindowSize((ImVec2) {460.0f, 560.0f}, ImGuiCond_FirstUseEver);
-    if (!igBegin("Photo Debug", (bool*) &show_photo_debug_window, 0))
-    {
-        igEnd();
-        return;
-    }
-
-    int force_preview = MikuPan_IsPhotoDebugForceOpaquePreviewEnabled();
-    if (igCheckbox("Force Opaque Preview Overlay", (bool*) &force_preview))
-    {
-        MikuPan_SetPhotoDebugForceOpaquePreviewEnabled(force_preview);
-    }
-
-    int force_negative = MikuPan_IsPhotoDebugForceNegativePreviewEnabled();
-    if (igCheckbox("Force Negative Final Pass", (bool*) &force_negative))
-    {
-        MikuPan_SetPhotoDebugForceNegativePreviewEnabled(force_negative);
-    }
-
-    float force_negative_strength =
-        MikuPan_GetPhotoDebugForceNegativePreviewStrength();
-    if (igSliderFloat("Forced Negative Strength", &force_negative_strength,
-                      0.0f, 1.0f, "%.2f", 0))
-    {
-        MikuPan_SetPhotoDebugForceNegativePreviewStrength(
-            force_negative_strength);
-    }
-
-    int target_rect = MikuPan_IsPhotoDebugTargetRectEnabled();
-    if (igCheckbox("Show Target Rect", (bool*) &target_rect))
-    {
-        MikuPan_SetPhotoDebugTargetRectEnabled(target_rect);
-    }
-
-    int negative_layer = MikuPan_IsPhotoDebugNegativeLayerEnabled();
-    if (igCheckbox("Show Negative Debug Layer", (bool*) &negative_layer))
-    {
-        MikuPan_SetPhotoDebugNegativeLayerEnabled(negative_layer);
-    }
-
-    igSeparator();
-
-    const MikuPan_PhotoDebugInfo* photo_debug = MikuPan_GetPhotoDebugInfo();
-
-    igText("Texture: %s  id: %u  size: %dx%d",
-           photo_debug->texture_valid ? "valid" : "missing",
-           photo_debug->texture_id, photo_debug->texture_width,
-           photo_debug->texture_height);
-    igText("Texture updates: %d", photo_debug->texture_update_count);
-    igText("Negative source: %s  id: %u  size: %dx%d",
-           photo_debug->negative_source_texture_valid ? "valid" : "missing",
-           photo_debug->negative_source_texture_id,
-           photo_debug->negative_source_texture_width,
-           photo_debug->negative_source_texture_height);
-    igText("Negative source updates: %d",
-           photo_debug->negative_source_texture_update_count);
-
-    igSeparator();
-    igText("Queued: %s  count: %d", photo_debug->queued ? "yes" : "no",
-           photo_debug->queue_count);
-    igText("Effect overlay active: %s  count: %d",
-           photo_debug->effect_overlay_active ? "yes" : "no",
-           photo_debug->effect_overlay_count);
-    igText("Effect overlay drawn in game: %s  count: %d",
-           photo_debug->effect_overlay_drawn_in_game ? "yes" : "no",
-           photo_debug->effect_overlay_in_game_count);
-    igText("Negative final-pass active: %s  count: %d",
-           photo_debug->negative_overlay_active ? "yes" : "no",
-           photo_debug->negative_overlay_count);
-    igText("Legacy negative sprite drawn: %s  count: %d",
-           photo_debug->negative_overlay_drawn_in_game ? "yes" : "no",
-           photo_debug->negative_overlay_in_game_count);
-    igText("Force negative preview: %s  strength: %.2f",
-           photo_debug->force_negative_preview_enabled ? "yes" : "no",
-           photo_debug->force_negative_preview_strength);
-    igText("Negative rect: %d,%d %dx%d  strength: %.2f",
-           photo_debug->negative_x, photo_debug->negative_y,
-           photo_debug->negative_w, photo_debug->negative_h,
-           photo_debug->negative_strength);
-    igText("Queue rect: %d,%d %dx%d  alpha: %d", photo_debug->queue_x,
-           photo_debug->queue_y, photo_debug->queue_w, photo_debug->queue_h,
-           photo_debug->queue_alpha);
-
-    igSeparator();
-    igText("Last draw: %s  count: %d",
-           photo_debug->last_draw_valid ? "yes" : "no",
-           photo_debug->draw_count);
-    igText("Draw rect: %d,%d %dx%d  alpha: %d", photo_debug->draw_x,
-           photo_debug->draw_y, photo_debug->draw_w, photo_debug->draw_h,
-           photo_debug->draw_alpha);
-    igText("Target rect drawn this frame: %s",
-           photo_debug->target_rect_drawn ? "yes" : "no");
-    igText("Negative debug layer drawn this frame: %s  count: %d",
-           photo_debug->negative_debug_layer_drawn ? "yes" : "no",
-           photo_debug->negative_debug_layer_count);
-
-    igSeparator();
-    igTextDisabled("Expected photo rect is usually 128,80 384x256.");
-    igTextDisabled("Cyan negative debug layer marks the outside region.");
-    igTextDisabled("If this preview is correct but the overlay is wrong,");
-    igTextDisabled("the failure is compositing/order/state, not capture.");
-
-    igSeparator();
-    igText("Captured Photo Texture");
-    igSliderFloat("Preview Size", &photo_debug_preview_size, 64.0f, 512.0f,
-                  "%.0f", 0);
-
-    if (photo_debug->texture_id != 0)
-    {
-        float aspect = 1.0f;
-        if (photo_debug->texture_width > 0 && photo_debug->texture_height > 0)
-        {
-            aspect = (float) photo_debug->texture_width
-                     / (float) photo_debug->texture_height;
-        }
-
-        ImVec2 img_size = (ImVec2) {photo_debug_preview_size,
-                                    photo_debug_preview_size / aspect};
-
-        igImageWithBg(
-            (ImTextureRef_c) {
-                ._TexID = (ImTextureID) (uintptr_t) MikuPan_GPUGetTextureHandle(
-                    photo_debug->texture_id)},
-            img_size, (ImVec2) {0.0f, 0.0f}, (ImVec2) {1.0f, 1.0f},
-            (ImVec4) {0.12f, 0.12f, 0.14f, 1.0f},
-            (ImVec4) {1.0f, 1.0f, 1.0f, 1.0f});
-    }
-    else
-    {
-        igTextDisabled("No photo preview texture has been uploaded yet.");
-    }
-
-    igEnd();
-}
-
 void MikuPan_DrawUi(void)
 {
-    ImGuiIO* io = igGetIO_Nil();
-    FrameTimeGraph_Update(&g_frame_graph, 1000.0f / io->Framerate,
-                          MikuPan_GetLastFrameCpuMs(),
-                          MikuPan_GetLastFrameGpuMs());
-
     MikuPan_UiHandleShortcuts();
     MikuPan_UiMenuBar();
 
-    if (dbg_wrk.mode_on == 1)
-    {
-        gra2dDrawDbgMenu();
-    }
-
-    if (show_frame_time_graph)
-    {
-        FrameTimeGraph_Draw(&g_frame_graph);
-    }
-
-    if (show_texture_list)
-    {
-        MikuPan_ShowTextureList();
-    }
-
-    MikuPan_UiShaderReloadWindow();
-    MikuPan_UiDrawCallInspector();
-    MikuPan_UiCameraDebugWindow();
-    MikuPan_UiPhotoDebugWindow();
-    MikuPan_UiShadowDebugWindow();
-
-    if (show_fps)
-    {
-        igBegin("fps", (bool*) &show_fps, no_navigation_window);
-        igPushFont(igGetFont(), 18.0f * ui_display_scale);
-        igText("FPS %.2f", MikuPan_GetFrameRate());
-        igPopFont();
-        igEnd();
-    }
+    MikuPan_UiDebugWindowsRender();
 }
 
 void MikuPan_DrawMissingDataUi(const char *missing_file)
@@ -2598,102 +1408,6 @@ void MikuPan_RequestQuit(void)
     SDL_PushEvent(&quit_event);
 }
 
-float MikuPan_GetFrameRate(void)
-{
-    ImGuiIO* io = igGetIO_Nil();
-    return io->Framerate;
-}
-
-int MikuPan_IsWireframeRendering(void)
-{
-    return render_wireframe;
-}
-
-int MikuPan_IsNormalsRendering(void)
-{
-    return render_normals;
-}
-
-void MikuPan_ShowTextureList(void)
-{
-    const MikuPan_TextureInfo* screen_copy;
-
-    tex_list_count = 0;
-    MikuPan_ForEachTexture(CollectTexture, &tex_list_count);
-
-    qsort(tex_list, tex_list_count, sizeof(MikuPan_TextureInfo*),
-          CompareTextureById);
-
-    igBegin("Texture List", NULL, 0);
-
-    screen_copy = MikuPan_GetScreenCopyTextureInfo();
-    if (screen_copy != NULL)
-    {
-        if (igCollapsingHeader_TreeNodeFlags(
-                "Generated: distortion screen copy (0x1a40)",
-                ImGuiTreeNodeFlags_DefaultOpen))
-        {
-            const MikuPan_ScreenCopyDebugInfo* debug =
-                MikuPan_GetScreenCopyDebugInfo();
-            float preview_w = (float) screen_copy->width;
-            float preview_h = (float) screen_copy->height;
-
-            if (preview_w > 512.0f)
-            {
-                preview_h *= 512.0f / preview_w;
-                preview_w = 512.0f;
-            }
-
-            igText("%u: %d x %d", screen_copy->id, screen_copy->width,
-                   screen_copy->height);
-            if (debug != NULL)
-            {
-                const char* depth =
-                    debug->depth_mode == MIKUPAN_DEPTH_ALWAYS   ? "always"
-                    : debug->depth_mode == MIKUPAN_DEPTH_GEQUAL ? "gequal"
-                                                                : "lequal";
-
-                igText("last draw: %d vertices, depth %s, blend %s",
-                       debug->vertex_count, depth,
-                       debug->additive_blend ? "add" : "alpha");
-                igText("uv:  %.3f %.3f  ->  %.3f %.3f", debug->uv_min[0],
-                       debug->uv_min[1], debug->uv_max[0], debug->uv_max[1]);
-                igText("ndc: %.3f %.3f  ->  %.3f %.3f", debug->ndc_min[0],
-                       debug->ndc_min[1], debug->ndc_max[0], debug->ndc_max[1]);
-            }
-            igImage((ImTextureRef_c) {._TexID = (ImTextureID) (uintptr_t)
-                                          MikuPan_GPUGetTextureHandle(
-                                              screen_copy->id)},
-                    (ImVec2) {preview_w, preview_h}, (ImVec2) {0.0f, 0.0f},
-                    (ImVec2) {1.0f, 1.0f});
-        }
-    }
-    else
-    {
-        igText("Generated distortion screen copy: not created yet");
-    }
-
-    for (int i = 0; i < tex_list_count; i++)
-    {
-        char label[64];
-        snprintf(label, sizeof(label), "Texture ID %u", tex_list[i]->id);
-
-        if (igCollapsingHeader_TreeNodeFlags(label, 0))
-        {
-            igText("%u: %d x %d", tex_list[i]->id, tex_list[i]->width,
-                   tex_list[i]->height);
-            igImage((ImTextureRef_c) {._TexID = (ImTextureID) (uintptr_t)
-                                          MikuPan_GPUGetTextureHandle(
-                                              tex_list[i]->id)},
-                    (ImVec2) {(float) tex_list[i]->width,
-                              (float) tex_list[i]->height},
-                    (ImVec2) {0.0f, 0.0f}, (ImVec2) {1.0f, 1.0f});
-        }
-    }
-
-    igEnd();
-}
-
 static int MikuPan_UiGamepadMenuShortcutPressed(void)
 {
     static int was_down = 0;
@@ -2747,365 +1461,9 @@ void MikuPan_UiHandleShortcuts(void)
         dbg_wrk.mode_on = !dbg_wrk.mode_on;
     }
 
-    if (igIsKeyPressed_Bool(ImGuiKey_F5, 0))
-    {
-        last_reload_error[0] = '\0';
-        MikuPan_ReloadAllShaders(last_reload_error,
-                                 (int) sizeof(last_reload_error));
-        if (last_reload_error[0] != '\0')
-        {
-            show_shader_reload = 1;
-        }
-    }
-
     if (igIsKeyPressed_Bool(ImGuiKey_F12, 0))
     {
         MikuPan_ScreenshotRequest();
-    }
-}
-
-/* Shared shadow-map resolution dropdown (used in both Display and
- * Rendering > Shadows). Reads/writes the runtime size, which is persisted to
- * mikupan_configuration.renderer.shadow_resolution on Save Configuration. */
-static void MikuPan_UiShadowResolutionCombo(const char* label)
-{
-    static const int res_values[] = {128, 256, 512, 1024, 2048};
-    static const char* res_labels[] = {"128", "256", "512", "1024", "2048"};
-    const int count = (int) (sizeof(res_values) / sizeof(res_values[0]));
-
-    int cur = MikuPan_GetShadowResolution();
-    int idx = 1; /* default 256 */
-    for (int i = 0; i < count; i++)
-    {
-        if (res_values[i] == cur)
-        {
-            idx = i;
-            break;
-        }
-    }
-
-    if (igCombo_Str_arr(label, &idx, res_labels, count, -1))
-    {
-        MikuPan_SetShadowResolution(res_values[idx]);
-    }
-}
-
-static void MikuPan_CheatSetInventoryItem(int item_no, int value)
-{
-    if (item_no < 0 || item_no >= 200)
-    {
-        return;
-    }
-
-    poss_item[item_no] =
-        (u_char) MikuPan_ClampInt(value, 0, item_no == 9 ? 1 : 99);
-}
-
-static const char* MikuPan_CheatInventoryItemName(int item_no)
-{
-    switch (item_no)
-    {
-    case 1:
-        return "Type-14 Film";
-    case 2:
-        return "Type-37 Film";
-    case 3:
-        return "Type-74 Film";
-    case 4:
-        return "Type-90 Film";
-    case 5:
-        return "Spirit Stone";
-    case 6:
-        return "Manyogan";
-    case 7:
-        return "Sacred Water";
-    case 8:
-        return "Stone Mirror";
-    case 9:
-        return "Camera";
-    default:
-        return NULL;
-    }
-}
-
-static void MikuPan_UiInventoryItemSlider(int item_no)
-{
-    char label[64];
-    int value;
-    const char* name = MikuPan_CheatInventoryItemName(item_no);
-
-    if (name != NULL)
-    {
-        snprintf(label, sizeof(label), "%s##cheat_item_%02d", name, item_no);
-    }
-    else
-    {
-        snprintf(label, sizeof(label), "Item %02d##cheat_item_%02d", item_no,
-                 item_no);
-    }
-
-    value = poss_item[item_no];
-    if (igSliderInt(label, &value, 0, item_no == 9 ? 1 : 99, "%d", 0))
-    {
-        MikuPan_CheatSetInventoryItem(item_no, value);
-    }
-}
-
-static void MikuPan_CheatSetAllMenuItems(int value)
-{
-    const int count = (int) (sizeof(item_sort) / sizeof(item_sort[0]));
-
-    for (int i = 0; i < count; i++)
-    {
-        MikuPan_CheatSetInventoryItem(item_sort[i], value);
-    }
-}
-
-static void MikuPan_CheatSetPhotoMode(int enabled)
-{
-    if (enabled)
-    {
-        if (!cheat_photo_mode)
-        {
-            cheat_photo_mode_previous_cam_mode = dbg_wrk.cam_mode;
-        }
-
-        cheat_photo_mode = 1;
-        camera_photo_mode_enabled = 1;
-        dbg_wrk.cam_mode = 1;
-        return;
-    }
-
-    if (cheat_photo_mode && dbg_wrk.cam_mode == 1)
-    {
-        dbg_wrk.cam_mode = cheat_photo_mode_previous_cam_mode;
-    }
-
-    cheat_photo_mode = 0;
-    camera_photo_mode_enabled = 0;
-}
-
-static void MikuPan_CheatSyncPhotoMode(void)
-{
-    if (!cheat_photo_mode)
-    {
-        camera_photo_mode_enabled = 0;
-        return;
-    }
-
-    if (dbg_wrk.cam_mode != 1)
-    {
-        cheat_photo_mode = 0;
-        camera_photo_mode_enabled = 0;
-        return;
-    }
-
-    camera_photo_mode_enabled = 1;
-}
-
-static void MikuPan_CheatMaxCoreInventory(void)
-{
-    MikuPan_CheatSetInventoryItem(1, 99);
-    MikuPan_CheatSetInventoryItem(2, 99);
-    MikuPan_CheatSetInventoryItem(3, 99);
-    MikuPan_CheatSetInventoryItem(4, 99);
-    MikuPan_CheatSetInventoryItem(5, 99);
-    MikuPan_CheatSetInventoryItem(6, 99);
-    MikuPan_CheatSetInventoryItem(7, 99);
-    MikuPan_CheatSetInventoryItem(8, 99);
-    MikuPan_CheatSetInventoryItem(9, 1);
-
-    if (plyr_wrk.film_no < 1 || plyr_wrk.film_no > 4)
-    {
-        plyr_wrk.film_no = 1;
-    }
-}
-
-static void MikuPan_CheatUnlockAllCostumes(void)
-{
-    cribo.clear_info |= 0x1;
-
-    if (ingame_wrk.clear_count < 3)
-    {
-        ingame_wrk.clear_count = 3;
-    }
-}
-
-static void MikuPan_CheatUnlockCameraMenu(void)
-{
-    MikuPan_CheatSetInventoryItem(9, 1);
-    cribo.clear_info |= 0x4;
-}
-
-static void MikuPan_CheatUnlockCameraAbilities(void)
-{
-    for (int i = 0; i < 5; i++)
-    {
-        cam_custom_wrk.func_sub[i] = 2;
-        cam_custom_wrk.func_spe[i] = 2;
-    }
-
-    if (cam_custom_wrk.set_sub < 5)
-    {
-        cam_custom_wrk.func_sub[cam_custom_wrk.set_sub] = 3;
-    }
-    else
-    {
-        cam_custom_wrk.set_sub = 0xff;
-    }
-
-    if (cam_custom_wrk.set_spe < 5)
-    {
-        cam_custom_wrk.func_spe[cam_custom_wrk.set_spe] = 3;
-    }
-    else
-    {
-        cam_custom_wrk.set_spe = 0xff;
-    }
-}
-
-static void MikuPan_CheatMaxCameraUpgrades(void)
-{
-    cam_custom_wrk.charge_range = 3;
-    cam_custom_wrk.charge_speed = 3;
-    cam_custom_wrk.charge_max = 3;
-    cam_custom_wrk.point = 9999999;
-}
-
-static void MikuPan_CheatUnlockAll(void)
-{
-    MikuPan_CheatUnlockAllCostumes();
-    MikuPan_CheatUnlockCameraMenu();
-    MikuPan_CheatUnlockCameraAbilities();
-    MikuPan_CheatMaxCameraUpgrades();
-}
-
-static void MikuPan_UiInventoryCheatsMenu(void)
-{
-    static int all_menu_item_value = 1;
-    int selected_film = plyr_wrk.film_no;
-
-    if (igMenuItem_Bool("Max Core Inventory", NULL, false, true))
-    {
-        MikuPan_CheatMaxCoreInventory();
-    }
-
-    igSeparatorText("Film");
-    if (igSliderInt("Equipped Film", &selected_film, 1, 4, "Type index %d", 0))
-    {
-        plyr_wrk.film_no = (u_char) selected_film;
-    }
-
-    MikuPan_UiInventoryItemSlider(1);
-    MikuPan_UiInventoryItemSlider(2);
-    MikuPan_UiInventoryItemSlider(3);
-    MikuPan_UiInventoryItemSlider(4);
-
-    igSeparatorText("Supplies");
-    MikuPan_UiInventoryItemSlider(5);
-    MikuPan_UiInventoryItemSlider(6);
-    MikuPan_UiInventoryItemSlider(7);
-    MikuPan_UiInventoryItemSlider(8);
-    MikuPan_UiInventoryItemSlider(9);
-
-    if (igBeginMenu("All Menu Items", 1))
-    {
-        const int count = (int) (sizeof(item_sort) / sizeof(item_sort[0]));
-
-        igSliderInt("Value", &all_menu_item_value, 0, 99, "%d", 0);
-        if (igButton("Apply to Listed Items", (ImVec2) {0.0f, 0.0f}))
-        {
-            MikuPan_CheatSetAllMenuItems(all_menu_item_value);
-        }
-
-        igSeparator();
-
-        for (int i = 0; i < count; i++)
-        {
-            MikuPan_UiInventoryItemSlider(item_sort[i]);
-        }
-
-        igEndMenu();
-    }
-}
-
-static void MikuPan_UiUnlockCheatsMenu(void)
-{
-    bool costume_flag = (cribo.clear_info & 0x1) != 0;
-    bool camera_menu_flag = (cribo.clear_info & 0x4) != 0;
-    int clear_count = ingame_wrk.clear_count;
-    int costume = cribo.costume;
-    int points = (int) cam_custom_wrk.point;
-
-    if (igMenuItem_Bool("All Unlocks", NULL, false, true))
-    {
-        MikuPan_CheatUnlockAll();
-    }
-
-    if (igMenuItem_Bool("Unlock All Costumes", NULL, false, true))
-    {
-        MikuPan_CheatUnlockAllCostumes();
-        costume_flag = true;
-        clear_count = ingame_wrk.clear_count;
-    }
-
-    if (igCheckbox("Costume Unlock Flag", &costume_flag))
-    {
-        if (costume_flag)
-        {
-            MikuPan_CheatUnlockAllCostumes();
-            clear_count = ingame_wrk.clear_count;
-        }
-        else
-        {
-            cribo.clear_info &= (u_char) ~0x1;
-        }
-    }
-
-    if (igSliderInt("Clear Count", &clear_count, 0, 108, "%d", 0))
-    {
-        ingame_wrk.clear_count = (u_char) clear_count;
-    }
-
-    if (igSliderInt("Selected Costume", &costume, 0, 3, "%d", 0))
-    {
-        cribo.costume = (u_char) costume;
-    }
-
-    igSeparatorText("Camera");
-
-    if (igMenuItem_Bool("Unlock Camera Menu", NULL, false, true))
-    {
-        MikuPan_CheatUnlockCameraMenu();
-        camera_menu_flag = true;
-    }
-
-    if (igCheckbox("Camera Menu Unlock Flag", &camera_menu_flag))
-    {
-        if (camera_menu_flag)
-        {
-            MikuPan_CheatUnlockCameraMenu();
-        }
-        else
-        {
-            cribo.clear_info &= (u_char) ~0x4;
-        }
-    }
-
-    if (igMenuItem_Bool("Unlock Camera Abilities", NULL, false, true))
-    {
-        MikuPan_CheatUnlockCameraAbilities();
-    }
-
-    if (igMenuItem_Bool("Max Camera Upgrades", NULL, false, true))
-    {
-        MikuPan_CheatMaxCameraUpgrades();
-        points = (int) cam_custom_wrk.point;
-    }
-
-    if (igInputInt("Camera Points", &points, 1000, 10000, 0))
-    {
-        cam_custom_wrk.point = (u_long) MikuPan_ClampInt(points, 0, 9999999);
     }
 }
 
@@ -3171,7 +1529,7 @@ void MikuPan_UiMenuBar(void)
 
             igSliderFloat("Brightness", &brightness, 0.0f, 2.0f, "%.2f", 0);
             igSliderFloat("Gamma", &gamma_value, 0.1f, 3.0f, "%.2f", 0);
-            igCheckbox("VSync", (bool*) &is_vsync);
+            igCheckbox("VSync", (bool*) &mikupan_configuration.renderer.vsync);
 
             igSeparatorText("Graphics");
 
@@ -3217,7 +1575,7 @@ void MikuPan_UiMenuBar(void)
 
             const char* display_lighting_modes[] = {"Pixel (Modern)",
                                                     "Vertex (PS2)"};
-            igCombo_Str_arr("Lighting Mode", &mesh_lighting_mode,
+            igCombo_Str_arr("Lighting Mode", &mikupan_configuration.renderer.lighting_mode,
                             display_lighting_modes, 2, -1);
 
             igEndMenu();
@@ -3367,187 +1725,9 @@ void MikuPan_UiMenuBar(void)
         igEndMenu();
     }
 
-    if (igBeginMenu("Debug", 1))
-    {
-        igCheckbox("Zero's Menu", (bool*) &dbg_wrk.mode_on);
+    MikuPan_UiDebugMenuRender();
 
-        igSeparator();
-
-        if (igBeginMenu("Rendering", 1))
-        {
-            igCheckbox("Draw Call Inspector", (bool*) &show_draw_inspector);
-            igCheckbox("Shader Reload", (bool*) &show_shader_reload);
-
-            if (igBeginMenu("Visualization", 1))
-            {
-                igCheckbox("Wireframe", (bool*) &render_wireframe);
-                igCheckbox("Bounding Boxes", (bool*) &show_bounding_boxes);
-                igCheckbox("Normals", (bool*) &render_normals);
-
-                if (render_normals)
-                {
-                    igSliderFloat("Normal Length", &normal_length, 0.1f, 100.0f,
-                                  "%.1f", 0);
-                }
-
-                igCheckbox("Photo", (bool*) &show_photo_debug_window);
-
-                igEndMenu();
-            }
-
-            if (igBeginMenu("Lighting", 1))
-            {
-                igCheckbox("Disable Lighting", (bool*) &disable_lighting);
-                igCheckbox("Static Lighting", (bool*) &show_static_lighting);
-                const char* lighting_modes[] = {"Per-Fragment", "Per-Vertex"};
-                igCombo_Str_arr("Lighting Mode", &mesh_lighting_mode,
-                                lighting_modes, 2, -1);
-                igEndMenu();
-            }
-
-            if (igBeginMenu("Shadows", 1))
-            {
-                int shadows_on = MikuPan_IsShadowEnabled();
-                if (igCheckbox("Enable Shadows", (bool*) &shadows_on))
-                {
-                    MikuPan_SetShadowEnabled(shadows_on);
-                }
-
-                MikuPan_UiShadowResolutionCombo("Resolution");
-
-                igCheckbox("Shadow Debug Window",
-                           (bool*) &show_shadow_debug_window);
-                igEndMenu();
-            }
-
-            if (igBeginMenu("Meshes", 1))
-            {
-                igCheckbox("Mesh 0x82", (bool*) &show_mesh_0x82);
-                igCheckbox("Mesh 0x32", (bool*) &show_mesh_0x32);
-                igCheckbox("Mesh 0x12", (bool*) &show_mesh_0x12);
-                igCheckbox("Mesh 0x10", (bool*) &show_mesh_0x10);
-                igCheckbox("Mesh 0x2", (bool*) &show_mesh_0x2);
-
-                igSeparator();
-                int mesh_cache_on = MikuPan_MeshCache_IsEnabled();
-                if (igCheckbox("Mesh Cache", (bool*) &mesh_cache_on))
-                {
-                    MikuPan_MeshCache_SetEnabled(mesh_cache_on);
-                }
-                if (igButton("Clear Mesh Cache", (ImVec2) {0.0f, 0.0f}))
-                {
-                    MikuPan_MeshCache_Flush();
-                }
-
-                extern int MikuPan_GpuSkinningEnabled(void);
-                extern void MikuPan_SetGpuSkinningEnabled(int);
-                int gpu_skin_on = MikuPan_GpuSkinningEnabled();
-                if (igCheckbox("GPU Skinning (0x2/0xA)", (bool*) &gpu_skin_on))
-                {
-                    MikuPan_SetGpuSkinningEnabled(gpu_skin_on);
-                }
-                igEndMenu();
-            }
-
-            if (igBeginMenu("Textures", 1))
-            {
-                igCheckbox("Disable GS Uploads", (bool*) &disable_gs_uploads);
-
-                if (igIsItemHovered(0))
-                {
-                    igBeginTooltip();
-                    igText("THIS *WILL* BREAK TEXTURES, ONLY USE FOR TESTING PERFORMANCE IMPACT OF GS UPLOADS");
-                    igEndTooltip();
-                }
-
-                igCheckbox("Texture List", (bool*) &show_texture_list);
-                if (igButton("Clear Texture Cache", (ImVec2) {0.0f, 0.0f}))
-                {
-                    MikuPan_RequestFlushTextureCache();
-                }
-
-                igEndMenu();
-            }
-
-            igEndMenu();
-        }
-
-        if (igBeginMenu("Camera", 1))
-        {
-            igCheckbox("Camera World Info", (bool*) &show_camera_debug);
-            igCheckbox("Third-Person Camera",
-                       (bool*) &camera_third_person_enabled);
-            if (camera_third_person_enabled)
-            {
-                igSeparator();
-                igSliderFloat("Distance", &camera_third_person_distance, 100.0f,
-                              2500.0f, "%.0f", 0);
-                igSliderFloat("Height", &camera_third_person_height, 0.0f,
-                              1400.0f, "%.0f", 0);
-                igSliderFloat("Side", &camera_third_person_side, -600.0f,
-                              600.0f, "%.0f", 0);
-                igSliderFloat("Look Ahead", &camera_third_person_look_ahead,
-                              100.0f, 2500.0f, "%.0f", 0);
-                igSliderFloat("Interest Height",
-                              &camera_third_person_interest_height, -400.0f,
-                              1200.0f, "%.0f", 0);
-                igSliderFloat("FOV", &camera_third_person_fov_deg, 20.0f, 90.0f,
-                              "%.0f", 0);
-            }
-
-            igEndMenu();
-        }
-
-        if (igBeginMenu("Profiler", 1))
-        {
-            if (igCheckbox("FPS Counter", (bool*) &show_fps))
-            {
-                mikupan_configuration.show_fps = show_fps;
-            }
-
-            igCheckbox("Frame Time Graph", (bool*) &show_frame_time_graph);
-            igEndMenu();
-        }
-
-        igEndMenu();
-    }
-
-    if (igBeginMenu("Cheats", 1))
-    {
-        if (igMenuItem_Bool("Take Screenshot", "F12", false, true))
-        {
-            MikuPan_ScreenshotRequest();
-        }
-
-        {
-            int photo_mode = cheat_photo_mode;
-            if (igCheckbox("Photo Mode", (bool*) &photo_mode))
-            {
-                MikuPan_CheatSetPhotoMode(photo_mode);
-            }
-        }
-
-        igSeparator();
-
-        if (igBeginMenu("Inventory", 1))
-        {
-            MikuPan_UiInventoryCheatsMenu();
-            igEndMenu();
-        }
-
-        if (igBeginMenu("Unlocks", 1))
-        {
-            MikuPan_UiUnlockCheatsMenu();
-            igEndMenu();
-        }
-
-        igSeparator();
-
-        igCheckbox("Tofu Mode", (bool*) &cheat_tofu_mode);
-        igColorEdit3("Tofu Color", cheat_tofu_color, 0);
-
-        igEndMenu();
-    }
+    MikuPan_UiCheatsRender();
 
     if (igBeginMenu("Info", 1))
     {
@@ -3572,76 +1752,6 @@ void MikuPan_UiMenuBar(void)
     }
 
     igEndMainMenuBar();
-}
-
-int MikuPan_IsBoundingBoxRendering(void)
-{
-    return show_bounding_boxes;
-}
-
-int MikuPan_IsTofuModeEnabled(void)
-{
-    return cheat_tofu_mode;
-}
-
-const float* MikuPan_GetTofuColor(void)
-{
-    return cheat_tofu_color;
-}
-
-int MikuPan_ShowCameraDebug(void)
-{
-    return show_camera_debug;
-}
-
-int MikuPan_IsMesh0x82Rendering(void)
-{
-    return show_mesh_0x82;
-}
-
-int MikuPan_IsMesh0x32Rendering(void)
-{
-    return show_mesh_0x32;
-}
-
-int MikuPan_IsMesh0x12Rendering(void)
-{
-    return show_mesh_0x12;
-}
-
-int MikuPan_IsMesh0x10Rendering(void)
-{
-    return show_mesh_0x10;
-}
-
-int MikuPan_IsMesh0x2Rendering(void)
-{
-    return show_mesh_0x2;
-}
-
-int MikuPan_IsLightingDisabled(void)
-{
-    return disable_lighting;
-}
-
-int MikuPan_IsGsUploadsDisabled(void)
-{
-    return disable_gs_uploads;
-}
-
-int MikuPan_ShowStaticLighting(void)
-{
-    return show_static_lighting;
-}
-
-int MikuPan_GetMeshLightingMode(void)
-{
-    return mesh_lighting_mode;
-}
-
-float MikuPan_GetNormalLength(void)
-{
-    return normal_length;
 }
 
 int MikuPan_GetRenderResolutionWidth(void)
@@ -3691,5 +1801,5 @@ int MikuPan_GetWindowMode(void)
 
 int MikuPan_IsVsync(void)
 {
-    return is_vsync;
+    return mikupan_configuration.renderer.vsync;
 }
