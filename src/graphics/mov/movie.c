@@ -665,7 +665,7 @@ static int stepMovPlayback(void)
         SceneSetVibrate(movie_wrk.play_event_no, g_vd.current_frame);
     }
 #else
-    SceneSetVibrate(movie_wrk.play_event_no, vd->current_frame);
+    SceneSetVibrate(movie_wrk.play_event_no, g_vd.current_frame);
 #endif
 
     /*

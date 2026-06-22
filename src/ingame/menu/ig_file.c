@@ -2,7 +2,6 @@
 #include "typedefs.h"
 #include "enums.h"
 #include "ig_file.h"
-
 #include "graphics/graph2d/effect_sub.h"
 #include "graphics/graph2d/message.h"
 #include "graphics/graph2d/tim2.h"
@@ -60,20 +59,21 @@ u_char file_kind[] = { 0,  2,  1, 0xff };
 #include "data/exp_table.h" // static char exp_table[][8][2];
 #include "data/hum_table.h" // static char hum_table[][8][2];
 #include "data/rel_com.h" // RELATION_COM rel_com[];
+
 #ifdef BUILD_EU_VERSION
 #include "data/rel_com_pos_adj.h" // int rel_com_pos_adj[][5][2];
 #endif
+
 #include "data/name_rbl.h" // static char name_rbl[][2];
 #include "data/rel_prt.h" // RELATION_PRT rel_prt[];
 #include "data/rel_dat.h" // RELATION_DAT rel_dat[];
 #include "data/rel_yaj.h" // RELATION_YAJI rel_yaj[];
 #include "data/caption_list.h" // CAPTION_LIST caption_list[];
 #include "data/caption_data.h" // CAPTION_DATA caption_data[];
-RELATION_CSR rel_csr = {0};
 
+RELATION_CSR rel_csr = {0};
 static FILE_REL file_rel;
 static FLSH_CORE flsh[4];
-
 static MEM_BOX mem_box[3];
 static MENU_FILE menu_file;
 static PHOT_FILE phot_file[4];
