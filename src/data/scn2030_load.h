@@ -1,39 +1,39 @@
 MSN_LOAD_DAT scn2030_load[] = {
     {
-        .file_no = 1095,
+        .file_no = 823,
         .file_type = 8,
         .tmp_no = 0,
-        .addr = 0xd00000,
+        .addr = 13631488,
     },
     {
-        .file_no = 1154,
+        .file_no = 882,
         .file_type = 9,
         .tmp_no = 24,
-        .addr = 0xae0000,
+        .addr = 11403264,
     },
     {
-        .file_no = 1638,
+        .file_no = 1366,
         .file_type = 2,
         .tmp_no = 0,
-        .addr = 0x11,
+        .addr = 17,
     },
     {
-        .file_no = 1072,
+        .file_no = 800,
         .file_type = 8,
         .tmp_no = 0,
-        .addr = 0xe00000,
+        .addr = 14680064,
     },
     {
-        .file_no = 1206,
+        .file_no = 934,
         .file_type = 10,
         .tmp_no = 1,
-        .addr = 0xc6c000,
+        .addr = 13025280,
     },
     {
         .file_no = 0,
         .file_type = 0,
         .tmp_no = 0,
-        .addr = 0x0,
+        .addr = 0,
     },
 };
 

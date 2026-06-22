@@ -13,22 +13,22 @@ DEBUG_MENU dbg_menu_le_top =     {
         .nmax = 0,
     },
             {
-        .name = "Infinite",
+        .name = 0,
         .subnum = 4116,
         .nmax = 0,
     },
             {
-        .name = "Point   ",
+        .name = 0,
         .subnum = 4117,
         .nmax = 0,
     },
             {
-        .name = "Spot    ",
+        .name = 0,
         .subnum = 4118,
         .nmax = 0,
     },
             {
-        .name = "Ambient ",
+        .name = 0,
         .subnum = 4145,
         .nmax = 0,
     },

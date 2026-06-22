@@ -1,0 +1,1 @@
+u_short* m021anm_tbl[] = { m021anm000, arei_anm, m021anm002, m021anm003, m021anm004, m021anm005, arei_anm, arei_anm, arei_anm, m021anm009, arei_anm, arei_anm, arei_anm, NULL, };

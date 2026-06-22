@@ -1,1 +1,0 @@
-u_char msn_title_flr_sp_num[] = { 1, 2, 1, 1, 1 };
