@@ -441,7 +441,7 @@ void TitleCtrl()
             mc_slot1 = mc_ctrl.port + 1;
             mc_file1 = mc_ctrl.sel_file + 1;
 
-            memcpy((void *)0xE80000, (void *)0x5a0000, 0x180000);
+            memcpy((void *)MikuPan_GetHostPointer(0xE80000), (void *)MikuPan_GetHostPointer(0x5a0000), 0x180000);
 
             mcInit(6, (u_int *)MikuPan_GetHostPointer(MC_WORK_ADDRESS), 0);
 
@@ -471,7 +471,7 @@ void TitleCtrl()
             mc_atyp2 = mc_album_type;
             mc_slot2 = mc_ctrl.port + 1;
             mc_file2 = mc_ctrl.sel_file + 1;
-            memcpy((void *)0x1000000, (void *)0x5a0000, 0x180000);
+            memcpy((void *)MikuPan_GetHostPointer(0x1000000), (void *)MikuPan_GetHostPointer(0x5a0000), 0x180000);
 
             MemAlbmInit(1, mc_pnum1, mc_pnum2, mc_atyp1, mc_atyp2, mc_slot1, mc_slot2, mc_file1, mc_file2 & 0xff);
 
@@ -494,7 +494,7 @@ void TitleCtrl()
             mc_slot2 = 0;
             mc_file2 = 0;
 
-            memcpy((void *)0x1000000, (void *)0x5a0000, 0x180000);
+            memcpy((void *)MikuPan_GetHostPointer(0x1000000), (void *)MikuPan_GetHostPointer(0x5a0000), 0x180000);
 
             MemAlbmInit(1, mc_pnum1, mc_pnum2, mc_atyp1, mc_atyp2, mc_slot1, mc_slot2, mc_file1, mc_file2 & 0xff);
             NewAlbumInit(1);
@@ -533,7 +533,7 @@ void TitleCtrl()
         {
         case 0: break;
         case 1:
-            memcpy((void *)0x5a0000, (void *)0xe80000, 0x180000);
+            memcpy((void *)MikuPan_GetHostPointer(0x5a0000), (void *)MikuPan_GetHostPointer(0xe80000), 0x180000);
 
             mcInit(2, (u_int *)MikuPan_GetHostAddress(MC_WORK_ADDRESS), 0);
 
@@ -552,7 +552,7 @@ void TitleCtrl()
             title_wrk.mode = TITLE_ALBM_SAVE_PRE;
         break;
         case 2:
-            memcpy((void *)0x5a0000, (void *)0x1000000, 0x180000);
+            memcpy((void *)MikuPan_GetHostPointer(0x5a0000), (void *)MikuPan_GetHostPointer(0x1000000), 0x180000);
 
             mcInit(2, (u_int *)MikuPan_GetHostAddress(MC_WORK_ADDRESS), 0);
 
@@ -1456,7 +1456,7 @@ void TitleStartSlctYW(u_char pad_off, u_char alp_max)
         break;
         }
     }
-    else if (*key_now[4] == 1)
+    else if (TRIANGLE_PRESSED() == 1)
     {
         ttl_dsp.timer = 0;
         title_wrk.mode = 2;
@@ -1567,13 +1567,13 @@ void TitleSelectMode()
 
         SeStartFix(SE_CSR0, 0, 0x1000, 0x1000, 0);
     }
-    else if (*key_now[4] == 1)
+    else if (TRIANGLE_PRESSED() == 1)
     {
         title_wrk.mode = 3;
 
         SeStartFix(SE_CANCEL, 0, 0x1000, 0x1000, 0);
     }
-    else if (*key_now[5] == 1)
+    else if (CROSS_PRESSED() == 1)
     {
         switch(title_wrk.csr)
         {
@@ -1723,7 +1723,7 @@ void TitleSelectModeYW(u_char pad_off, u_char alp_max)
         return;
     }
 
-    if (*key_now[5] == 1 || *key_now[12] == 1)
+    if (CROSS_PRESSED() == 1 || START_PRESSED() == 1)
     {
         switch (title_wrk.csr)
         {
@@ -1746,7 +1746,7 @@ void TitleSelectModeYW(u_char pad_off, u_char alp_max)
         break;
         }
     }
-    else if (*key_now[4] == 1)
+    else if (TRIANGLE_PRESSED() == 1)
     {
         title_wrk.mode = 23;
         SeStartFix(SE_CANCEL, 0, 0x1000, 0x1000, 0);
@@ -1853,21 +1853,21 @@ void TitleSelectDifficultyYW()
 
     DispSprD(&ds);
 
-    if (*key_now[5] == 1 || *key_now[0xc] == 1)
+    if (CROSS_PRESSED() == 1 || *key_now[0xc] == 1)
     {
         title_wrk.mode = 9;
 
         SeStartFix(SE_CLIC, 0, 0x1000, 0x1000, 0);
     }
-    else if (*key_now[4] == 1)
+    else if (TRIANGLE_PRESSED() == 1)
     {
         title_wrk.mode = 9;
 
         SeStartFix(SE_CANCEL, 0, 0x1000, 0x1000, 0);
     }
     else if (
-        *key_now[3] == 1 ||
-        (*key_now[3] > 25 && (*key_now[3] % 5) == 1) ||
+        DPAD_RIGHT_PRESSED() == 1 ||
+        (DPAD_RIGHT_PRESSED() > 25 && (DPAD_RIGHT_PRESSED() % 5) == 1) ||
         Ana2PadDirCnt(1) == 1 ||
         (Ana2PadDirCnt(1) > 25 && (Ana2PadDirCnt(1) % 5) == 1)
     )
@@ -1929,7 +1929,7 @@ void LoadGameInit()
 {
     sys_wrk.load = 1;
     title_wrk.csr = 0;
-    ingame_wrk.mode = 6;
+    ingame_wrk.mode = INGAME_MODE_NOMAL;
 
     cribo.clear_info &= 0x4;
     cribo.costume = 0;

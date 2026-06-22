@@ -12,6 +12,8 @@
 #include "graphics/graph2d/effect.h"
 #include "graphics/graph2d/tim2.h"
 #include "graphics/graph2d/tim2_new.h"
+#include "mikupan/mikupan_utils.h"
+#include "mikupan/rendering/mikupan_renderer.h"
 
 sceVu0IVECTOR particle_eff_col = {100, 100, 200, 0};
 sceVu0FVECTOR l_eye_pos = {23087.0f, -687.0f, 12135.0f, 0.0f};
@@ -379,6 +381,74 @@ Q_WORDDATA* SetPESpritePacket(Q_WORDDATA *qd, sceVu0IVECTOR col, sceVu0IVECTOR c
     return qd;
 }
 
+static void RenderEyeLightSprite(sceGsTex0 *tex, sceVu0IVECTOR col, sceVu0IVECTOR centervec, int pe_width, int albl)
+{
+    int i;
+    int x[4];
+    int y[4];
+    float u0;
+    float v0;
+    float u1;
+    float v1;
+    float u[4];
+    float v[4];
+    float vertices[4][12];
+    float tex_w = (float)(1 << tex->TW);
+    float tex_h = (float)(1 << tex->TH);
+
+    x[0] = centervec[0] - pe_width;
+    y[0] = centervec[1] - (pe_width >> 1);
+    x[1] = centervec[0] + pe_width;
+    y[1] = centervec[1] - (pe_width >> 1);
+    x[2] = centervec[0] - pe_width;
+    y[2] = centervec[1] + (pe_width >> 1);
+    x[3] = centervec[0] + pe_width;
+    y[3] = centervec[1] + (pe_width >> 1);
+
+    u0 = (float)effdat[46].u / tex_w;
+    v0 = (float)effdat[46].v / tex_h;
+    u1 = (float)(effdat[46].u + effdat[46].w) / tex_w;
+    v1 = (float)(effdat[46].v + effdat[46].h) / tex_h;
+
+    u[0] = u0;
+    v[0] = v0;
+    u[1] = u1;
+    v[1] = v0;
+    u[2] = u0;
+    v[2] = v1;
+    u[3] = u1;
+    v[3] = v1;
+
+    for (i = 0; i < 4; i++)
+    {
+        float ndc_z;
+
+        vertices[i][0] = u[i];
+        vertices[i][1] = v[i];
+        vertices[i][2] = 0.0f;
+        vertices[i][3] = 0.0f;
+        vertices[i][4] = MikuPan_ConvertScaleColor(col[0]);
+        vertices[i][5] = MikuPan_ConvertScaleColor(col[1]);
+        vertices[i][6] = MikuPan_ConvertScaleColor(col[2]);
+        vertices[i][7] = MikuPan_ConvertScaleColor(albl);
+
+        MikuPan_GSToNDC(
+            x[i],
+            y[i],
+            centervec[2],
+            &vertices[i][8],
+            &vertices[i][9],
+            &ndc_z,
+            (float)MikuPan_GetWindowWidth(),
+            (float)MikuPan_GetWindowHeight());
+
+        vertices[i][10] = ndc_z;
+        vertices[i][11] = 1.0f;
+    }
+
+    MikuPan_RenderSprite3D(tex, &vertices[0][0]);
+}
+
 void SetCenterGravOfFVECTOR(float *input, sceVu0FVECTOR *vec, u_int num)
 {
     int i;
@@ -429,7 +499,7 @@ void SetParticleEffect() {
 
     n = ndpkt;
 
-    pbuf[ndpkt++].ul128 = (u_long128)0;
+    pbuf[ndpkt++].ul128 = u_long128_from_u64(0);
 
     start_pktaddr = (uint64_t)&pbuf[ndpkt];
 
@@ -441,7 +511,7 @@ void SetParticleEffect() {
 
     pbuf[ndpkt++].ul64[0] = effdat[46].tex0;
 
-    pbuf[ndpkt++].ul128 = SCE_GS_SET_TEX1_1(1, 0, SCE_GS_LINEAR, SCE_GS_LINEAR_MIPMAP_LINEAR, 0, 0, 0); // shouldn't this be a SCE_GS_TEX0_2 ??
+    pbuf[ndpkt++].ul128 = u_long128_from_u64(SCE_GS_SET_TEX1_1(1, 0, SCE_GS_LINEAR, SCE_GS_LINEAR_MIPMAP_LINEAR, 0, 0, 0)); // shouldn't this be a SCE_GS_TEX0_2 ??
 
     pbuf[ndpkt].ul64[0] = SCE_GS_SET_ALPHA_1(SCE_GS_ALPHA_CS, SCE_GS_ALPHA_CD, SCE_GS_ALPHA_AS, SCE_GS_ALPHA_CD, 0);
     pbuf[ndpkt++].ul64[1] = SCE_GS_ALPHA_1;
@@ -463,6 +533,16 @@ void CallEyeLight(sceVu0FVECTOR *lpos, sceVu0FVECTOR *rpos)
 {
     eye_light_flg = 1;
 
+    if (lpos != NULL)
+    {
+        sceVu0CopyVector(l_eye_pos, *lpos);
+    }
+
+    if (rpos != NULL)
+    {
+        sceVu0CopyVector(r_eye_pos, *rpos);
+    }
+
     l_eye_pos[3] = r_eye_pos[3] = 1.0f;
 }
 
@@ -477,10 +557,9 @@ void EyeLightCtrl() {
     int w;
     uint64_t start_pktaddr;
     uint64_t end_pktaddr;
-    sceVu0FMATRIX mat;
     sceVu0IVECTOR scr[2];
     sceVu0IVECTOR col = {0.0f, 0.0f, 0.0f, 0.0f};
-    sceVu0FVECTOR vec;
+    sceGsTex0 tex;
     Q_WORDDATA *qd;
 
     col[0] = 200;
@@ -517,7 +596,7 @@ void EyeLightCtrl() {
 
         n = ndpkt;
 
-        pbuf[ndpkt++].ul128 = (u_long128)0;
+        pbuf[ndpkt++].ul128 = u_long128_from_u64(0);
 
         start_pktaddr = (uint64_t)&pbuf[ndpkt];
         qd = (Q_WORDDATA *)start_pktaddr;
@@ -529,10 +608,12 @@ void EyeLightCtrl() {
             | SCE_GIF_PACKED_AD << (4 * 2);
         qd++;
 
-        qd->ul64[0] = effdat[46].tex0;
+        tex = *(sceGsTex0 *)&effdat[46].tex0;
+
+        qd->ul64[0] = *(u_long *)&tex;
         qd++;
 
-        qd->ul128 = SCE_GS_SET_TEX1_1(1, 0, SCE_GS_LINEAR, SCE_GS_LINEAR_MIPMAP_LINEAR, 0, 0, 0); // shouldn't this be a SCE_GS_TEX0_2 ??
+        qd->ul128 = u_long128_from_u64(SCE_GS_SET_TEX1_1(1, 0, SCE_GS_LINEAR, SCE_GS_LINEAR_MIPMAP_LINEAR, 0, 0, 0)); // shouldn't this be a SCE_GS_TEX0_2 ??
         qd++;
 
         qd->ul64[0] = SCE_GS_SET_ALPHA_1(SCE_GS_ALPHA_CS, SCE_GS_ALPHA_CD, SCE_GS_ALPHA_AS, SCE_GS_ALPHA_CD, 0);
@@ -551,7 +632,10 @@ void EyeLightCtrl() {
 
         for (i = 0; i < 2; i++)
         {
-            qd = SetPESpritePacket(qd, col, scr[i], (scr[i][2] * 300.0f) / 4000.0f, 0x50);
+            int pe_width = (scr[i][2] * 300.0f) / 4000.0f;
+
+            qd = SetPESpritePacket(qd, col, scr[i], pe_width, 0x50);
+            RenderEyeLightSprite(&tex, col, scr[i], pe_width, 0x50);
         }
 
         end_pktaddr = ((uint64_t)qd - start_pktaddr) >> 4;

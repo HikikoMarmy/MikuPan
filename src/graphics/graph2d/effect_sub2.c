@@ -190,10 +190,10 @@ static void EffectSub2CopyDepthBiasedQuad(
 }
 
 #include "data/fall_table.h" /* data 270e30 */ // FALL_TABLE fall_table[/*4*/];
-/* sdata 3563e8 */ short int fallen_effect_switch = 0;
-/* sdata 3563ea */ short int gus_effect_switch = 0;
-/* sdata 3563ec */ short int hole_effect_switch = 0;
-/* sdata 3563f0 */ short int line_effect_switch[4] = { 0, 0, 0, 0 };
+short int fallen_effect_switch = 0;
+short int gus_effect_switch = 0;
+short int hole_effect_switch = 0;
+short int line_effect_switch[4] = { 0, 0, 0, 0 };
 
 #include "data/btl_strt.h"  /* data 270f30 */ // SPRT_SDAT btl_strt[11];
 #include "data/btl_rslt.h"  /* data 270fd0 */ // SPRT_SDAT btl_rslt[23];
@@ -210,21 +210,13 @@ static void EffectSub2CopyDepthBiasedQuad(
 #include "data/line_wrk.h"  /* data 27ab20 */ // LEAVES_TABLE line_wrk[4];
 /* data 2809e0 */ BTL_ANM_LOAD banm = {0};
 
-/* bss 359f90 */ static sceVu0FVECTOR leaves[600];
-/* bss 35c510 */ static sceVu0FVECTOR leavesaim[600];
-/* bss 35ea90 */ static sceVu0FVECTOR accel[600];
-/* bss 361010 */ static sceVu0FVECTOR rots[600];
-/* bss 363590 */ static sceVu0FVECTOR hole_gus[200];
-/* bss 364210 */ static sceVu0FVECTOR line_gus[4][80];
+static sceVu0FVECTOR leaves[600];
+static sceVu0FVECTOR leavesaim[600];
+static sceVu0FVECTOR accel[600];
+static sceVu0FVECTOR rots[600];
+static sceVu0FVECTOR hole_gus[200];
+static sceVu0FVECTOR line_gus[4][80];
 
-/*
- * On PS2 the fall quads were appended to the 2D packet buffer and DMA-kicked
- * at end of frame, after the 3D world. The modern renderer draws immediately,
- * but FallenObjects runs from game logic (FActWrkMain) before the map is
- * rendered, so an immediate draw always ends up depth-occluded by the map.
- * Batch the quads here and flush them via FallenObjectsDraw once the 3D
- * scene has been drawn.
- */
 static float fall_render_buffer[EFFECT_SUB2_MAX_FALL_VERTICES][12];
 static int fall_render_vertices = 0;
 static u_long fall_render_tex0 = 0;
@@ -683,8 +675,8 @@ void FallObjWind(/* a0 4 */ sceVu0FVECTOR leaf, /* a1 5 */ int fall_mode)
 
 void FallObjLight(/* a0 4 */ sceVu0FVECTOR leaf, /* s0 16 */ short int *rgba, /* s1 17 */ int fall_mode)
 {
-	/* -0x40(sp) */ float tes1;
-	/* -0x3c(sp) */ float tes2;
+	float tes1;
+	float tes2;
     
     tes1 = 0.0f;
     tes2 = 0.0f;
@@ -801,7 +793,7 @@ void FallObjDraw(sceVu0FVECTOR mpos, sceVu0FVECTOR rotation, short int *rgba, in
         
         bak = ndpkt;
         
-        pbuf[ndpkt++].ul128 = (u_long128)0;
+        pbuf[ndpkt++].ul128 = u_long128_from_u64(0);
         
         pbuf[ndpkt].ul64[0] = SCE_GIF_SET_TAG(6, SCE_GS_FALSE, SCE_GS_FALSE, 0, SCE_GIF_PACKED, 1);
         pbuf[ndpkt++].ul64[1] = SCE_GIF_PACKED_AD;
@@ -883,9 +875,9 @@ void FallObjDraw(sceVu0FVECTOR mpos, sceVu0FVECTOR rotation, short int *rgba, in
 
 void GusObjDebug()
 {
-    if (*key_now[14] != 0)
+    if (L3_PRESSED() != 0)
     {
-        if (*key_now[10] == 0)
+        if (R1_PRESSED() == 0)
         {
             if (r_temp < 0xff)
             {
@@ -901,9 +893,9 @@ void GusObjDebug()
         }
     }
     
-    if (*key_now[15] != 0)
+    if (R3_PRESSED() != 0)
     {
-        if (*key_now[10] == 0)
+        if (R1_PRESSED() == 0)
         {
             if (g_temp < 0xff)
             {
@@ -919,9 +911,9 @@ void GusObjDebug()
         }
     }
     
-    if (*key_now[5] != 0)
+    if (CROSS_PRESSED() != 0)
     {
-        if (*key_now[10] == 0)
+        if (R1_PRESSED() == 0)
         {
             if (b_temp < 0xff)
             {
@@ -967,14 +959,7 @@ void GusObjMove(/* a0 4 */ sceVu0FVECTOR mpos)
 
 void GusObjInit(/* t2 10 */ sceVu0FVECTOR mpos, /* t3 11 */ int leaf_no, /* a2 6 */ int area)
 {
-	/* v0 2 */ int tmp;
-	// /* f0 38 */ float r;
-	// /* f1 39 */ float r;
-	// /* f1 39 */ float r;
-	// /* f0 38 */ float r;
-	// /* f1 39 */ float r;
-	// /* f1 39 */ float r;
-	// /* f0 38 */ float r;
+	int tmp;
     
     gus_wrk.mpos_keep[0] = mpos[0];
     gus_wrk.mpos_keep[1] = mpos[1];
@@ -1025,7 +1010,6 @@ void GusObjInit(/* t2 10 */ sceVu0FVECTOR mpos, /* t3 11 */ int leaf_no, /* a2 6
 void GusObjInit3(/* a0 4 */ sceVu0FVECTOR mpos, /* s3 19 */ int leaf_no, /* a2 6 */ int area, /* s1 17 */ int fall_mode)
 {
     int tmp;
-	// /* f20 58 */ float r;
     
     leaves[leaf_no][0] = -area / 2 + (leaf_no * 250) % area;
     leaves[leaf_no][2] = -area / 2 + ((leaf_no * 250) / area) * 250;
@@ -1191,6 +1175,11 @@ void GusObjDraw(/* a0 4 */ int leaf_num, /* a1 5 */ int area, /* a2 6 */ int fal
     tw = effdat[i].w * 16;
     th = effdat[i].h * 16;
 
+    if (dbg_wrk.mode_on == 1)
+    {
+        GusObjDebug();
+    }
+
     if (monochrome_mode)
     {
         mg = (r_temp + g_temp + b_temp) / 3;
@@ -1224,7 +1213,7 @@ void GusObjDraw(/* a0 4 */ int leaf_num, /* a1 5 */ int area, /* a2 6 */ int fal
 
     bak = ndpkt;
     
-    pbuf[ndpkt++].ul128 = (u_long128)0;
+    pbuf[ndpkt++].ul128 = u_long128_from_u64(0);
     
     pbuf[ndpkt].ul64[0] = SCE_GIF_SET_TAG(6, SCE_GS_TRUE, SCE_GS_FALSE, 0, SCE_GIF_PACKED, 1);
     pbuf[ndpkt++].ul64[1] = SCE_GIF_PACKED_AD;
@@ -1626,7 +1615,7 @@ void HoleGusDraw(/* s5 21 */ int leaf_no)
         
         bak = ndpkt;
         
-        pbuf[ndpkt++].ul128 = (u_long128)0;
+        pbuf[ndpkt++].ul128 = u_long128_from_u64(0);
         
         pbuf[ndpkt].ul64[0] = SCE_GIF_SET_TAG(6, SCE_GS_TRUE, SCE_GS_FALSE, 0, SCE_GIF_PACKED, 1);
         pbuf[ndpkt++].ul64[1] = SCE_GIF_PACKED_AD;
@@ -2281,7 +2270,7 @@ void LineGusDraw(/* s6 22 */ int leaf_no, /* s5 21 */ int line_num)
         
         bak = ndpkt;
         
-        pbuf[ndpkt++].ul128 = (u_long128)0;
+        pbuf[ndpkt++].ul128 = u_long128_from_u64(0);
 
         pbuf[ndpkt].ul64[0] = SCE_GIF_SET_TAG(6, SCE_GS_TRUE, SCE_GS_FALSE, 0, SCE_GIF_PACKED, 1);
         pbuf[ndpkt++].ul64[1] = SCE_GIF_PACKED_AD;
@@ -2536,8 +2525,8 @@ int CallMissionClear()
         }
         
         if (
-            *key_now[3] == 1 ||
-            (*key_now[3] > 25 && (*key_now[3] % 5) == 1) ||
+            DPAD_RIGHT_PRESSED() == 1 ||
+            (DPAD_RIGHT_PRESSED() > 25 && (DPAD_RIGHT_PRESSED() % 5) == 1) ||
             Ana2PadDirCnt(1) == 1 ||
             (Ana2PadDirCnt(1) > 25 && (Ana2PadDirCnt(1) % 5) == 1)
         )
@@ -2667,8 +2656,8 @@ uint64_t CallMissionFailed()
         }
         
         if (
-            *key_now[3] == 1 ||
-            (*key_now[3] > 25 && (*key_now[3] % 5) == 1) ||
+            DPAD_RIGHT_PRESSED() == 1 ||
+            (DPAD_RIGHT_PRESSED() > 25 && (DPAD_RIGHT_PRESSED() % 5) == 1) ||
             Ana2PadDirCnt(1) == 1 ||
             (Ana2PadDirCnt(1) > 25 && (Ana2PadDirCnt(1) % 5) == 1)
         )
@@ -2806,8 +2795,8 @@ int CallMissionAllClear()
         }
         
         if (
-            *key_now[3] == 1 ||
-            (*key_now[3] > 25 && (*key_now[3] % 5) == 1) ||
+            DPAD_RIGHT_PRESSED() == 1 ||
+            (DPAD_RIGHT_PRESSED() > 25 && (DPAD_RIGHT_PRESSED() % 5) == 1) ||
             Ana2PadDirCnt(1) == 1 ||
             (Ana2PadDirCnt(1) > 25 && (Ana2PadDirCnt(1) % 5) == 1)
         )
@@ -2992,7 +2981,7 @@ int CallStoryClear()
 #endif
         }
         
-        if (*key_now[5] == 1)
+        if (CROSS_PRESSED() == 1)
         {
             ret_num = 1;
             
@@ -3228,7 +3217,7 @@ int BtlAnmMain()
         
         if (
             ANM2D_DAT_TABLE_P(wrk_table[i].table_p)->attribute & 0x100000 && 
-            *key_now[5] == 1
+            CROSS_PRESSED() == 1
         )
         {
             SeStartFix(SE_CLIC, 0, 0x1000, 0x1000, 0);
@@ -3738,17 +3727,17 @@ void DispSprtTemp(/* s1 17 */ SPRT_SDAT *ssd, /* a1 5 */ int64_t addr, /* a2 6 *
     DispSprD(&ds);
 }
 
-void TestPk2Data_2dg(long int sendtexaddr)
+void TestPk2Data_2dg(long long sendtexaddr)
 {
 	static int ttest_count = 0;
 	SPRT_SDAT ssd;
     
-    if (*key_now[8] == 1)
+    if (L1_PRESSED() == 1)
     {
         ttest_count++;
     }
     
-    if (*key_now[9] == 1)
+    if (L2_PRESSED() == 1)
     {
         ttest_count--;
     }

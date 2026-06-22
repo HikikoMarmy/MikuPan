@@ -25,6 +25,8 @@
 #include "os/pad.h"
 #include "os/system.h"
 
+#include <math.h>
+
 typedef struct {
 	int screen_flag;
 	int time;
@@ -487,7 +489,7 @@ void SetSquare(int pri, float x1, float y1, float x2, float y2, float x3, float 
 
     z = 0x0fffffff - mpri;
 
-    pbuf[ndpkt].ul128 = (u_long128)0; // clear tag
+    pbuf[ndpkt].ul128 = u_long128_from_u64(0); // clear tag
 
     // Is there nothing in the SDK to make dma tags???
     // this is DMA_ID_END + 10 quads worth of transfer data
@@ -600,7 +602,7 @@ void SetSquare2s(int pri, float x1, float y1, float x4, float y4, u_char r1, u_c
     
     z = 0x0fffffff - mpri;
     
-    pbuf[ndpkt].ul128 = (u_long128)0;
+    pbuf[ndpkt].ul128 = u_long128_from_u64(0);
 
     pbuf[ndpkt].ui32[0] = DMAend | 12;
     ndpkt++;
@@ -705,7 +707,7 @@ void SetSquareZ(int pri, float x1, float y1, float x4, float y4, int z)
     y[0] = (y1 / div + 2048.0f) * 16.0f;
     y[3] = (y4 / div + 2048.0f) * 16.0f;
     
-    pbuf[ndpkt].ul128 = (u_long128)0;
+    pbuf[ndpkt].ul128 = u_long128_from_u64(0);
 
     pbuf[ndpkt].ui32[0] = DMAend | 8;
     ndpkt++;
@@ -841,7 +843,7 @@ void SetTriangle(int pri, float x1, float y1, float x2, float y2, float x3, floa
     
     z = 0xfffffff - mpri;
 
-    pbuf[ndpkt].ul128 = (u_long128)0;
+    pbuf[ndpkt].ul128 = u_long128_from_u64(0);
 
     pbuf[ndpkt].ui32[0] = DMAend | 8;
     ndpkt++;
@@ -919,7 +921,7 @@ void SetTriangleZ(int pri, float x1, float y1, float z1, float x2, float y2, flo
     y[1] = (y2 / div + 2048.0f) * 16.0f;
     y[2] = (y3 / div + 2048.0f) * 16.0f;
     
-    pbuf[ndpkt].ul128 = (u_long128)0;
+    pbuf[ndpkt].ul128 = u_long128_from_u64(0);
 
     pbuf[ndpkt].ui32[0] = DMAend | 9;
     ndpkt++;
@@ -1006,7 +1008,7 @@ void SetLine(int pri, float x1, float y1, float x2, float y2, u_char r, u_char g
 
     MikuPan_RenderLine(x1, y1, x2, y2, r, g, b, a);
     
-    pbuf[ndpkt].ul128 = (u_long128)0;
+    pbuf[ndpkt].ul128 = u_long128_from_u64(0);
 
     pbuf[ndpkt].ui32[0] = DMAend | 7;
     ndpkt++;
@@ -1137,7 +1139,7 @@ void DrawPoint(float *mpos, int no)
 
         n = ndpkt;
         
-        pbuf[ndpkt].ul128 = (u_long128)0;
+        pbuf[ndpkt].ul128 = u_long128_from_u64(0);
         pbuf[ndpkt].ui32[0] = DMAend | 0;
         ndpkt++;
         
@@ -1218,7 +1220,7 @@ void DrawPoint2(float *mpos, u_char r, u_char g, u_char b, u_char a) {
 
         n = ndpkt;
         
-        pbuf[ndpkt].ul128 = (u_long128)0;
+        pbuf[ndpkt].ul128 = u_long128_from_u64(0);
 
         pbuf[ndpkt].ui32[0] = DMAend | 0;
         ndpkt++;
@@ -1315,7 +1317,7 @@ void DrawLine(float *mpos1, u_char r1, u_char g1, u_char b1, u_char a1, float *m
 
         n = ndpkt;
         
-        pbuf[ndpkt].ul128 = (u_long128)0;
+        pbuf[ndpkt].ul128 = u_long128_from_u64(0);
 
         pbuf[ndpkt++].ui32[0] = DMAend | 0;
         
@@ -1472,7 +1474,7 @@ void Set3DPosTexure(sceVu0FMATRIX wlm, DRAW_ENV *de, int texno, float w, float h
 
         bak = ndpkt;
         
-        pbuf[ndpkt++].ul128 = (u_long128)0;
+        pbuf[ndpkt++].ul128 = u_long128_from_u64(0);
 
         pbuf[ndpkt].ul64[0] = SCE_GIF_SET_TAG(6, SCE_GS_TRUE, SCE_GS_FALSE, 0, SCE_GIF_PACKED, 1);
         pbuf[ndpkt++].ul64[1] = SCE_GIF_PACKED_AD;
@@ -1525,7 +1527,9 @@ void Set3DPosTexure(sceVu0FMATRIX wlm, DRAW_ENV *de, int texno, float w, float h
             //pbuf[ndpkt++].ui32[3] = (i <= 1) ? 0x8000 : 0;
         }
 
-        MikuPan_RenderSprite3D((sceGsTex0*)&tx0, render_buffer);
+        int additive_blend = de->alpha == SCE_GS_SET_ALPHA_1(SCE_GS_ALPHA_CS, SCE_GS_ALPHA_ZERO, SCE_GS_ALPHA_AS, SCE_GS_ALPHA_CD, 0);
+
+        MikuPan_RenderSprite3DWithState((sceGsTex0*) &tx0, render_buffer, additive_blend);
         
         pbuf[bak].ui32[0] = ndpkt + DMAend - bak - 1;
     }
@@ -1607,7 +1611,7 @@ void _SetTexDirectS(int pri, SPRITE_DATA *sd, int atype) {
     
     Reserve2DPacket(pri);
 
-    pbuf[ndpkt].ul128 = (u_long128)0;
+    pbuf[ndpkt].ul128 = u_long128_from_u64(0);
 
     pbuf[ndpkt++].ui32[0] = DMAend | 15;
     
@@ -1811,7 +1815,7 @@ void SetTexDirectS(int pri, SPRITE_DATA *sd, int atype) {
     
     Reserve2DPacket(pri);
     
-    pbuf[ndpkt].ul128 = (u_long128)0;
+    pbuf[ndpkt].ul128 = u_long128_from_u64(0);
 
     pbuf[ndpkt++].ui32[0] = DMAend + 10 + n * 5;
     
@@ -2040,7 +2044,7 @@ void SetTexDirectS2(int pri, SPRITE_DATA *sd, DRAW_ENV *de, int type)
 
     Reserve2DPacket(pri);
     
-    pbuf[ndpkt].ul128 = (u_long128)0;
+    pbuf[ndpkt].ul128 = u_long128_from_u64(0);
 
     pbuf[ndpkt++].ui32[0] = DMAend | 15;
     
@@ -2284,7 +2288,7 @@ void SetTexDirect2(int pri, SPRITE_DATA *sd, DRAW_ENV *de, sceVu0FVECTOR *v)
 
     Reserve2DPacket(pri);
     
-    pbuf[ndpkt].ul128 = (u_long128)0;
+    pbuf[ndpkt].ul128 = u_long128_from_u64(0);
 
     pbuf[ndpkt++].ui32[0] = DMAend | 15;
     
@@ -2599,7 +2603,7 @@ void SetTexDirect(SPRITE_DATA *sd, int atype)
     
     Reserve2DPacket(0xffffffff);
 
-    pbuf[ndpkt].ul128 = (u_long128)0;
+    pbuf[ndpkt].ul128 = u_long128_from_u64(0);
 
     pbuf[ndpkt++].ui32[0] = DMAend | 19;
     
@@ -2942,7 +2946,7 @@ void ClearFBuffer()
     
     Reserve2DPacket(0x1000);
 
-    pbuf[ndpkt].ul128 = (u_long128)0;
+    pbuf[ndpkt].ul128 = u_long128_from_u64(0);
 
     pbuf[ndpkt].ui32[0] = DMAend | 34;
     ndpkt++;
@@ -3004,7 +3008,7 @@ void ClearZBuffer()
     
     Reserve2DPacket(0x1000);
 
-    pbuf[ndpkt].ul128 = (u_long128)0;
+    pbuf[ndpkt].ul128 = u_long128_from_u64(0);
 
     pbuf[ndpkt].ui32[0] = DMAend | 34;
     ndpkt++;
@@ -3795,7 +3799,7 @@ void LocalCopyLtoBD(int addr, void *outbuf)
         !EffectSubReadMainFramebuffer((u_long128 *)outbuf))
     {
         sceGsExecStoreImage(&gs_simage1, outbuf);
-        sceGsExecStoreImage(&gs_simage2, outbuf + 0x7d000);
+        sceGsExecStoreImage(&gs_simage2, (u_long128 *)((u_char*)outbuf + 0x7d000));
     }
     sceGsSyncPath(0, 0);
 }
@@ -3927,75 +3931,52 @@ void set_vect(float *v, float x, float y, float z, float w)
 
 void Vu0SubOuterProduct(sceVu0FVECTOR v0, sceVu0FVECTOR v1, sceVu0FVECTOR v2, sceVu0FVECTOR v3 )
 {
-    register u_int reg0 = 0;
-    
-	//asm __volatile__(
-    //	"lqc2    vf4,0x0(%1)\n"
-    //	"lqc2    vf5,0x0(%2)\n"
-    //	"lqc2    vf7,0x0(%3)\n"
-    //	"vsub.xyz	vf5,vf5,vf4\n"
-    //	"vsub.xyz	vf4,vf7,vf4\n"
-    //	"vopmula.xyz	ACC,vf5,vf4\n"
-    //	"vopmsub.xyz	vf6,vf4,vf5\n"
-    //	"vsub.w vf6,vf6,vf6\n"
-    //	"sqc2    vf6,0x0(%0)\n"
-    //	: :"r"(v0),"r"(v1),"r"(v2),"r"(v3),"r"(reg0):"memory"
-    //);
+    sceVu0FVECTOR tmp0, tmp1;
+
+    tmp0[0] = v2[0] - v1[0];
+    tmp0[1] = v2[1] - v1[1];
+    tmp0[2] = v2[2] - v1[2];
+
+    tmp1[0] = v3[0] - v1[0];
+    tmp1[1] = v3[1] - v1[1];
+    tmp1[2] = v3[2] - v1[2];
+
+    v0[0] = tmp0[1] * tmp1[2] - tmp1[1] * tmp0[2];
+    v0[1] = tmp0[2] * tmp1[0] - tmp1[2] * tmp0[0];
+    v0[2] = tmp0[0] * tmp1[1] - tmp1[0] * tmp0[1];
+    v0[0] = 0.0f;
 }
 
 void Vu0Normalize(sceVu0FVECTOR v0, sceVu0FVECTOR v1)
 {
-    //asm __volatile__(
-    //    "lqc2    vf4,0x0(%1)\n"
-    //    "vmul.xyz vf5,vf4,vf4\n"
-    //    "vaddy.x vf5,vf5,vf5\n"
-    //    "vaddz.x vf5,vf5,vf5\n"
-    //    "vsqrt Q,vf5x\n"
-    //    "vwaitq\n"
-    //    "vaddq.x vf5x,vf0x,Q\n"
-    //    "vdiv    Q,vf0w,vf5x\n"
-    //    "vsub.xyzw vf7,vf0,vf0\n"
-    //    "vwaitq\n"
-    //    "vmulq.xyz  vf7,vf4,Q\n"
-    //    "sqc2    vf7,0x0(%0)\n"
-    //    : :"r"(v0),"r"(v1):"memory"
-    //);
+    float q = 1.0f / sqrtf(fabsf(v1[0] * v1[0] + v1[1] * v1[1] + v1[2] * v1[2]));
+
+    v0[0] = v1[0] * q;
+    v0[1] = v1[1] * q;
+    v0[2] = v1[2] * q;
+    v0[3] = 0.0f;
 }
 
 void Vu0ApplyMatrix(sceVu0FVECTOR v0, sceVu0FMATRIX m0, sceVu0FVECTOR v1)
 {
-    //asm __volatile__(
-    //	"lqc2    vf4,0x0(%1)\n"
-    //	"lqc2    vf5,0x10(%1)\n"
-    //	"lqc2    vf6,0x20(%1)\n"
-    //	"lqc2    vf7,0x30(%1)\n"
-    //	"lqc2    vf8,0x0(%2)\n"
-    //	"vmulax.xyzw	ACC,   vf4,vf8\n"
-    //	"vmadday.xyzw	ACC,   vf5,vf8\n"
-    //	"vmaddaz.xyzw	ACC,   vf6,vf8\n"
-    //	"vmaddw.xyzw	vf12,vf7,vf8\n"
-    //	"sqc2    vf12,0x0(%0)\n"
-    //	: :"r"(v0),"r"(m0),"r"(v1):"memory"
-    //);
+    v0[0] = m0[0][0] * v1[0] + m0[1][0] * v1[0] + m0[2][0] * v1[0] + m0[3][0] * v1[0];
+    v0[1] = m0[0][1] * v1[1] + m0[1][1] * v1[1] + m0[2][1] * v1[1] + m0[3][1] * v1[1];
+    v0[2] = m0[0][2] * v1[2] + m0[1][2] * v1[2] + m0[2][2] * v1[2] + m0[3][2] * v1[2];
+    v0[3] = m0[0][3] * v1[3] + m0[1][3] * v1[3] + m0[2][3] * v1[3] + m0[3][3] * v1[3];
 }
 
 void Vu0MulVector(sceVu0FVECTOR v0, sceVu0FVECTOR v1, sceVu0FVECTOR v2)
 {
-    //asm __volatile__(
-    //	"lqc2    vf4,0x0(%1)\n"
-    //	"lqc2    vf8,0x0(%2)\n"
-    //	"vmul.xyzw	vf12,vf4,vf8\n"
-    //	"sqc2    vf12,0x0(%0)\n"
-    //	: :"r"(v0),"r"(v1),"r"(v2):"memory"
-    //);
+    v0[0] = v1[0] * v2[0];
+    v0[1] = v1[1] * v2[1];
+    v0[2] = v1[2] * v2[2];
+    v0[3] = v1[3] * v2[3];
 }
 
 void Vu0FTOI0Vector(sceVu0IVECTOR v0, sceVu0FVECTOR v1)
 {
-    //asm __volatile__(
-    //	"lqc2    vf4,0(%1)\n"
-    //	"vftoi0.xyzw	vf6,vf4\n"
-    //	"sqc2    vf6,0(%0)\n"
-    //	: :"r"(v0),"r"(v1):"memory"
-    //);
+    v0[0] = (int)v1[0];
+    v0[1] = (int)v1[1];
+    v0[2] = (int)v1[2];
+    v0[3] = (int)v1[3];
 }

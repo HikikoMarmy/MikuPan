@@ -113,10 +113,10 @@ int FodNextFrame(FOD_CTRL *fc)
         eff_addr = eff_addr + fc->eff_frame->size;
         fc->eff_frame = (FOD_EFF_FRAME *)eff_addr;
 
-        return NULL;
+        return 0;
     }
 
-    // no return ...
+    return 0;
 }
 
 void FodSetFrame(FOD_CTRL *fc, u_int frame)
@@ -794,7 +794,7 @@ void FodSetEffect(FOD_CTRL *fc)
 
     if (fef->zdepth == 1)
     {
-        SetEffects(1, 1);
+        SetEffects(EF_Z_DEP, 1);
     }
 
     if (fef->mono == 1 && eff_param.mono_flg == 0)
@@ -833,7 +833,7 @@ void FodSetEffect(FOD_CTRL *fc)
 
                 sceVu0ApplyMatrix(eff_param.pdf_pos, fod_cmn_mtx, eff_param.pdf_pos);
 
-                eff_param.pdf_p = SetEffects(27, 2,
+                eff_param.pdf_p = SetEffects(EF_PDEFORM, 2,
                     (u_long)(fed->dither).alpmax,
                     (u_long)(fed->dither).colmax,
                     *(float *)(&((char *)fed)[36]),

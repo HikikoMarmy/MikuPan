@@ -12,7 +12,7 @@ typedef struct
     unsigned short Year;
 } MikuPan_McStDateTime;
 
-typedef struct
+TYPEDEF_ALIGNED(64, struct
 {
     MikuPan_McStDateTime _Create;
     MikuPan_McStDateTime _Modify;
@@ -22,10 +22,12 @@ typedef struct
     unsigned int Reserve2;
     unsigned int PdaAplNo;
     unsigned char EntryName[32];
-} MikuPan_McTblGetDir __attribute__((aligned (64)));
+} MikuPan_McTblGetDir);
 
 void MikuPan_LoadImgHdFile();
 void MikuPan_ServiceMissingDataFolderDialog();
+void MikuPan_RequestDataFolderSelection(const char *missing_path);
+bool MikuPan_HasRequiredDataFiles(char *missing_file, size_t missing_file_size);
 /* Records that file data was loaded at a PS2 main-memory offset; requests a
    texture-cache flush only when an address is loaded over a second time. */
 void MikuPan_NotifyPs2MemoryLoad(int ps2_address);
@@ -41,6 +43,6 @@ u_char MikuPan_ReadFile(const char *filename, void *buffer, int size);
 u_char MikuPan_WriteFile(const char *filename, const void *buffer, int size);
 u_char MikuPan_CreateFolder(const char *folder);
 u_char MikuPan_FolderExists(const char *folder);
-int MikuPan_GetListFiles(const char *folder, MikuPan_McTblGetDir *table);
+int MikuPan_GetListFiles(const char *folder, MikuPan_McTblGetDir *table, int max_entries);
 
 #endif//MIKUPAN_MIKUPAN_FILE_C_H

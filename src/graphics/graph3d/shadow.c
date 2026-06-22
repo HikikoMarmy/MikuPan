@@ -286,6 +286,7 @@ void SetVU1HeaderShadow()
 
 static void _CalcWeightedVertexSM(sceVu0FVECTOR dp, sceVu0FVECTOR *v)
 {
+/*
     sceVu0FVECTOR *wk0 = work_matrix_0; // in [vf4:vf7]
     sceVu0FVECTOR *wk1 = work_matrix_1; // in [vf8:vf11]
     sceVu0FVECTOR vf13, vf14;
@@ -306,10 +307,13 @@ static void _CalcWeightedVertexSM(sceVu0FVECTOR dp, sceVu0FVECTOR *v)
     dp[3] = 1.0f;
 
     calc_skinned_position(dp, (sceVu0FVECTOR *) v);
+*/
+    calc_skinned_position(dp, v);
 }
 
 static void _CalcWeightedVertexBufferSM(sceVu0FVECTOR dp, sceVu0FVECTOR *v)
 {
+    /*
     sceVu0FVECTOR *wk0 = work_matrix_0; // in [vf4:vf7]
     sceVu0FVECTOR *wk1 = work_matrix_1; // in [vf8:vf11]
     sceVu0FVECTOR vf13, vf14;
@@ -330,6 +334,8 @@ static void _CalcWeightedVertexBufferSM(sceVu0FVECTOR dp, sceVu0FVECTOR *v)
     dp[3] = 1.0f;
 
     calc_skinned_position(dp, (sceVu0FVECTOR *) v);
+    */
+    calc_skinned_position(dp, v);
 }
 
 
@@ -391,8 +397,8 @@ void CalcVertexBufferShadow(u_int *prim)
 
     for (i = 0; i < vli->list_num; i++)
     {
-        _SetLWMatrix0(lcp[vli->lists[i].cn0].workm);
-        _SetLWMatrix1(lcp[vli->lists[i].cn1].workm);
+        _SetLWMatrix0(lcp[vli->lists[i].cn0].lwmtx);
+        _SetLWMatrix1(lcp[vli->lists[i].cn1].lwmtx);
 
         for (j = 0; j < vli->lists[i].vIdx; vpd++, vps += 2, j++)
         {
@@ -455,8 +461,8 @@ u_int *SetVUVNDataShadowModel(u_int *prim)
                 cn = (char *) GetShadowVuvnHostPointer(*prim, 0, vh->vtype);
                 if (cn == NULL) return NULL;
 
-                _SetLWMatrix0(lcp[cn[0x1c]].workm);
-                _SetLWMatrix1(lcp[cn[0x1d]].workm);
+                _SetLWMatrix0(lcp[cn[0x1c]].lwmtx);
+                _SetLWMatrix1(lcp[cn[0x1d]].lwmtx);
 
                 for (i = 0; i < vh->vnum; i++, vp++, prim += 2)
                 {
@@ -482,8 +488,8 @@ u_int *SetVUVNDataShadowModel(u_int *prim)
                 {
                     cn = (char *) GetShadowVuvnHostPointer(*prim, i, vh->vtype);
                     if (cn == NULL) return NULL;
-                    _SetLWMatrix0(lcp[cn[0x1c]].workm);
-                    _SetLWMatrix1(lcp[cn[0x1d]].workm);
+                    _SetLWMatrix0(lcp[cn[0x1c]].lwmtx);
+                    _SetLWMatrix1(lcp[cn[0x1d]].lwmtx);
                     _CalcWeightedVertexSM(*vp, (sceVu0FVECTOR *) cn);
                     vp++;
                     prim += 2;
@@ -523,9 +529,6 @@ void ShadowModelMesh(u_int *prim)
                 break;
             }
 
-            /* read_p is vp_bak: the start of the position-only vec4 block that
-             * SetVUVNDataShadowModel just wrote. Draw the silhouette from it now,
-             * before the PS2 DMA-call tags below overwrite the first vertex. */
             MikuPan_RenderShadowSilhouettePrepared(vuvnprim, prim, (float *) read_p);
 
             read_p[0] = 0x14000000 | ((u_int) SHADOWDRAWTYPE0 >> 3);

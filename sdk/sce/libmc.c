@@ -117,7 +117,8 @@ int sceMcGetDir(int port, int slot, const char *name, unsigned mode, int maxent,
     }
     else
     {
-        retval = MikuPan_GetListFiles(name, (MikuPan_McTblGetDir*)table);
+        int num_entries = MikuPan_GetListFiles(name, (MikuPan_McTblGetDir*)table, maxent);
+        retval = num_entries == 0 ? sceMcResNoEntry : num_entries;
     }
 
     return sceMcExecRun;

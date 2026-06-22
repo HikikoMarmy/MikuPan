@@ -44,9 +44,6 @@ static NEW_PERTICLE new_perticle[44];
 #define ADDRESS 0x01fa8000
 #define ADDRESS_2 0x00ac8000
 
-/// Writes one untextured vertex (COLOUR4_POSITION4, 8 floats) into the MikuPan
-/// render buffer. Positions are expected in NDC; matches the layout consumed by
-/// MikuPan_RenderUntexturedTriangles3D / MikuPan_RenderUntexturedSprite.
 static void EneWriteUntexturedNdcVertex(float *dst, const float *ndc, u_char r, u_char g, u_char b, u_char a)
 {
     dst[0] = MikuPan_ConvertScaleColor(r);
@@ -59,9 +56,6 @@ static void EneWriteUntexturedNdcVertex(float *dst, const float *ndc, u_char r, 
     dst[7] = 1.0f;
 }
 
-/// Writes one textured vertex (UV4_COLOUR4_POSITION4, 12 floats) into the
-/// MikuPan render buffer. Positions are expected in NDC; matches the layout
-/// consumed by MikuPan_RenderSprite2D / MikuPan_RenderSprite3D.
 static void EneWriteTexturedNdcVertex(float *dst, float u, float v, const float *ndc, u_char r, u_char g, u_char b, u_char a)
 {
     dst[0] = u;
@@ -184,7 +178,7 @@ void SetETOCircleTexure(sceVu0FMATRIX wlm, DRAW_ENV *de, float w, float h, u_cha
 
         bak = ndpkt;
 
-        pbuf[ndpkt++].ul128 = (u_long128)0;
+        pbuf[ndpkt++].ul128 = u_long128_from_u64(0);
 
         pbuf[ndpkt].ul64[0] = SCE_GIF_SET_TAG(6, SCE_GS_TRUE, SCE_GS_FALSE, 0, SCE_GIF_PACKED, 1);
         pbuf[ndpkt++].ul64[1] = SCE_GIF_PACKED_AD;
@@ -486,7 +480,7 @@ int SetCamFont(int no, int fl)
 
     bak = ndpkt;
 
-    pbuf[ndpkt++].ul128 = (u_long128)0;
+    pbuf[ndpkt++].ul128 = u_long128_from_u64(0);
 
     pbuf[ndpkt].ul64[0] = SCE_GS_SET_TEX0_1(0x5, 2, SCE_GS_PSMCT32, 0, 0, 0, SCE_GS_MODULATE, 0, SCE_GS_PSMCT32, 0, 16, 0);
     pbuf[ndpkt++].ul64[1] = SCE_GIF_PACKED_AD;
@@ -724,9 +718,7 @@ void RunCamSearch()
         .prim = SCE_GIF_SET_TAG(4, SCE_GS_TRUE, SCE_GS_TRUE, 84, SCE_GIF_PACKED, 3),
     };
     CAMSEARCH_STR *ct;
-    // float *v0;
     int alp;
-    // 0x50
 
     alp = 80;
 
@@ -1771,7 +1763,7 @@ void RunCamSlow2(int o, float hrt, float rrt, u_int alp)
 
     bak = ndpkt;
 
-    pbuf[ndpkt++].ul128 = (u_long128)0;
+    pbuf[ndpkt++].ul128 = u_long128_from_u64(0);
 
     pbuf[ndpkt].ul64[0] = SCE_GIF_SET_TAG(3, SCE_GS_TRUE, SCE_GS_FALSE, 0, SCE_GIF_PACKED, 1);
     pbuf[ndpkt++].ul64[1] = SCE_GIF_PACKED_AD;
@@ -1821,8 +1813,6 @@ void RunCamSlow2(int o, float hrt, float rrt, u_int alp)
 
     pbuf[bak].ui32[0] = ndpkt + DMAend - bak - 1;
 
-    /* MikuPan GL render: rebuild the two-ring band as an NDC triangle list.
-     * The pbuf packet above is legacy scratch and no longer reaches the GS. */
     {
         sceVu0FVECTOR ndcf[2][33];
         sceVu0FMATRIX slm_ndc;
@@ -1837,9 +1827,6 @@ void RunCamSlow2(int o, float hrt, float rrt, u_int alp)
 
         outn = 0;
 
-        /* The original GS packet is a triangle strip zig-zagging between the
-         * two rings: strip vertex sv -> row (sv & 1), column (sv >> 1).
-         * Cull faces are disabled, so winding does not matter. */
         for (t = 0; t < 64; t++)
         {
             int sv[3] = {t, t + 1, t + 2};
@@ -2682,7 +2669,7 @@ void SetSwordLineSub(void *pos, int num, u_char r1, u_char g1, u_char b1, u_char
 
     n = ndpkt;
 
-    pbuf[ndpkt++].ul128 = (u_long128)0;
+    pbuf[ndpkt++].ul128 = u_long128_from_u64(0);
 
     pbuf[ndpkt].ul64[0] = SCE_GIF_SET_TAG(7, SCE_GS_TRUE, SCE_GS_FALSE, 0, SCE_GIF_PACKED, 1);
     pbuf[ndpkt++].ul64[1] = SCE_GIF_PACKED_AD;
@@ -2722,7 +2709,7 @@ void SetSwordLineSub(void *pos, int num, u_char r1, u_char g1, u_char b1, u_char
 
     if (SWORDTYPE == 0)
     {
-        pbuf[ndpkt].ul64[0] = (long)(0 \
+        pbuf[ndpkt].ul64[0] = (long long)(0 \
             | SCE_GS_XYZF3 << (4 * 0)
             | SCE_GS_XYZF2 << (4 * 1)
             | SCE_GS_RGBAQ << (4 * 2)
@@ -2730,7 +2717,7 @@ void SetSwordLineSub(void *pos, int num, u_char r1, u_char g1, u_char b1, u_char
     }
     else
     {
-        pbuf[ndpkt].ul64[0] = (long)(0 \
+        pbuf[ndpkt].ul64[0] = (long long)(0 \
             | SCE_GS_XYZF3 << (4 * 0)
             | SCE_GS_XYZ2  << (4 * 1)
             | SCE_GS_RGBAQ << (4 * 2)
@@ -2773,7 +2760,7 @@ void SetSwordLineSub(void *pos, int num, u_char r1, u_char g1, u_char b1, u_char
 
         if (cl >= 3)
         {
-            reg |= (long)(0 \
+            reg |= (long long)(0 \
                 | SCE_GS_UV    << (4 * 0)
                 | SCE_GS_RGBAQ << (4 * 1)
                 | SCE_GS_XYZF2 << (4 * 2)
@@ -2781,7 +2768,7 @@ void SetSwordLineSub(void *pos, int num, u_char r1, u_char g1, u_char b1, u_char
         }
         else
         {
-            reg |= (long)(0 \
+            reg |= (long long)(0 \
                 | SCE_GS_UV    << (4 * 0)
                 | SCE_GS_RGBAQ << (4 * 1)
                 | SCE_GS_XYZF3 << (4 * 2)
@@ -2799,7 +2786,7 @@ void SetSwordLineSub(void *pos, int num, u_char r1, u_char g1, u_char b1, u_char
 
         if (cl >= 3)
         {
-            reg |= (long)(0 \
+            reg |= (long long)(0 \
                 | SCE_GS_UV    << (4 * 0)
                 | SCE_GS_RGBAQ << (4 * 1)
                 | SCE_GS_XYZF2 << (4 * 2)
@@ -2807,7 +2794,7 @@ void SetSwordLineSub(void *pos, int num, u_char r1, u_char g1, u_char b1, u_char
         }
         else
         {
-            reg |= (long)(0 \
+            reg |= (long long)(0 \
                 | SCE_GS_UV    << (4 * 0)
                 | SCE_GS_RGBAQ << (4 * 1)
                 | SCE_GS_XYZF3 << (4 * 2)
@@ -2842,10 +2829,6 @@ void SetSwordLineSub(void *pos, int num, u_char r1, u_char g1, u_char b1, u_char
 
     pbuf[n].ui32[0] = ndpkt + DMAend - n - 1;
 
-    /* MikuPan GL render: redraw the sword trail as a screen-space feedback
-     * smear. The original samples a GS framebuffer copy at each vertex's screen
-     * position; the screen-copy path reproduces that against the live frame.
-     * The pbuf packet above is legacy scratch and no longer reaches the GS. */
     {
         static float sword_tri[96 * 3][12];
         sceVu0FVECTOR fvec[96];
@@ -3134,6 +3117,7 @@ int SetNewEneOut(int flag, u_char eneno, u_char type, float *bpos, float sc)
     float ml = 0.0f;
     int tx2[289];
     int ty2[289];
+    float src_uv[289][2];
     sceVu0FVECTOR vpos;
     sceVu0FVECTOR pos = {0.0f, 0.0f, 0.0f, 1.0f};
     sceVu0FVECTOR fzero = {0.0f, 0.0f, 0.0f, 1.0f};
@@ -3274,6 +3258,41 @@ int SetNewEneOut(int flag, u_char eneno, u_char type, float *bpos, float sc)
         ty2[i] = ty2[i] < 16 ? 16 : (ty2[i] > sy2 ? sy2 : ty2[i]);
     }
 
+    /* Save the untwisted source screen position for the GL screen-copy path.
+     * The original PS2 packet uses tx2/ty2 from the untwisted grid as UVs,
+     * then draws the twisted vt/vtiw positions.
+     */
+    {
+        sceVu0FVECTOR src_ndc[289];
+        sceVu0FMATRIX src_slm_ndc;
+
+        sceVu0MulMatrix(src_slm_ndc, *(sceVu0FMATRIX*) MikuPan_GetWorldClipView(), wlm);
+        sceVu0RotTransPersNF(src_ndc, src_slm_ndc, vt, vnumw * vnumh, 0);
+
+        for (i = 0; i < vnumw * vnumh; i++)
+        {
+            src_uv[i][0] = src_ndc[i][0] * 0.5f + 0.5f;
+            src_uv[i][1] = 0.5f - src_ndc[i][1] * 0.5f;
+
+            if (src_uv[i][0] < 0.0f)
+            {
+                src_uv[i][0] = 0.0f;
+            }
+            if (src_uv[i][0] > 1.0f)
+            {
+                src_uv[i][0] = 1.0f;
+            }
+            if (src_uv[i][1] < 0.0f)
+            {
+                src_uv[i][1] = 0.0f;
+            }
+            if (src_uv[i][1] > 1.0f)
+            {
+                src_uv[i][1] = 1.0f;
+            }
+        }
+    }
+
     if (1)
     {
         float rr = r[eneno] * 1.2f;
@@ -3346,7 +3365,7 @@ int SetNewEneOut(int flag, u_char eneno, u_char type, float *bpos, float sc)
 
         bak = ndpkt;
 
-        pbuf[ndpkt++].ul128 = (u_long128)0;
+        pbuf[ndpkt++].ul128 = u_long128_from_u64(0);
 
         pbuf[ndpkt].ul64[0] = SCE_GIF_SET_TAG(7, SCE_GS_FALSE, SCE_GS_FALSE, 0, SCE_GIF_PACKED, 1);
         pbuf[ndpkt++].ul64[1] = SCE_GIF_PACKED_AD;
@@ -3491,7 +3510,6 @@ int SetNewEneOut(int flag, u_char eneno, u_char type, float *bpos, float sc)
             static float grid_ovl[256 * 6][12];
             sceVu0FVECTOR gndc[289];
             sceVu0FMATRIX slm_ndc;
-            u_long gtex0;
             int gx;
             int gy;
             int c;
@@ -3523,11 +3541,14 @@ int SetNewEneOut(int flag, u_char eneno, u_char type, float *bpos, float sc)
                     {
                         int g = idx[c];
 
+                        float u = (float) tx2[g] / (16.0f * 1024.0f);
+                        float v = (float) ty2[g] / (16.0f * 256.0f);
+
                         EneWriteTexturedNdcVertex(
-                            grid_tex[outn], 0.0f, 0.0f, gndc[g],
+                            grid_tex[outn], u, v, gndc[g],
                             0x80, 0x80, 0x80, (u_char)(alpha1[g] * fa));
                         EneWriteTexturedNdcVertex(
-                            grid_ovl[outn], 0.0f, 0.0f, gndc[g],
+                            grid_ovl[outn], u, v, gndc[g],
                             0xa0, 0xc0, 0xff, (u_char)(alpha1[g] * l * fa * 0.5f));
                         outn++;
                     }
@@ -3536,12 +3557,22 @@ int SetNewEneOut(int flag, u_char eneno, u_char type, float *bpos, float sc)
 
             if (outn > 0)
             {
-                gtex0 = SCE_GS_SET_TEX0_1(0, 10, SCE_GS_PSMCT32, 10, 8, 0,
-                                          SCE_GS_MODULATE, 0, SCE_GS_PSMCT32, 0, 0, 1);
-                MikuPan_RenderScreenCopyTriangles3DScreenPos(
-                    (sceGsTex0 *)&gtex0, &grid_tex[0][0], outn, MIKUPAN_DEPTH_ALWAYS);
-                MikuPan_RenderScreenCopyTriangles3DScreenPos(
-                    (sceGsTex0 *)&gtex0, &grid_ovl[0][0], outn, MIKUPAN_DEPTH_ALWAYS);
+                u_long deform_tex0;
+                u_long overlay_tex0;
+
+                deform_tex0 = SCE_GS_SET_TEX0_1(0x1a40, 10, SCE_GS_PSMCT32, 10,
+                                                8, 0, SCE_GS_MODULATE, 0,
+                                                SCE_GS_PSMCT32, 0, 0, 1);
+
+                overlay_tex0 = SCE_GS_SET_TEX0_1(
+                    (sys_wrk.count + 1 & 1) * 0x8c0, 10, SCE_GS_PSMCT32, 10, 8,
+                    0, SCE_GS_MODULATE, 0, SCE_GS_PSMCT32, 0, 0, 1);
+
+                MikuPan_RenderTexturedTriangles3DWithState(
+                    (sceGsTex0*)&deform_tex0, &grid_tex[0][0], outn, MIKUPAN_DEPTH_ALWAYS, 0);
+
+                MikuPan_RenderTexturedTriangles3DWithState(
+                    (sceGsTex0*)&overlay_tex0, &grid_ovl[0][0], outn, MIKUPAN_DEPTH_ALWAYS, 0);
             }
         }
     }
@@ -4176,6 +4207,11 @@ void LoadEneDmgTex(int no, u_int *addr)
         no = 42;
     }
 
+    if (no > sizeof(enedmg_fileno_tbl)/sizeof(enedmg_fileno_tbl[0]))
+    {
+        return;
+    }
+
     texno = enedmg_fileno_tbl[no][0];
 
     count = 0;
@@ -4583,7 +4619,7 @@ void SetEneDmgEffect1_Sub2(int num)
 
     bak = ndpkt;
 
-    pbuf[ndpkt++].ul128 = (u_long128)0;
+    pbuf[ndpkt++].ul128 = u_long128_from_u64(0);
 
     pbuf[ndpkt].ul64[0] = SCE_GIF_SET_TAG(5, SCE_GS_TRUE, SCE_GS_FALSE, 0, SCE_GIF_PACKED, 1);
     pbuf[ndpkt++].ul64[1] = SCE_GIF_PACKED_AD;

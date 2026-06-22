@@ -1369,7 +1369,7 @@ static void DoorCtrlOpen()
 
                     else if (tmp_rot_door_id == 29)
                     {
-                        if (plyr_wrk.pr_info.room_no == 4)
+                        if (plyr_wrk.pr_info.room_no == R004)
                         {
                             DoorKeyLockOnly(tmp_rot_door_id);
                         }
@@ -2192,7 +2192,7 @@ static void SetDoorOpenPlyrPos()
 u_char DoorOpenJudge()
 {
     u_short door_id[2];
-    u_char sq_no;
+    u_char sq_no = 0;
 
     plyr_wrk.sta &= ~0x8;
 

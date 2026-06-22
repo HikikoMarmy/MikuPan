@@ -24,6 +24,8 @@
 #include "camera.h"
 #include "enums.h"
 #include "main/glob.h"
+#include "mikupan/mikupan_controller.h"
+#include "os/key_cnf.h"
 
 #define CIMGUI_DEFINE_ENUMS_AND_STRUCTS
 #include "cimgui.h"
@@ -2472,8 +2474,8 @@ void PconTebureCameraCtrl()
     MOVE_BOX *mb;
     float ax;
     float ay;
-    char pad_x;
-    char pad_y;
+    int pad_x;
+    int pad_y;
     u_char jpad_on;
     static float rot;
     static float rot_adj = 0.0f;
@@ -2543,7 +2545,7 @@ void PconTebureCameraCtrl()
 
 u_short fior_tm = 0;
 
-int FinderModePadChk(char *pad_x, char *pad_y, float *ax, float *ay,
+int FinderModePadChk(int *pad_x, int *pad_y, float *ax, float *ay,
                      u_char *jpad_on)
 {
     *pad_y = 0;
@@ -2580,8 +2582,16 @@ int FinderModePadChk(char *pad_x, char *pad_y, float *ax, float *ay,
 
         if (*ax == 0.0f && *ay == 0.0f)
         {
-            *ax = pad[0].analog[2] - 128.0f;
-            *ay = pad[0].analog[3] - 128.0f;
+            if (MikuPan_KeyProfileSwapsFinderSticks())
+            {
+                *ax = pad[0].analog[0] - 128.0f;
+                *ay = pad[0].analog[1] - 128.0f;
+            }
+            else
+            {
+                *ax = pad[0].analog[2] - 128.0f;
+                *ay = pad[0].analog[3] - 128.0f;
+            }
         }
 
         if (*ax >= 40.0f)
@@ -2602,9 +2612,7 @@ int FinderModePadChk(char *pad_x, char *pad_y, float *ax, float *ay,
             *pad_y = -1;
         }
 
-        if (*pad_y != 0
-            && (opt_wrk.key_type == 4 || opt_wrk.key_type == 5
-                || opt_wrk.key_type == 6 || opt_wrk.key_type == 7))
+        if (*pad_y != 0 && MikuPan_KeyProfileUsesFinderReverseY())
         {
             *pad_y = -*pad_y;
         }
@@ -2613,17 +2621,20 @@ int FinderModePadChk(char *pad_x, char *pad_y, float *ax, float *ay,
     return *pad_x != 0 || *pad_y != 0;
 }
 
+/* Radians of finder rotation per pixel of mouse motion at 1.0x sensitivity. */
+#define FINDER_MOUSE_RAD_PER_PIXEL 0.004f
+
 void SetFinderRot()
 {
     MOVE_BOX *mb;
     float delta;
-    float dist;
+    float dist = 0.0f;
     float spd;
     float ax;
     float ay;
     float rot;
-    char pad_x;
-    char pad_y;
+    int pad_x;
+    int pad_y;
     u_char jpad_on;
 
     mb = &plyr_wrk.move_box;
@@ -2779,6 +2790,58 @@ void SetFinderRot()
     }
 
     RotLimitChk(&plyr_wrk.frot_x);
+
+    /* Finder mouse-look: drive yaw/pitch straight from relative mouse motion.
+     * Requesting each aiming frame keeps the cursor captured (see
+     * MikuPan_FinderMouseUpdate); the reticle stays centred because no stick
+     * input is reported, giving a clean first-person feel. */
+    MikuPan_FinderMouseRequest();
+    {
+        float mdx = 0.0f;
+        float mdy = 0.0f;
+        float sens;
+        float fov_scale;
+        float pitch;
+
+        if (MikuPan_FinderMouseConsume(&mdx, &mdy))
+        {
+            sens = MikuPan_FinderMouseSensitivity() * FINDER_MOUSE_RAD_PER_PIXEL;
+
+            /* Aim more slowly as the finder zooms in (narrower fov). */
+            fov_scale = camera.fov / DEG2RAD(51.0f);
+            if (fov_scale > 1.0f)
+            {
+                fov_scale = 1.0f;
+            }
+            else if (fov_scale < 0.25f)
+            {
+                fov_scale = 0.25f;
+            }
+            sens *= fov_scale;
+
+            mb->rot[1] += mdx * sens;
+            RotLimitChk(&mb->rot[1]);
+
+            /* Screen-up is negative dy; by default moving the mouse up looks
+             * up, matching the stick (which adds delta on pad_y < 0). */
+            pitch = -mdy * sens;
+            if (MikuPan_KeyProfileUsesFinderReverseY())
+            {
+                pitch = -pitch;
+            }
+
+            plyr_wrk.frot_x += pitch;
+            if (plyr_wrk.frot_x > DEG2RAD(60.0f))
+            {
+                plyr_wrk.frot_x = DEG2RAD(60.0f);
+            }
+            else if (plyr_wrk.frot_x < DEG2RAD(-60.0f))
+            {
+                plyr_wrk.frot_x = DEG2RAD(-60.0f);
+            }
+            RotLimitChk(&plyr_wrk.frot_x);
+        }
+    }
 }
 
 /// EDITOR CODE

@@ -133,7 +133,7 @@ void IngameMenuFile()
 
     if (menu_file.poss_chk == 0)
     {
-        if (yw2d.pad_lock == 0 && *key_now[4] == 1)
+        if (yw2d.pad_lock == 0 && TRIANGLE_PRESSED() == 1)
         {
             yw2d.out_mode_cnt = 11;
 
@@ -151,13 +151,13 @@ void IngameMenuFile()
             break;
         }
 
-        if (*key_now[4] == 1)
+        if (TRIANGLE_PRESSED() == 1)
         {
             yw2d.out_mode_cnt = 11;
 
             SeStartFix(SE_CANCEL, 0, 0x1000, 0x1000, 1);
         }
-        else if (*key_now[6] == 1 || *key_now[5] == 1)
+        else if (SQUARE_PRESSED() == 1 || CROSS_PRESSED() == 1)
         {
             if (ig_menu_wrk.csr[1] < 3)
             {
@@ -185,8 +185,8 @@ void IngameMenuFile()
             }
         }
         else if (
-            *key_now[0] == 1 ||
-            (*key_now[0] > 25 && (*key_now[0] % 5) == 1) ||
+            DPAD_UP_PRESSED() == 1 ||
+            (DPAD_UP_PRESSED() > 25 && (DPAD_UP_PRESSED() % 5) == 1) ||
             Ana2PadDirCnt(0) == 1 ||
             (Ana2PadDirCnt(0) > 25 && (Ana2PadDirCnt(0) % 5) == 1)
         )
@@ -210,8 +210,8 @@ void IngameMenuFile()
             }
         }
         else if (
-            *key_now[1] == 1 ||
-            (*key_now[1] > 25 && (*key_now[1] % 5) == 1) ||
+            DPAD_DOWN_PRESSED() == 1 ||
+            (DPAD_DOWN_PRESSED() > 25 && (DPAD_DOWN_PRESSED() % 5) == 1) ||
             Ana2PadDirCnt(2) == 1 ||
             (Ana2PadDirCnt(2) > 25 && (Ana2PadDirCnt(2) % 5) == 1)
         )
@@ -241,13 +241,13 @@ void IngameMenuFile()
             break;
         }
 
-        if (*key_now[4] == 1)
+        if (TRIANGLE_PRESSED() == 1)
         {
             menu_file.mod = 0;
 
             SeStartFix(SE_CANCEL, 0, 0x1000, 0x1000, 1);
         }
-        else if (*key_now[6] == 1 || *key_now[5] == 1)
+        else if (SQUARE_PRESSED() == 1 || CROSS_PRESSED() == 1)
         {
             ig_menu_wrk.mode = IGMENU_MODE_FILE_DATA;
 
@@ -276,8 +276,8 @@ void IngameMenuFile()
             SeStartFix(SE_CLIC, 0, 0x1000, 0x1000, 1);
         }
         else if (
-            *key_now[0] == 1 ||
-            (*key_now[0] > 25 && (*key_now[0] % 5) == 1) ||
+            DPAD_UP_PRESSED() == 1 ||
+            (DPAD_UP_PRESSED() > 25 && (DPAD_UP_PRESSED() % 5) == 1) ||
             Ana2PadDirCnt(0) == 1 ||
             (Ana2PadDirCnt(0) > 25 && (Ana2PadDirCnt(0) % 5) == 1)
         )
@@ -308,8 +308,8 @@ void IngameMenuFile()
             SeStartFix(SE_CSR0, 0, 0x1000, 0x1000, 1);
         }
         else if (
-            *key_now[1] == 1 ||
-            (*key_now[1] > 25 && (*key_now[1] % 5) == 1) ||
+            DPAD_DOWN_PRESSED() == 1 ||
+            (DPAD_DOWN_PRESSED() > 25 && (DPAD_DOWN_PRESSED() % 5) == 1) ||
             Ana2PadDirCnt(2) == 1 ||
             (Ana2PadDirCnt(2) > 25 && (Ana2PadDirCnt(2) % 5) == 1)
         )
@@ -339,21 +339,21 @@ void IngameMenuFile()
             break;
         }
 
-        if (*key_now[4] == 1)
+        if (TRIANGLE_PRESSED() == 1)
         {
             menu_file.mod = 0;
 
             SeStartFix(SE_CANCEL, 0, 0x1000, 0x1000, 1);
         }
-        else if (*key_now[6] == 1 || *key_now[5] == 1)
+        else if (SQUARE_PRESSED() == 1 || CROSS_PRESSED() == 1)
         {
             menu_file.mod = 0;
 
             SeStartFix(SE_CLIC, 0, 0x1000, 0x1000, 1);
         }
         else if (
-            *key_now[0] == 1 ||
-            (*key_now[0] > 25 && (*key_now[0] % 5) == 1) ||
+            DPAD_UP_PRESSED() == 1 ||
+            (DPAD_UP_PRESSED() > 25 && (DPAD_UP_PRESSED() % 5) == 1) ||
             Ana2PadDirCnt(0) == 1 ||
             (Ana2PadDirCnt(0) > 25 && (Ana2PadDirCnt(0) % 5) == 1)
         )
@@ -378,8 +378,8 @@ void IngameMenuFile()
             }
         }
         else if (
-            *key_now[1] == 1 ||
-            (*key_now[1] > 25 && (*key_now[1] % 5) == 1) ||
+            DPAD_DOWN_PRESSED() == 1 ||
+            (DPAD_DOWN_PRESSED() > 25 && (DPAD_DOWN_PRESSED() % 5) == 1) ||
             Ana2PadDirCnt(2) == 1 ||
             (Ana2PadDirCnt(2) > 25 && (Ana2PadDirCnt(2) % 5) == 1)
         )
@@ -438,7 +438,7 @@ void IngameMenuFileData()
     {
         if (yw2d.pad_lock == 0 && menu_file.pad_lock == 0)
         {
-            if (*key_now[4] == 1)
+            if (TRIANGLE_PRESSED() == 1)
             {
                 menu_file.mod = 1;
 
@@ -446,7 +446,7 @@ void IngameMenuFileData()
 
                 SeStartFix(SE_CANCEL, 0, 0x1000, 0x1000, 1);
             }
-            else if (*key_now[6] == 1 || *key_now[5] == 1)
+            else if (SQUARE_PRESSED() == 1 || CROSS_PRESSED() == 1)
             {
                 if (menu_file.page_all >= 2)
                 {
@@ -475,8 +475,8 @@ void IngameMenuFileData()
                 }
             }
             else if (
-                *key_now[3] == 1 ||
-                (*key_now[3] > 25 && (*key_now[3] % 5) == 1) ||
+                DPAD_RIGHT_PRESSED() == 1 ||
+                (DPAD_RIGHT_PRESSED() > 25 && (DPAD_RIGHT_PRESSED() % 5) == 1) ||
                 Ana2PadDirCnt(1) == 1 ||
                 (Ana2PadDirCnt(1) > 25 && (Ana2PadDirCnt(1) % 5) == 1)
             )
@@ -489,8 +489,8 @@ void IngameMenuFileData()
                 }
             }
             else if (
-                *key_now[2] == 1 ||
-                (*key_now[2] > 25 && (*key_now[2] % 5) == 1) ||
+                DPAD_LEFT_PRESSED() == 1 ||
+                (DPAD_LEFT_PRESSED() > 25 && (DPAD_LEFT_PRESSED() % 5) == 1) ||
                 Ana2PadDirCnt(3) == 1 ||
                 (Ana2PadDirCnt(3) > 25 && (Ana2PadDirCnt(3) % 5) == 1)
             )
@@ -508,7 +508,7 @@ void IngameMenuFileData()
     {
         if (yw2d.pad_lock == 0 && menu_file.pad_lock == 0)
         {
-            if (*key_now[4] == 1)
+            if (TRIANGLE_PRESSED() == 1)
             {
                 if (IsLoadEndAll() != 0)
                 {
@@ -528,8 +528,8 @@ void IngameMenuFileData()
                 }
             }
             else if (
-                *key_now[2] == 1 ||
-                (*key_now[2] > 25 && (*key_now[2] % 5) == 1) ||
+                DPAD_LEFT_PRESSED() == 1 ||
+                (DPAD_LEFT_PRESSED() > 25 && (DPAD_LEFT_PRESSED() % 5) == 1) ||
                 Ana2PadDirCnt(3) == 1 ||
                 (Ana2PadDirCnt(3) > 25 && (Ana2PadDirCnt(3) % 5) == 1)
             )
@@ -565,8 +565,8 @@ void IngameMenuFileData()
                 }
             }
             else if (
-                *key_now[3] == 1 ||
-                (*key_now[3] > 25 && (*key_now[3] % 5) == 1) ||
+                DPAD_RIGHT_PRESSED() == 1 ||
+                (DPAD_RIGHT_PRESSED() > 25 && (DPAD_RIGHT_PRESSED() % 5) == 1) ||
                 Ana2PadDirCnt(1) == 1 ||
                 (Ana2PadDirCnt(1) > 25 && (Ana2PadDirCnt(1) % 5) == 1)
             )
@@ -1981,8 +1981,8 @@ void RelComAtributeChg()
 void MoveBeyondData()
 {
     if (
-        *key_now[2] == 1 ||
-        (*key_now[2] > 25 && (*key_now[2] % 5) == 1) ||
+        DPAD_LEFT_PRESSED() == 1 ||
+        (DPAD_LEFT_PRESSED() > 25 && (DPAD_LEFT_PRESSED() % 5) == 1) ||
         Ana2PadDirCnt(3) == 1 ||
         (Ana2PadDirCnt(3) > 25 && (Ana2PadDirCnt(3) % 5) == 1)
     )
@@ -1995,8 +1995,8 @@ void MoveBeyondData()
         }
     }
     else if (
-        *key_now[3] == 1 ||
-        (*key_now[3] > 25 && (*key_now[3] % 5) == 1) ||
+        DPAD_RIGHT_PRESSED() == 1 ||
+        (DPAD_RIGHT_PRESSED() > 25 && (DPAD_RIGHT_PRESSED() % 5) == 1) ||
         Ana2PadDirCnt(1) == 1 ||
         (Ana2PadDirCnt(1) > 25 && (Ana2PadDirCnt(1) % 5) == 1)
     )
@@ -2009,8 +2009,8 @@ void MoveBeyondData()
         }
     }
     else if (
-        *key_now[0] == 1 ||
-        (*key_now[0] > 25 && (*key_now[0] % 5) == 1) ||
+        DPAD_UP_PRESSED() == 1 ||
+        (DPAD_UP_PRESSED() > 25 && (DPAD_UP_PRESSED() % 5) == 1) ||
         Ana2PadDirCnt(0) == 1 ||
         (Ana2PadDirCnt(0) > 25 && (Ana2PadDirCnt(0) % 5) == 1)
     )
@@ -2023,8 +2023,8 @@ void MoveBeyondData()
         }
     }
     else if (
-        *key_now[1] == 1 ||
-        (*key_now[1] > 25 && (*key_now[1] % 5) == 1) ||
+        DPAD_DOWN_PRESSED() == 1 ||
+        (DPAD_DOWN_PRESSED() > 25 && (DPAD_DOWN_PRESSED() % 5) == 1) ||
         Ana2PadDirCnt(2) == 1 ||
         (Ana2PadDirCnt(2) > 25 && (Ana2PadDirCnt(2) % 5) == 1)
     )
@@ -2045,7 +2045,7 @@ void MoveBeyondGroup()
 
     temp_prt = rel_csr.now_prt;
 
-    if (*key_now[8] == 1)
+    if (L1_PRESSED() == 1)
     {
         while (temp_prt->left_prt->mission_no > ingame_wrk.msn_no && ingame_wrk.clear_count == 0)
         {
@@ -2080,7 +2080,7 @@ void MoveBeyondGroup()
 
         SeStartFix(SE_CSR0, 0, 0x1000, 0x1000, 0x1);
     }
-    else if (*key_now[10] == 1)
+    else if (R1_PRESSED() == 1)
     {
         while (temp_prt->right_prt->mission_no > ingame_wrk.msn_no && ingame_wrk.clear_count == 0)
         {
@@ -2176,7 +2176,7 @@ int ButtonManager()
 
     ret_num = 0;
 
-    if ((*key_now[6] == 1 || *key_now[5] == 1) && rel_csr.now_dat->attribute != 2)
+    if ((SQUARE_PRESSED() == 1 || CROSS_PRESSED() == 1) && rel_csr.now_dat->attribute != 2)
     {
         rel_csr.mode = 0;
         rel_csr.attribute ^= 0x1;
@@ -2184,7 +2184,7 @@ int ButtonManager()
         SeStartFix(SE_CLIC, 0, 0x1000, 0x1000, 1);
     }
 
-    if (*key_now[4] == 1)
+    if (TRIANGLE_PRESSED() == 1)
     {
         if (rel_csr.attribute & 0x1)
         {
@@ -2350,7 +2350,7 @@ void RelDspYajirusi(RELATION_YAJI *r_yaj)
         yaj_pri = 0x14000;
 
 #ifdef MATCHING_DECOMP
-        if (*key_now[3] != 1 && *key_now[2] != 1 && *key_now[2] != 1)
+        if (DPAD_RIGHT_PRESSED() != 1 && DPAD_LEFT_PRESSED() != 1 && DPAD_LEFT_PRESSED() != 1)
         {
             char c = ~c; // dead code
         }
@@ -2362,7 +2362,7 @@ void RelDspYajirusi(RELATION_YAJI *r_yaj)
         yaj_pri = 0x19000;
 
 #ifdef MATCHING_DECOMP
-        if (*key_now[3] != 1 && *key_now[2] != 1 && *key_now[2] != 1)
+        if (DPAD_RIGHT_PRESSED() != 1 && DPAD_LEFT_PRESSED() != 1 && DPAD_LEFT_PRESSED() != 1)
         {
             char c = ~c; // dead code
         }
@@ -2992,17 +2992,17 @@ void SimpleDispSprtDS(SPRT_DAT *ssd, u_int addr, int sp_no, SPRT_SROT *srot, SPR
     DispSprD(&ds);
 }
 
-void TestPk2DataSou(long int sendtexaddr)
+void TestPk2DataSou(long long sendtexaddr)
 {
     static int ttest_count = 0;
     SPRT_DAT ssd;
 
-    if (*key_now[8] == 1)
+    if (L1_PRESSED() == 1)
     {
         ttest_count++;
     }
 
-    if (*key_now[9] == 1)
+    if (L2_PRESSED() == 1)
     {
         ttest_count--;
     }

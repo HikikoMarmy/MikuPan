@@ -295,6 +295,53 @@ static void EffectWriteDistortionUntexturedVertex(
     dst[7] = 1.0f;
 }
 
+static void EffectTransformPoint(sceVu0FVECTOR out,
+                                 const sceVu0FMATRIX *m,
+                                 const sceVu0FVECTOR in)
+{
+    out[0] = (m[0][0][0] * in[0]) + (m[0][1][0] * in[1]) + (m[0][2][0] * in[2])
+             + (m[0][3][0] * in[3]);
+    out[1] = (m[0][0][1] * in[0]) + (m[0][1][1] * in[1]) + (m[0][2][1] * in[2])
+             + (m[0][3][1] * in[3]);
+    out[2] = (m[0][0][2] * in[0]) + (m[0][1][2] * in[1]) + (m[0][2][2] * in[2])
+             + (m[0][3][2] * in[3]);
+    out[3] = (m[0][0][3] * in[0]) + (m[0][1][3] * in[1]) + (m[0][2][3] * in[2])
+             + (m[0][3][3] * in[3]);
+}
+
+static unsigned int EffectGetClipFlags(const sceVu0FVECTOR v)
+{
+    unsigned int flags = 0;
+    float w = fabsf(v[3]);
+
+    if (v[0] > +w)
+    {
+        flags |= VU0_CLIP_X_POS;
+    }
+    if (v[0] < -w)
+    {
+        flags |= VU0_CLIP_X_NEG;
+    }
+    if (v[1] > +w)
+    {
+        flags |= VU0_CLIP_Y_POS;
+    }
+    if (v[1] < -w)
+    {
+        flags |= VU0_CLIP_Y_NEG;
+    }
+    if (v[2] > +w)
+    {
+        flags |= VU0_CLIP_Z_POS;
+    }
+    if (v[2] < -w)
+    {
+        flags |= VU0_CLIP_Z_NEG;
+    }
+
+    return flags;
+}
+
 void InitEffectOth()
 {
     int i;
@@ -565,7 +612,7 @@ void RunRipple2()
 
             bak = ndpkt;
 
-            pbuf[ndpkt++].ul128 = (u_long128)0;
+            pbuf[ndpkt++].ul128 = u_long128_from_u64(0);
 
             pbuf[ndpkt].ul64[0] = SCE_GIF_SET_TAG(5, SCE_GS_TRUE, SCE_GS_FALSE, 0, SCE_GIF_PACKED, 1);
             pbuf[ndpkt++].ul64[1] = SCE_GIF_PACKED_AD;
@@ -729,7 +776,7 @@ void SetEffSQTex(int n, float *v, int tp, float w, float h, u_char r, u_char g, 
 
     Reserve2DPacket(0x1000);
 
-    pbuf[ndpkt].ul128 = (u_long128)0;
+    pbuf[ndpkt].ul128 = u_long128_from_u64(0);
 
     pbuf[ndpkt++].ui32[0] = DMAend | 20;
 
@@ -855,7 +902,7 @@ void SetEffSQITex(int n, int *v, float depth_z, int tp, float w, float h, u_char
 
     Reserve2DPacket(0x1000);
 
-    pbuf[ndpkt].ul128 = (u_long128)0;
+    pbuf[ndpkt].ul128 = u_long128_from_u64(0);
 
     pbuf[ndpkt++].ui32[0] = DMAend | 20;
 
@@ -1149,7 +1196,7 @@ void SubFire1(EFFECT_CONT *ec)
 
         Reserve2DPacket(0x1000);
 
-        pbuf[ndpkt].ul128 = (u_long128)0;
+        pbuf[ndpkt].ul128 = u_long128_from_u64(0);
 
         pbuf[ndpkt++].ui32[0] = DMAend | 20;
 
@@ -1420,8 +1467,12 @@ void InitHeatHaze()
         }
     }
 }
-
-int draw_distortion_particles(sceVu0FMATRIX *local_screen, sceVu0FMATRIX *local_clip, sceVu0FMATRIX *gl_local_clip, int fr, int t_particles, void *particles, int size_of_particle, float psize, float distortion_amount, int type)
+int draw_distortion_particles(sceVu0FMATRIX *local_screen,
+                              sceVu0FMATRIX *local_clip,
+                              sceVu0FMATRIX *gl_local_clip, int fr,
+                              int t_particles, void *particles,
+                              int size_of_particle, float psize,
+                              float distortion_amount, int type)
 {
     int i;
     int n;
@@ -1462,63 +1513,63 @@ int draw_distortion_particles(sceVu0FMATRIX *local_screen, sceVu0FMATRIX *local_
 
     switch (type)
     {
-    case 9:
-    case 10:
-    case 11:
-        dtex = 1;
-    break;
-    case 8:
-    case 12:
-    case 13:
-    default:
-        dtex = 0;
-    break;
+        case 9:
+        case 10:
+        case 11:
+            dtex = 1;
+            break;
+        case 8:
+        case 12:
+        case 13:
+        default:
+            dtex = 0;
+            break;
     }
 
     if (dtex != 0)
     {
         switch (type)
         {
-        case 8:
-        case 9:
-        case 10:
-        case 11:
-        case 12:
-        case 13:
-            EffectSubMarkLiveFramebufferCopy(0x1a40);
-        break;
+            case 8:
+            case 9:
+            case 10:
+            case 11:
+            case 12:
+            case 13:
+                EffectSubMarkLiveFramebufferCopy(0x1a40);
+                break;
         }
     }
 
     switch (type)
     {
-    case 9:
-        depth_mode = MIKUPAN_DEPTH_ALWAYS;
-        treg = SCE_GS_SET_TEST_1(1, SCE_GS_ALPHA_ALWAYS, 0, SCE_GS_AFAIL_KEEP, 0, 0, 1, SCE_GS_DEPTH_ALWAYS);
-    break;
-    case 8:
-    case 10:
-    case 11:
-    case 12:
-    case 13:
-        treg = SCE_GS_SET_TEST_1(1, SCE_GS_ALPHA_ALWAYS, 0, SCE_GS_AFAIL_KEEP, 0, 0, 1, SCE_GS_DEPTH_GEQUAL);
-    break;
+        case 9:
+            depth_mode = MIKUPAN_DEPTH_ALWAYS;
+            treg = SCE_GS_SET_TEST_1(1, SCE_GS_ALPHA_ALWAYS, 0, SCE_GS_AFAIL_KEEP, 0, 0, 1, SCE_GS_DEPTH_ALWAYS);
+            break;
+        case 8:
+        case 10:
+        case 11:
+        case 12:
+        case 13:
+            treg = SCE_GS_SET_TEST_1(1, SCE_GS_ALPHA_ALWAYS, 0, SCE_GS_AFAIL_KEEP, 0, 0, 1, SCE_GS_DEPTH_GEQUAL);
+            break;
     }
 
     switch (type)
     {
-    case 13:
-        areg = SCE_GS_SET_ALPHA_1(SCE_GS_ALPHA_CS, SCE_GS_ALPHA_CD, SCE_GS_ALPHA_AS, SCE_GS_ALPHA_CD, 0);
-    break;
-    case 8:
-    case 9:
-    case 10:
-        areg = SCE_GS_SET_ALPHA_1(SCE_GS_ALPHA_CS, SCE_GS_ALPHA_ZERO, SCE_GS_ALPHA_AS, SCE_GS_ALPHA_CD, 0);
-    break;
-    case 11:
-    case 12:
-        areg = SCE_GS_SET_ALPHA_1(SCE_GS_ALPHA_CS, SCE_GS_ALPHA_ZERO, SCE_GS_ALPHA_AS, SCE_GS_ALPHA_CD, 0);
-    break;
+        case 13:
+            areg = SCE_GS_SET_ALPHA_1(SCE_GS_ALPHA_CS, SCE_GS_ALPHA_CD, SCE_GS_ALPHA_AS, SCE_GS_ALPHA_CD, 0);
+            break;
+        case 8:
+        case 9:
+        case 10:
+            areg = SCE_GS_SET_ALPHA_1(SCE_GS_ALPHA_CS, SCE_GS_ALPHA_ZERO, SCE_GS_ALPHA_AS, SCE_GS_ALPHA_CD, 0);
+            break;
+        case 11:
+        case 12:
+            areg = SCE_GS_SET_ALPHA_1(SCE_GS_ALPHA_CS, SCE_GS_ALPHA_ZERO, SCE_GS_ALPHA_AS, SCE_GS_ALPHA_CD, 0);
+            break;
     }
 
     Reserve2DPacket(0x1000);
@@ -1558,6 +1609,12 @@ int draw_distortion_particles(sceVu0FMATRIX *local_screen, sceVu0FMATRIX *local_
         if (p[1][3] > 0.0f)
         {
             sceVu0FVECTOR tmp;
+            sceVu0FVECTOR ps2_clip_pos;
+            sceVu0FVECTOR gl_clip_pos;
+            int ps2_visible;
+            int gl_visible;
+            float gl_z = 0.0f;
+
             num++;
 
             rr = p[1][0];
@@ -1569,41 +1626,27 @@ int draw_distortion_particles(sceVu0FMATRIX *local_screen, sceVu0FMATRIX *local_
                 p[1][0] = p[1][1] = p[1][2] = (rr + gg + bb) / 3.0f;
             }
 
-            tmp[0] = (local_clip[0][0][0] * p[0][0]) + (local_clip[0][1][0] * p[0][1]) + (local_clip[0][2][0] * p[0][2]) + (local_clip[0][3][0] * p[0][3]);
-            tmp[1] = (local_clip[0][0][1] * p[0][0]) + (local_clip[0][1][1] * p[0][1]) + (local_clip[0][2][1] * p[0][2]) + (local_clip[0][3][1] * p[0][3]);
-            tmp[2] = (local_clip[0][0][2] * p[0][0]) + (local_clip[0][1][2] * p[0][1]) + (local_clip[0][2][2] * p[0][2]) + (local_clip[0][3][2] * p[0][3]);
-            tmp[3] = (local_clip[0][0][3] * p[0][0]) + (local_clip[0][1][3] * p[0][1]) + (local_clip[0][2][3] * p[0][2]) + (local_clip[0][3][3] * p[0][3]);
+            EffectTransformPoint(ps2_clip_pos, local_clip, p[0]);
 
-            // Clipping, maybe turn into a macro?
-            clip_flags = 0;
-            if (tmp[0] > +fabsf(tmp[3])) clip_flags |= VU0_CLIP_X_POS;
-            if (tmp[0] < -fabsf(tmp[3])) clip_flags |= VU0_CLIP_X_NEG;
-            if (tmp[1] > +fabsf(tmp[3])) clip_flags |= VU0_CLIP_Y_POS;
-            if (tmp[1] < -fabsf(tmp[3])) clip_flags |= VU0_CLIP_Y_NEG;
-            if (tmp[2] > +fabsf(tmp[3])) clip_flags |= VU0_CLIP_Z_POS;
-            if (tmp[2] < -fabsf(tmp[3])) clip_flags |= VU0_CLIP_Z_NEG;
+            clip_flags = EffectGetClipFlags(ps2_clip_pos);
+            ps2_visible = (clip_flags & 0x3f) == 0;
 
-            if ((clip_flags & 0x3f) == 0)
+            gl_visible = ps2_visible;
+
+            if (can_render_gl)
+            {
+                EffectTransformPoint(gl_clip_pos, gl_local_clip, p[0]);
+
+                gl_visible = (EffectGetClipFlags(gl_clip_pos) & 0x3f) == 0;
+                gl_z = gl_clip_pos[3] != 0.0f ? gl_clip_pos[2] / gl_clip_pos[3]
+                                              : 0.0f;
+            }
+
+            if (ps2_visible || gl_visible)
             {
                 sceVu0FVECTOR vf8, vf9, vf14, vf22, vf27;
-                float gl_z = 0.0f;
 
-                if (can_render_gl)
-                {
-                    sceVu0FVECTOR gl_tmp;
-
-                    gl_tmp[0] = (gl_local_clip[0][0][0] * p[0][0]) + (gl_local_clip[0][1][0] * p[0][1]) + (gl_local_clip[0][2][0] * p[0][2]) + (gl_local_clip[0][3][0] * p[0][3]);
-                    gl_tmp[1] = (gl_local_clip[0][0][1] * p[0][0]) + (gl_local_clip[0][1][1] * p[0][1]) + (gl_local_clip[0][2][1] * p[0][2]) + (gl_local_clip[0][3][1] * p[0][3]);
-                    gl_tmp[2] = (gl_local_clip[0][0][2] * p[0][0]) + (gl_local_clip[0][1][2] * p[0][1]) + (gl_local_clip[0][2][2] * p[0][2]) + (gl_local_clip[0][3][2] * p[0][3]);
-                    gl_tmp[3] = (gl_local_clip[0][0][3] * p[0][0]) + (gl_local_clip[0][1][3] * p[0][1]) + (gl_local_clip[0][2][3] * p[0][2]) + (gl_local_clip[0][3][3] * p[0][3]);
-
-                    gl_z = gl_tmp[3] != 0.0f ? gl_tmp[2] / gl_tmp[3] : 0.0f;
-                }
-
-                tmp[0] = (local_screen[0][0][0] * p[0][0]) + (local_screen[0][1][0] * p[0][1]) + (local_screen[0][2][0] * p[0][2]) + (local_screen[0][3][0] * p[0][3]);
-                tmp[1] = (local_screen[0][0][1] * p[0][0]) + (local_screen[0][1][1] * p[0][1]) + (local_screen[0][2][1] * p[0][2]) + (local_screen[0][3][1] * p[0][3]);
-                tmp[2] = (local_screen[0][0][2] * p[0][0]) + (local_screen[0][1][2] * p[0][1]) + (local_screen[0][2][2] * p[0][2]) + (local_screen[0][3][2] * p[0][3]);
-                tmp[3] = (local_screen[0][0][3] * p[0][0]) + (local_screen[0][1][3] * p[0][1]) + (local_screen[0][2][3] * p[0][2]) + (local_screen[0][3][3] * p[0][3]);
+                EffectTransformPoint(tmp, local_screen, p[0]);
 
                 float q = 1.0f / tmp[3];
 
@@ -1621,7 +1664,9 @@ int draw_distortion_particles(sceVu0FMATRIX *local_screen, sceVu0FMATRIX *local_
                 vf27[2] = tmp[2] + st_add[2] + warp_add[2];
                 vf27[3] = tmp[3] + st_add[3] + warp_add[3];
 
-                if (can_render_gl && render_vertices + DISTORTION_PARTICLE_VERTICES <= DISTORTION_PARTICLE_MAX_VERTICES)
+                if (gl_visible
+                    && can_render_gl
+                    && render_vertices + DISTORTION_PARTICLE_VERTICES <= DISTORTION_PARTICLE_MAX_VERTICES)
                 {
                     static const int fan[DISTORTION_PARTICLE_VERTICES] = {
                         0, 1, 2,
@@ -1680,16 +1725,18 @@ int draw_distortion_particles(sceVu0FMATRIX *local_screen, sceVu0FMATRIX *local_
                     }
                 }
 
-                // These two are promptly overwritten without being used just below...
-                // vf13[0] = MAX(vf27[0] - vf9[0] - ones[0], vf0[0]);
-                // vf13[1] = MAX(vf27[1] - vf9[1] - ones[1], vf0[1]);
-                // vf13[2] = MAX(vf27[2] - vf9[2] - ones[2], vf0[2]);
-                // vf13[3] = MAX(vf27[3] - vf9[3] - ones[3], vf0[3]);
+                if (ps2_visible)
+                {
+                    // These two are promptly overwritten without being used just below...
+                    // vf13[0] = MAX(vf27[0] - vf9[0] - ones[0], vf0[0]);
+                    // vf13[1] = MAX(vf27[1] - vf9[1] - ones[1], vf0[1]);
+                    // vf13[2] = MAX(vf27[2] - vf9[2] - ones[2], vf0[2]);
+                    // vf13[3] = MAX(vf27[3] - vf9[3] - ones[3], vf0[3]);
 
-                // vf14[0] = MIN(vf27[0] + vf9[0] + ones[0], screen_size[0]);
-                // vf14[1] = MIN(vf27[1] + vf9[1] + ones[1], screen_size[1]);
-                // vf14[2] = MIN(vf27[2] + vf9[2] + ones[2], screen_size[2]);
-                // vf14[3] = MIN(vf27[3] + vf9[3] + ones[3], screen_size[3]);
+                    // vf14[0] = MIN(vf27[0] + vf9[0] + ones[0], screen_size[0]);
+                    // vf14[1] = MIN(vf27[1] + vf9[1] + ones[1], screen_size[1]);
+                    // vf14[2] = MIN(vf27[2] + vf9[2] + ones[2], screen_size[2]);
+                    // vf14[3] = MIN(vf27[3] + vf9[3] + ones[3], screen_size[3]);
 
                 //                                                    prim 0x4d or 0x5d depending on dtex being 0 or 1
                 d[n++] = SCE_GIF_SET_TAG(1, SCE_GS_TRUE, SCE_GS_TRUE, (u_long)dtex << 4 | 0x4d, SCE_GIF_PACKED, 14);
@@ -1697,109 +1744,110 @@ int draw_distortion_particles(sceVu0FMATRIX *local_screen, sceVu0FMATRIX *local_
                 d[n++] = 0 \
                     | (long long)SCE_GS_RGBAQ << (4 * 0)
                     | (long long)SCE_GS_ST    << (4 * 1)
-                    | (long long)SCE_GS_XYZF2 << (4 * 2)
-                    | (long long)SCE_GS_RGBAQ << (4 * 3)
-                    | (long long)SCE_GS_ST    << (4 * 4)
-                    | (long long)SCE_GS_XYZF2 << (4 * 5)
-                    | (long long)SCE_GS_ST    << (4 * 6)
-                    | (long long)SCE_GS_XYZF2 << (4 * 7)
-                    | (long long)SCE_GS_ST    << (4 * 8)
-                    | (long long)SCE_GS_XYZF2 << (4 * 9)
-                    | (long long)SCE_GS_ST    << (4 * 10)
-                    | (long long)SCE_GS_XYZF2 << (4 * 11)
-                    | (long long)SCE_GS_ST    << (4 * 12)
-                    | (long long)SCE_GS_XYZF2 << (4 * 13);
+                             | (long long)SCE_GS_XYZF2 << (4 * 2)
+                             | (long long)SCE_GS_RGBAQ << (4 * 3)
+                             | (long long)SCE_GS_ST    << (4 * 4)
+                             | (long long)SCE_GS_XYZF2 << (4 * 5)
+                             | (long long)SCE_GS_ST    << (4 * 6)
+                             | (long long)SCE_GS_XYZF2 << (4 * 7)
+                             | (long long)SCE_GS_ST    << (4 * 8)
+                             | (long long)SCE_GS_XYZF2 << (4 * 9)
+                             | (long long)SCE_GS_ST    << (4 * 10)
+                             | (long long)SCE_GS_XYZF2 << (4 * 11)
+                             | (long long)SCE_GS_ST    << (4 * 12)
+                             | (long long)SCE_GS_XYZF2 << (4 * 13);
 
-                //  PACKED RGBAQ is just RGBA, and ST becomes STQ instead
+                    //  PACKED RGBAQ is just RGBA, and ST becomes STQ instead
 
-                // SCE_GS_RGBAQ << (4 * 0)
-                ((sceVu0IVECTOR*)&d[n])[0][0] = (int)p[1][0]; // R
-                ((sceVu0IVECTOR*)&d[n])[0][1] = (int)p[1][1]; // G
-                ((sceVu0IVECTOR*)&d[n])[0][2] = (int)p[1][2]; // B
-                ((sceVu0IVECTOR*)&d[n])[0][3] = (int)p[1][3]; // A
+                    // SCE_GS_RGBAQ << (4 * 0)
+                    ((sceVu0IVECTOR*)&d[n])[0][0] = (int)p[1][0]; // R
+                    ((sceVu0IVECTOR*)&d[n])[0][1] = (int)p[1][1]; // G
+                    ((sceVu0IVECTOR*)&d[n])[0][2] = (int)p[1][2]; // B
+                    ((sceVu0IVECTOR*)&d[n])[0][3] = (int)p[1][3]; // A
 
-                // SCE_GS_RGBAQ << (4 * 3)
-                ((sceVu0IVECTOR*)&d[n])[3][0] = (int)p[1][0]; // R
-                ((sceVu0IVECTOR*)&d[n])[3][1] = (int)p[1][1]; // G
-                ((sceVu0IVECTOR*)&d[n])[3][2] = (int)p[1][2]; // B
-                ((sceVu0IVECTOR*)&d[n])[3][3] = 0;            // A
+                    // SCE_GS_RGBAQ << (4 * 3)
+                    ((sceVu0IVECTOR*)&d[n])[3][0] = (int)p[1][0]; // R
+                    ((sceVu0IVECTOR*)&d[n])[3][1] = (int)p[1][1]; // G
+                    ((sceVu0IVECTOR*)&d[n])[3][2] = (int)p[1][2]; // B
+                    ((sceVu0IVECTOR*)&d[n])[3][3] = 0;            // A
 
-                vf9[0] = vf9[0];
-                vf22[1] = vf9[1];
+                    vf9[0] = vf9[0];
+                    vf22[1] = vf9[1];
 
-                vf8[0] = vf9[0] * st_scale[0];
-                vf14[1] = vf9[1] * st_scale[1];
+                    vf8[0] = vf9[0] * st_scale[0];
+                    vf14[1] = vf9[1] * st_scale[1];
 
-                vf27[0] = vf27[0] * st_scale[0];
-                vf27[1] = vf27[1] * st_scale[1];
+                    vf27[0] = vf27[0] * st_scale[0];
+                    vf27[1] = vf27[1] * st_scale[1];
 
-                // SCE_GS_ST    << (4 * 1)
-                ((sceVu0FVECTOR*)&d[n])[1][0] = vf27[0]; // S
-                ((sceVu0FVECTOR*)&d[n])[1][1] = vf27[1]; // T
-                ((sceVu0FVECTOR*)&d[n])[1][2] = 1.0f; // Q
+                    // SCE_GS_ST    << (4 * 1)
+                    ((sceVu0FVECTOR*)&d[n])[1][0] = vf27[0]; // S
+                    ((sceVu0FVECTOR*)&d[n])[1][1] = vf27[1]; // T
+                    ((sceVu0FVECTOR*)&d[n])[1][2] = 1.0f; // Q
 
-                // SCE_GS_XYZF2 << (4 * 2)
-                ((sceVu0IVECTOR*)&d[n])[2][0] = FLT_TO_FIX4(tmp[0]); // X
-                ((sceVu0IVECTOR*)&d[n])[2][1] = FLT_TO_FIX4(tmp[1]); // Y
-                ((sceVu0IVECTOR*)&d[n])[2][2] = FLT_TO_FIX4(tmp[2]); // Z
-                ((sceVu0IVECTOR*)&d[n])[2][3] = FLT_TO_FIX4(tmp[3]); // F, is it 0?
+                    // SCE_GS_XYZF2 << (4 * 2)
+                    ((sceVu0IVECTOR*)&d[n])[2][0] = FLT_TO_FIX4(tmp[0]); // X
+                    ((sceVu0IVECTOR*)&d[n])[2][1] = FLT_TO_FIX4(tmp[1]); // Y
+                    ((sceVu0IVECTOR*)&d[n])[2][2] = FLT_TO_FIX4(tmp[2]); // Z
+                    ((sceVu0IVECTOR*)&d[n])[2][3] = FLT_TO_FIX4(tmp[3]); // F, is it 0?
 
-                // SCE_GS_ST    << (4 * 4)
-                ((sceVu0FVECTOR*)&d[n])[4][0] = vf27[0]; // S
-                ((sceVu0FVECTOR*)&d[n])[4][1] = vf27[1] - vf14[1]; // T
-                ((sceVu0FVECTOR*)&d[n])[4][2] = 1.0f; // Q
+                    // SCE_GS_ST    << (4 * 4)
+                    ((sceVu0FVECTOR*)&d[n])[4][0] = vf27[0]; // S
+                    ((sceVu0FVECTOR*)&d[n])[4][1] = vf27[1] - vf14[1]; // T
+                    ((sceVu0FVECTOR*)&d[n])[4][2] = 1.0f; // Q
 
-                // SCE_GS_XYZF2 << (4 * 5)
-                ((sceVu0IVECTOR*)&d[n])[5][0] = FLT_TO_FIX4(tmp[0]); // X
-                ((sceVu0IVECTOR*)&d[n])[5][1] = FLT_TO_FIX4(tmp[1] - vf22[1]); // Y
-                ((sceVu0IVECTOR*)&d[n])[5][2] = FLT_TO_FIX4(tmp[2]); // Z
-                ((sceVu0IVECTOR*)&d[n])[5][3] = FLT_TO_FIX4(tmp[3]); // F, is it 0?
+                    // SCE_GS_XYZF2 << (4 * 5)
+                    ((sceVu0IVECTOR*)&d[n])[5][0] = FLT_TO_FIX4(tmp[0]); // X
+                    ((sceVu0IVECTOR*)&d[n])[5][1] = FLT_TO_FIX4(tmp[1] - vf22[1]); // Y
+                    ((sceVu0IVECTOR*)&d[n])[5][2] = FLT_TO_FIX4(tmp[2]); // Z
+                    ((sceVu0IVECTOR*)&d[n])[5][3] = FLT_TO_FIX4(tmp[3]); // F, is it 0?
 
-                // SCE_GS_ST    << (4 * 6)
-                ((sceVu0FVECTOR*)&d[n])[6][0] = vf27[0] + vf8[0]; // S
-                ((sceVu0FVECTOR*)&d[n])[6][1] = vf27[1]; // T
-                ((sceVu0FVECTOR*)&d[n])[6][2] = 1.0f; // Q
+                    // SCE_GS_ST    << (4 * 6)
+                    ((sceVu0FVECTOR*)&d[n])[6][0] = vf27[0] + vf8[0]; // S
+                    ((sceVu0FVECTOR*)&d[n])[6][1] = vf27[1]; // T
+                    ((sceVu0FVECTOR*)&d[n])[6][2] = 1.0f; // Q
 
-                // SCE_GS_XYZF2 << (4 * 7)
-                ((sceVu0IVECTOR*)&d[n])[7][0] = FLT_TO_FIX4(tmp[0] + vf9[0]); // X
-                ((sceVu0IVECTOR*)&d[n])[7][1] = FLT_TO_FIX4(tmp[1]); // Y
-                ((sceVu0IVECTOR*)&d[n])[7][2] = FLT_TO_FIX4(tmp[2]); // Z
-                ((sceVu0IVECTOR*)&d[n])[7][3] = FLT_TO_FIX4(tmp[3]); // F, is it 0?
+                    // SCE_GS_XYZF2 << (4 * 7)
+                    ((sceVu0IVECTOR*)&d[n])[7][0] = FLT_TO_FIX4(tmp[0] + vf9[0]); // X
+                    ((sceVu0IVECTOR*)&d[n])[7][1] = FLT_TO_FIX4(tmp[1]); // Y
+                    ((sceVu0IVECTOR*)&d[n])[7][2] = FLT_TO_FIX4(tmp[2]); // Z
+                    ((sceVu0IVECTOR*)&d[n])[7][3] = FLT_TO_FIX4(tmp[3]); // F, is it 0?
 
-                // SCE_GS_ST    << (4 * 8)
-                ((sceVu0FVECTOR*)&d[n])[8][0] = vf27[0]; // S
-                ((sceVu0FVECTOR*)&d[n])[8][1] = vf27[1] + vf14[1]; // T
-                ((sceVu0FVECTOR*)&d[n])[8][2] = 1.0f; // Q
+                    // SCE_GS_ST    << (4 * 8)
+                    ((sceVu0FVECTOR*)&d[n])[8][0] = vf27[0]; // S
+                    ((sceVu0FVECTOR*)&d[n])[8][1] = vf27[1] + vf14[1]; // T
+                    ((sceVu0FVECTOR*)&d[n])[8][2] = 1.0f; // Q
 
-                // SCE_GS_XYZF2 << (4 * 9)
-                ((sceVu0IVECTOR*)&d[n])[9][0] = FLT_TO_FIX4(tmp[0]); // X
-                ((sceVu0IVECTOR*)&d[n])[9][1] = FLT_TO_FIX4(tmp[1] + vf22[1]); // Y
-                ((sceVu0IVECTOR*)&d[n])[9][2] = FLT_TO_FIX4(tmp[2]); // Z
-                ((sceVu0IVECTOR*)&d[n])[9][3] = FLT_TO_FIX4(tmp[3]); // F, is it 0?
+                    // SCE_GS_XYZF2 << (4 * 9)
+                    ((sceVu0IVECTOR*)&d[n])[9][0] = FLT_TO_FIX4(tmp[0]); // X
+                    ((sceVu0IVECTOR*)&d[n])[9][1] = FLT_TO_FIX4(tmp[1] + vf22[1]); // Y
+                    ((sceVu0IVECTOR*)&d[n])[9][2] = FLT_TO_FIX4(tmp[2]); // Z
+                    ((sceVu0IVECTOR*)&d[n])[9][3] = FLT_TO_FIX4(tmp[3]); // F, is it 0?
 
-                // SCE_GS_ST    << (4 * 10)
-                ((sceVu0FVECTOR*)&d[n])[10][0] = vf27[0] - vf8[0]; // S
-                ((sceVu0FVECTOR*)&d[n])[10][1] = vf27[1]; // T
-                ((sceVu0FVECTOR*)&d[n])[10][2] = 1.0f; // Q
+                    // SCE_GS_ST    << (4 * 10)
+                    ((sceVu0FVECTOR*)&d[n])[10][0] = vf27[0] - vf8[0]; // S
+                    ((sceVu0FVECTOR*)&d[n])[10][1] = vf27[1]; // T
+                    ((sceVu0FVECTOR*)&d[n])[10][2] = 1.0f; // Q
 
-                // SCE_GS_XYZF2 << (4 * 11)
-                ((sceVu0IVECTOR*)&d[n])[11][0] = FLT_TO_FIX4(tmp[0] - vf9[0]); // X
-                ((sceVu0IVECTOR*)&d[n])[11][1] = FLT_TO_FIX4(tmp[1]); // Y
-                ((sceVu0IVECTOR*)&d[n])[11][2] = FLT_TO_FIX4(tmp[2]); // Z
-                ((sceVu0IVECTOR*)&d[n])[11][3] = FLT_TO_FIX4(tmp[3]); // F, is it 0?
+                    // SCE_GS_XYZF2 << (4 * 11)
+                    ((sceVu0IVECTOR*)&d[n])[11][0] = FLT_TO_FIX4(tmp[0] - vf9[0]); // X
+                    ((sceVu0IVECTOR*)&d[n])[11][1] = FLT_TO_FIX4(tmp[1]); // Y
+                    ((sceVu0IVECTOR*)&d[n])[11][2] = FLT_TO_FIX4(tmp[2]); // Z
+                    ((sceVu0IVECTOR*)&d[n])[11][3] = FLT_TO_FIX4(tmp[3]); // F, is it 0?
 
-                // SCE_GS_ST    << (4 * 12)
-                ((sceVu0FVECTOR*)&d[n])[12][0] = vf27[0]; // S
-                ((sceVu0FVECTOR*)&d[n])[12][1] = vf27[1] - vf14[1]; // T
-                ((sceVu0FVECTOR*)&d[n])[12][2] = 1.0f; // Q
+                    // SCE_GS_ST    << (4 * 12)
+                    ((sceVu0FVECTOR*)&d[n])[12][0] = vf27[0]; // S
+                    ((sceVu0FVECTOR*)&d[n])[12][1] = vf27[1] - vf14[1]; // T
+                    ((sceVu0FVECTOR*)&d[n])[12][2] = 1.0f; // Q
 
-                // SCE_GS_XYZF2 << (4 * 13)
-                ((sceVu0IVECTOR*)&d[n])[13][0] = FLT_TO_FIX4(tmp[0]); // X
-                ((sceVu0IVECTOR*)&d[n])[13][1] = FLT_TO_FIX4(tmp[1] - vf22[1]); // Y
-                ((sceVu0IVECTOR*)&d[n])[13][2] = FLT_TO_FIX4(tmp[2]); // Z
-                ((sceVu0IVECTOR*)&d[n])[13][3] = FLT_TO_FIX4(tmp[3]); // F, is it 0?
+                    // SCE_GS_XYZF2 << (4 * 13)
+                    ((sceVu0IVECTOR*)&d[n])[13][0] = FLT_TO_FIX4(tmp[0]); // X
+                    ((sceVu0IVECTOR*)&d[n])[13][1] = FLT_TO_FIX4(tmp[1] - vf22[1]); // Y
+                    ((sceVu0IVECTOR*)&d[n])[13][2] = FLT_TO_FIX4(tmp[2]); // Z
+                    ((sceVu0IVECTOR*)&d[n])[13][3] = FLT_TO_FIX4(tmp[3]); // F, is it 0?
 
-                n += 14 * 2;
+                    n += 14 * 2;
+                }
             }
 
             p[1][0] = rr;
@@ -1829,7 +1877,7 @@ int draw_distortion_particles(sceVu0FMATRIX *local_screen, sceVu0FMATRIX *local_
                 &untextured_render_buffer[0][0],
                 render_vertices,
                 depth_mode,
-                additive_blend);
+                                                additive_blend);
         }
     }
 
@@ -2020,7 +2068,7 @@ void* ContHeatHaze(void *addr, int type, float *pos, float *pos2, int st, float 
     hh = (HEAT_HAZE *)addr;
     hh->flag |= 0xff;
 
-    if (ingame_wrk.mode == 0xa)
+    if (ingame_wrk.mode == INGAME_MODE_MENU)
     {
         return addr;
     }
@@ -3044,7 +3092,7 @@ int SetAmuletFire()
 
     c = ndpkt;
 
-    pbuf[ndpkt].ul128 = (u_long128)0;
+    pbuf[ndpkt].ul128 = u_long128_from_u64(0);
 
     pbuf[ndpkt++].ui32[0] = DMAend;
 
@@ -3541,7 +3589,7 @@ void* ContSmoke(void *addr, int type, float *pos, float *pos2, int st, float r, 
 
     hh->flag |= 0xff;
 
-    if (ingame_wrk.mode != 0xa)
+    if (ingame_wrk.mode != INGAME_MODE_MENU)
     {
         if (pos2 == NULL)
         {
@@ -3865,7 +3913,7 @@ void SetSunshine(EFFECT_CONT *ec)
 
     n = ndpkt;
 
-    pbuf[ndpkt++].ul128 = (u_long128)0;
+    pbuf[ndpkt++].ul128 = u_long128_from_u64(0);
 
     pbuf[ndpkt].ul64[0] = SCE_GS_SET_TEX0_1(7, 2, SCE_GS_PSMCT32, 0, 0, 0, SCE_GS_MODULATE, 0, SCE_GS_PSMCT32, 0, 16, 0);
     pbuf[ndpkt++].ul64[1] = SCE_GIF_PACKED_AD;
@@ -4280,7 +4328,7 @@ void SetDust(EFFECT_CONT *ec)
 
         c = ndpkt;
 
-        pbuf[ndpkt++].ul128 = (u_long128)0;
+        pbuf[ndpkt++].ul128 = u_long128_from_u64(0);
 
         pbuf[ndpkt].ul64[0] = SCE_GIF_SET_TAG(6, SCE_GS_TRUE, SCE_GS_FALSE, 0, SCE_GIF_PACKED, 1);
         pbuf[ndpkt++].ul64[1] = SCE_GIF_PACKED_AD;
@@ -4573,7 +4621,7 @@ void SetWaterdrop(EFFECT_CONT *ec)
 
     c = ndpkt;
 
-    pbuf[ndpkt++].ul128 = (u_long128)0;
+    pbuf[ndpkt++].ul128 = u_long128_from_u64(0);
 
     pbuf[ndpkt].ul64[0] = SCE_GIF_SET_TAG(6, SCE_GS_TRUE, SCE_GS_FALSE, 0, SCE_GIF_PACKED, 1);
     pbuf[ndpkt++].ul64[1] = SCE_GIF_PACKED_AD;
@@ -5030,7 +5078,7 @@ void RunLeafSub(EFF_LEAF *lep)
 
     c = ndpkt;
 
-    pbuf[ndpkt++].ul128 = (u_long128)0;
+    pbuf[ndpkt++].ul128 = u_long128_from_u64(0);
 
     pbuf[ndpkt].ul64[0] = SCE_GIF_SET_TAG(6, SCE_GS_TRUE, SCE_GS_FALSE, 0, SCE_GIF_PACKED, 1);
     pbuf[ndpkt++].ul64[1] = SCE_GIF_PACKED_AD;
@@ -5542,7 +5590,7 @@ u_char SetCanalSub(int no, float *mpos)
 
     n = ndpkt;
 
-    pbuf[ndpkt++].ul128 = (u_long128)0;
+    pbuf[ndpkt++].ul128 = u_long128_from_u64(0);
 
     pbuf[ndpkt].ul64[0] = SCE_GIF_SET_TAG(8, SCE_GS_TRUE, SCE_GS_FALSE, 0, SCE_GIF_PACKED, 1);
     pbuf[ndpkt++].ul64[1] = SCE_GIF_PACKED_AD;
@@ -5597,7 +5645,7 @@ u_char SetCanalSub(int no, float *mpos)
 
         if (k >= 3)
         {
-            reg |= (long)(0 \
+            reg |= (long long)(0 \
                 | SCE_GS_UV    << (4 * 0)
                 | SCE_GS_RGBAQ << (4 * 1)
                 | SCE_GS_XYZF2 << (4 * 2)
@@ -5605,7 +5653,7 @@ u_char SetCanalSub(int no, float *mpos)
         }
         else
         {
-            reg |= (long)(0 \
+            reg |= (long long)(0 \
                 | SCE_GS_UV    << (4 * 0)
                 | SCE_GS_RGBAQ << (4 * 1)
                 | SCE_GS_XYZF3 << (4 * 2)
@@ -5622,7 +5670,7 @@ u_char SetCanalSub(int no, float *mpos)
 
         if (k >= 3)
         {
-            reg |= (long)(0 \
+            reg |= (long long)(0 \
                 | SCE_GS_UV    << (4 * 0)
                 | SCE_GS_RGBAQ << (4 * 1)
                 | SCE_GS_XYZF2 << (4 * 2)
@@ -5630,7 +5678,7 @@ u_char SetCanalSub(int no, float *mpos)
         }
         else
         {
-            reg |= (long)(0 \
+            reg |= (long long)(0 \
                 | SCE_GS_UV    << (4 * 0)
                 | SCE_GS_RGBAQ << (4 * 1)
                 | SCE_GS_XYZF3 << (4 * 2)
@@ -5688,11 +5736,11 @@ u_char SetCanalSub(int no, float *mpos)
 
             if (k >= 3)
             {
-                reg |= (long)(0 | SCE_GS_UV    << (4 * 0) | SCE_GS_RGBAQ << (4 * 1) | SCE_GS_XYZF2 << (4 * 2)) << (cnt * 12);
+                reg |= (long long)(0 | SCE_GS_UV    << (4 * 0) | SCE_GS_RGBAQ << (4 * 1) | SCE_GS_XYZF2 << (4 * 2)) << (cnt * 12);
             }
             else
             {
-                reg |= (long)(0 | SCE_GS_UV    << (4 * 0) | SCE_GS_RGBAQ << (4 * 1) | SCE_GS_XYZF3 << (4 * 2)) << (cnt * 12);
+                reg |= (long long)(0 | SCE_GS_UV    << (4 * 0) | SCE_GS_RGBAQ << (4 * 1) | SCE_GS_XYZF3 << (4 * 2)) << (cnt * 12);
             }
             pbuf[ndpkt++].ul64[1] = SCE_GS_SET_UV(rw2.tx[j], rw2.ty[j]);
 
@@ -5705,11 +5753,11 @@ u_char SetCanalSub(int no, float *mpos)
 
             if (k >= 3)
             {
-                reg |= (long)(0 | SCE_GS_UV    << (4 * 0) | SCE_GS_RGBAQ << (4 * 1) | SCE_GS_XYZF2 << (4 * 2)) << (cnt * 12);
+                reg |= (long long)(0 | SCE_GS_UV    << (4 * 0) | SCE_GS_RGBAQ << (4 * 1) | SCE_GS_XYZF2 << (4 * 2)) << (cnt * 12);
             }
             else
             {
-                reg |= (long)(0 | SCE_GS_UV    << (4 * 0) | SCE_GS_RGBAQ << (4 * 1) | SCE_GS_XYZF3 << (4 * 2)) << (cnt * 12);
+                reg |= (long long)(0 | SCE_GS_UV    << (4 * 0) | SCE_GS_RGBAQ << (4 * 1) | SCE_GS_XYZF3 << (4 * 2)) << (cnt * 12);
             }
 
             cnt++;
@@ -5834,27 +5882,27 @@ void ContCanal()
     static sceVu0FVECTOR bcp = {27850.0f, 200.0f, 29300.0f, 1.0f};
     int n;
 
-    if (*key_now[15] == 1)
+    if (R3_PRESSED() == 1)
     {
         Call3DRipple(bcp);
     }
 
-    if (*key_now[7] != 0)
+    if (CIRCLE_PRESSED() != 0)
     {
         bcp[0] += 20.0f;
     }
 
-    if (*key_now[6] != 0)
+    if (SQUARE_PRESSED() != 0)
     {
         bcp[0] -= 20.0f;
     }
 
-    if (*key_now[4] != 0)
+    if (TRIANGLE_PRESSED() != 0)
     {
         bcp[2] += 20.0f;
     }
 
-    if (*key_now[5] != 0)
+    if (CROSS_PRESSED() != 0)
     {
         bcp[2] -= 20.0f;
     }
@@ -6311,7 +6359,7 @@ void SetSky()
 
             c = ndpkt;
 
-            pbuf[ndpkt].ul128 = (u_long128)0;
+            pbuf[ndpkt].ul128 = u_long128_from_u64(0);
 
             pbuf[ndpkt++].ui32[0] = DMAend;
 
@@ -6563,7 +6611,7 @@ void SetPond()
     n = ndpkt;
     m = (pnumw + 1) * pnumh;
 
-    pbuf[ndpkt++].ul128 = (u_long128)0;
+    pbuf[ndpkt++].ul128 = u_long128_from_u64(0);
 
     pbuf[ndpkt].ul64[0] = SCE_GIF_SET_TAG(8, SCE_GS_TRUE, SCE_GS_FALSE, 0, SCE_GIF_PACKED, 1);
     pbuf[ndpkt++].ul64[1] = SCE_GIF_PACKED_AD;
@@ -6618,7 +6666,7 @@ void SetPond()
 
         if (k >= 3)
         {
-            reg |= (long)(0 \
+            reg |= (long long)(0 \
                 | SCE_GS_UV    << (4 * 0)
                 | SCE_GS_RGBAQ << (4 * 1)
                 | SCE_GS_XYZF2 << (4 * 2)
@@ -6626,7 +6674,7 @@ void SetPond()
         }
         else
         {
-            reg |= (long)(0 \
+            reg |= (long long)(0 \
                 | SCE_GS_UV    << (4 * 0)
                 | SCE_GS_RGBAQ << (4 * 1)
                 | SCE_GS_XYZF3 << (4 * 2)
@@ -6643,7 +6691,7 @@ void SetPond()
 
         if (k >= 3)
         {
-            reg |= (long)(0 \
+            reg |= (long long)(0 \
                 | SCE_GS_UV    << (4 * 0)
                 | SCE_GS_RGBAQ << (4 * 1)
                 | SCE_GS_XYZF2 << (4 * 2)
@@ -6651,7 +6699,7 @@ void SetPond()
         }
         else
         {
-            reg |= (long)(0 \
+            reg |= (long long)(0 \
                 | SCE_GS_UV    << (4 * 0)
                 | SCE_GS_RGBAQ << (4 * 1)
                 | SCE_GS_XYZF3 << (4 * 2)
@@ -6716,7 +6764,7 @@ void SetHaze_Pond()
     HAZE_WORK hw[10];
     float gl_z[10];
     static HAZE_NUMS hn[10];
-    long v2;
+    long long v2;
 
     if ((plyr_wrk.pr_info.room_no != R022_NAKASU && plyr_wrk.pr_info.room_no != R016_NAKANIWA) || realtime_scene_flg != 0 || init_haze_pond == 0)
     {
@@ -6919,7 +6967,7 @@ void SetHaze_Pond()
 
     c = ndpkt;
 
-    pbuf[ndpkt].ul128 = (u_long128)0;
+    pbuf[ndpkt].ul128 = u_long128_from_u64(0);
 
     pbuf[ndpkt++].ui32[0] = DMAend;
 
@@ -7157,7 +7205,7 @@ void DrawNewPerticleSub(int num, sceVu0FVECTOR *pos, u_char r1, u_char g1, u_cha
 
     n = ndpkt;
 
-    pbuf[ndpkt++].ul128 = (u_long128)0;
+    pbuf[ndpkt++].ul128 = u_long128_from_u64(0);
 
     pbuf[ndpkt].ul64[0] = SCE_GIF_SET_TAG(3, SCE_GS_TRUE, SCE_GS_FALSE, 0, SCE_GIF_PACKED, 1);
     pbuf[ndpkt++].ul64[1] = SCE_GIF_PACKED_AD;
@@ -7208,14 +7256,14 @@ void DrawNewPerticleSub(int num, sceVu0FVECTOR *pos, u_char r1, u_char g1, u_cha
 
             if (cl >= 3)
             {
-                reg |= (long)(0 \
+                reg |= (long long)(0 \
                     | SCE_GS_RGBAQ << (4 * 0)
                     | SCE_GS_XYZF2 << (4 * 1)
                 ) << (cnt * 8);
             }
             else
             {
-                reg |= (long)(0 \
+                reg |= (long long)(0 \
                     | SCE_GS_RGBAQ << (4 * 0)
                     | SCE_GS_XYZF3 << (4 * 1)
                 ) << (cnt * 8);
@@ -7230,14 +7278,14 @@ void DrawNewPerticleSub(int num, sceVu0FVECTOR *pos, u_char r1, u_char g1, u_cha
 
             if (cl >= 3)
             {
-                reg |= (long)(0 \
+                reg |= (long long)(0 \
                     | SCE_GS_RGBAQ << (4 * 0)
                     | SCE_GS_XYZF2 << (4 * 1)
                 ) << (cnt * 8);
             }
             else
             {
-                reg |= (long)(0 \
+                reg |= (long long)(0 \
                     | SCE_GS_RGBAQ << (4 * 0)
                     | SCE_GS_XYZF3 << (4 * 1)
                 ) << (cnt * 8);
@@ -7502,7 +7550,7 @@ void SetEneFace(EFFECT_CONT *ec)
 
     bak = ndpkt;
 
-    pbuf[ndpkt++].ul128 = (u_long128)0;
+    pbuf[ndpkt++].ul128 = u_long128_from_u64(0);
 
     pbuf[ndpkt].ul64[0] = SCE_GIF_SET_TAG(6, SCE_GS_TRUE, SCE_GS_FALSE, 0, SCE_GIF_PACKED, 1);
     pbuf[ndpkt++].ul64[1] = SCE_GIF_PACKED_AD;
@@ -7936,7 +7984,7 @@ void SetFaceSpirit(EFFECT_CONT *ec)
 
     bak = ndpkt;
 
-    pbuf[ndpkt++].ul128 = (u_long128)0;
+    pbuf[ndpkt++].ul128 = u_long128_from_u64(0);
 
     pbuf[ndpkt].ul64[0] = SCE_GIF_SET_TAG(6, SCE_GS_TRUE, SCE_GS_FALSE, 0, SCE_GIF_PACKED, 1);
     pbuf[ndpkt++].ul64[1] = SCE_GIF_PACKED_AD;

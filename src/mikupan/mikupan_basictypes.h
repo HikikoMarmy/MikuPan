@@ -71,9 +71,13 @@ typedef struct
     int height;
 } MikuPan_Resolution;
 
+#define MIKUPAN_RENDER_RESOLUTION_FIT_WINDOW (-1)
+
 typedef struct
 {
     MikuPan_Resolution window;
+    /* Use MIKUPAN_RENDER_RESOLUTION_FIT_WINDOW for both render dimensions to
+     * follow the current window size. */
     MikuPan_Resolution render;
     int is_fullscreen;   /* legacy; kept in sync with window_mode != windowed */
     int window_mode;     /* 0 = windowed, 1 = fullscreen, 2 = borderless */
@@ -140,6 +144,24 @@ typedef struct
     int stick_invert[4];
     int stick_kb_neg[4];
     int stick_kb_pos[4];
+
+    /* Optional gameplay action profile. These maps are action slot -> game
+     * button slot, using the same 16-slot sizes as key_cnf.c. */
+    int action_profile_saved;
+    int action_profile_layout;
+    int action_profile_enabled;
+    int action_profile_subjective_move;
+    int action_profile_dpad_subjective_move;
+    int action_profile_stick_subjective_move;
+    int action_profile_finder_reverse_y;
+    int action_profile_finder_swap_sticks;
+    int action_profile_normal[16];
+    int action_profile_finder[16];
+
+    /* Finder (first-person) mouse-look. enabled defaults to on and sensitivity
+     * to 1.0 at runtime; these are only read back when bindings_saved is set. */
+    int finder_mouse_enabled;
+    float finder_mouse_sensitivity;
 } MikuPan_ConfigInput;
 
 typedef struct

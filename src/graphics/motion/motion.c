@@ -243,6 +243,11 @@ u_int* motInitAniCtrl(ANI_CTRL *ani_ctrl, u_int *anm_p, u_int *mdl_p, u_int *pkt
     u_int *tmp_p;
     HeaderSection *hs;
 
+    if (mdl_p == NULL)
+    {
+        return NULL;
+    }
+
     ani_ctrl->anm_p = anm_p;
     pack_num = *anm_p;
 
@@ -438,7 +443,7 @@ u_char motSetCoord(ANI_CTRL *ani_ctrl, u_char work_id)
     loop = 1;
 #endif
 
-    if (plyr_wrk.mvsta & 0x200000 && ingame_wrk.mode != 6)
+    if (plyr_wrk.mvsta & 0x200000 && ingame_wrk.mode != INGAME_MODE_NOMAL)
     {
         return 0;
     }

@@ -142,6 +142,8 @@ static DEBUG_MENU *dbgmenu_tbl[] = {
     &dbg_menu_param_item,
 };
 
+#define DBG_MENU_COUNT ((int) (sizeof(dbgmenu_tbl) / sizeof(dbgmenu_tbl[0])))
+
 static int *dbgmenu_inttbl[] = {
     &dbg_wrk.mode_on,
     &dbg_wrk.lgt_spot,
@@ -377,7 +379,10 @@ void gra2dDrawDbgMenuSub(DEBUG_MENU *wlp)
 
     /// Changed the code to be recursive so that parents get drawn first
     /// this avoids the parent writing over the child
-    gra2dDrawDbgMenuSub(dbgmenu_tbl[wlp->parent]);
+    if (wlp->parent >= 0 && wlp->parent < DBG_MENU_COUNT)
+    {
+        gra2dDrawDbgMenuSub(dbgmenu_tbl[wlp->parent]);
+    }
 
     bx = (wlp->kai * 32) - 300;
     by = (wlp->kai * 32) - 200;
@@ -556,7 +561,7 @@ void gra2dDrawDbgMenu()
 
             if (nlp->submenu[nlp->pos].subnum & 0x10000)
             {
-                ok = *key_now[3] != 1 ? ok : 1;
+                ok = DPAD_RIGHT_PRESSED() != 1 ? ok : 1;
             }
 
             if ((nlp->submenu[nlp->pos].subnum & 0x10000) == 0 && nlp->submenu[nlp->pos].subnum & 0xa000)
@@ -612,7 +617,7 @@ void gra2dDrawDbgMenu()
 
             if (nlp->submenu[nlp->pos].subnum & 0x10000)
             {
-                ok = *key_now[3] != 1 ? ok : 1;
+                ok = DPAD_RIGHT_PRESSED() != 1 ? ok : 1;
             }
 
             if (nlp->submenu[nlp->pos].subnum & 0x10000)
@@ -631,7 +636,7 @@ void gra2dDrawDbgMenu()
             {
                 if (n >= 29 && n <= 34)
                 {
-                    if (*key_now[11] != 0)
+                    if (R2_PRESSED() != 0)
                     {
                         if (n >= 29 && n <= 31)
                         {
@@ -666,13 +671,13 @@ void gra2dDrawDbgMenu()
         }
     }
 
-    if (nlp->submenu[nlp->pos].subnum & 0x8000 && *key_now[11] != 0 && *key_now[9] != 0)
+    if (nlp->submenu[nlp->pos].subnum & 0x8000 && R2_PRESSED() != 0 && L2_PRESSED() != 0)
     {
         n = nlp->submenu[nlp->pos].subnum & 0xfff;
         *dbgmenu_inttbl[n] = 0;
     }
 
-    if (*key_now[5] == 1)
+    if (CROSS_PRESSED() == 1)
     {
         if ((nlp->submenu[nlp->pos].subnum & 0xe000))
         {
@@ -705,7 +710,7 @@ void gra2dDrawDbgMenu()
         }
     }
 
-    if (*key_now[4] == 1)
+    if (TRIANGLE_PRESSED() == 1)
     {
         if (nlp->parent != -1)
         {
@@ -717,7 +722,7 @@ void gra2dDrawDbgMenu()
         }
     }
 
-    if (*key_now[13] == 1)
+    if (SELECT_PRESSED() == 1)
     {
         dbg_wrk.mode_on = 2;
     }
@@ -1049,7 +1054,7 @@ void CheckHintTex()
     MakeTim2ClutDirect4((int64_t)MikuPan_GetHostAddress(EFFECT_ADDRESS), 0, -1, -1, 0);
     MakeTim2ClutDirect4((int64_t)MikuPan_GetHostAddress(EFFECT_ADDRESS), 1, -1, -1, 0);
 
-    if (*key_now[9] != 0)
+    if (L2_PRESSED() != 0)
     {
         target = num * 2 + 1;
     }

@@ -3,6 +3,9 @@
 #include "mikupan_logging.h"
 
 #include <SDL3/SDL_filesystem.h>
+#ifdef __ANDROID__
+#include <SDL3/SDL_system.h>
+#endif
 
 #include <cstring>
 #include <filesystem>
@@ -11,12 +14,46 @@
 #include <sstream>
 #include <string>
 #include <system_error>
+#include <exception>
 
 #include "inipp.h"
 
 namespace
 {
 using Ini = inipp::Ini<char>;
+
+bool PathExistsNoThrow(const std::filesystem::path& path, const char *context)
+{
+    std::error_code error;
+    const bool exists = std::filesystem::exists(path, error);
+    if (error)
+    {
+        info_log("Failed to check %s %s: %s",
+                 context,
+                 path.generic_string().c_str(),
+                 error.message().c_str());
+        return false;
+    }
+
+    return exists;
+}
+
+bool CreateDirectoriesNoThrow(const std::filesystem::path& path,
+                              const char *context)
+{
+    std::error_code error;
+    std::filesystem::create_directories(path, error);
+    if (error)
+    {
+        info_log("Failed to create %s %s: %s",
+                 context,
+                 path.generic_string().c_str(),
+                 error.message().c_str());
+        return false;
+    }
+
+    return true;
+}
 
 std::filesystem::path GetDefaultConfigurationPath()
 {
@@ -104,7 +141,7 @@ void ApplyString(const Ini& ini, const char *section, const char *key,
 
 bool TryLoadConfigurationFile(const std::filesystem::path& path)
 {
-    if (!std::filesystem::exists(path))
+    if (!PathExistsNoThrow(path, "configuration file"))
     {
         return false;
     }
@@ -112,7 +149,8 @@ bool TryLoadConfigurationFile(const std::filesystem::path& path)
     std::ifstream stream(path);
     if (!stream.is_open())
     {
-        info_log("Failed to open configuration file %s", path.generic_string().c_str());
+        info_log("Failed to open configuration file %s",
+                 path.generic_string().c_str());
         return false;
     }
 
@@ -208,6 +246,35 @@ bool TryLoadConfigurationFile(const std::filesystem::path& path)
         ApplyValue(ini, "input", (base + "kbpos").c_str(),
                    mikupan_configuration.input.stick_kb_pos[i]);
     }
+    ApplyValue(ini, "input.action_profile", "saved",
+               mikupan_configuration.input.action_profile_saved);
+    ApplyValue(ini, "input.action_profile", "layout",
+               mikupan_configuration.input.action_profile_layout);
+    ApplyValue(ini, "input.action_profile", "enabled",
+               mikupan_configuration.input.action_profile_enabled);
+    ApplyValue(ini, "input.action_profile", "subjective_move",
+               mikupan_configuration.input.action_profile_subjective_move);
+    ApplyValue(ini, "input.action_profile", "dpad_subjective_move",
+               mikupan_configuration.input.action_profile_dpad_subjective_move);
+    ApplyValue(ini, "input.action_profile", "stick_subjective_move",
+               mikupan_configuration.input.action_profile_stick_subjective_move);
+    ApplyValue(ini, "input.action_profile", "finder_reverse_y",
+               mikupan_configuration.input.action_profile_finder_reverse_y);
+    ApplyValue(ini, "input.action_profile", "finder_swap_sticks",
+               mikupan_configuration.input.action_profile_finder_swap_sticks);
+    ApplyValue(ini, "input", "finder_mouse_enabled",
+               mikupan_configuration.input.finder_mouse_enabled);
+    ApplyValue(ini, "input", "finder_mouse_sensitivity",
+               mikupan_configuration.input.finder_mouse_sensitivity);
+    for (int i = 0; i < 16; i++)
+    {
+        ApplyValue(ini, "input.action_profile",
+                   ("normal_action" + std::to_string(i)).c_str(),
+                   mikupan_configuration.input.action_profile_normal[i]);
+        ApplyValue(ini, "input.action_profile",
+                   ("finder_action" + std::to_string(i)).c_str(),
+                   mikupan_configuration.input.action_profile_finder[i]);
+    }
 
     ApplyString(ini, "paths", "data_folder", mikupan_configuration.data_folder,
                 sizeof(mikupan_configuration.data_folder));
@@ -219,18 +286,16 @@ bool TryLoadConfigurationFile(const std::filesystem::path& path)
 bool TrySaveConfigurationFile(const std::filesystem::path& path)
 {
     const auto parent = path.parent_path();
-    if (!parent.empty() && !std::filesystem::exists(parent))
+    if (!parent.empty() && !PathExistsNoThrow(parent, "configuration directory"))
     {
-        std::error_code error;
-        std::filesystem::create_directories(parent, error);
-        if (error)
+        if (!CreateDirectoriesNoThrow(parent, "configuration directory"))
         {
-            info_log("Failed to create configuration directory %s: %s",
-                     parent.generic_string().c_str(), error.message().c_str());
             return false;
         }
     }
 
+    try
+    {
     std::ofstream stream(path, std::ios::trunc);
     if (!stream.is_open())
     {
@@ -318,6 +383,35 @@ bool TrySaveConfigurationFile(const std::filesystem::path& path)
             SetValue(ini, "input", (base + "kbpos").c_str(),
                      mikupan_configuration.input.stick_kb_pos[i]);
         }
+        SetValue(ini, "input.action_profile", "saved",
+                 mikupan_configuration.input.action_profile_saved);
+        SetValue(ini, "input.action_profile", "layout",
+                 mikupan_configuration.input.action_profile_layout);
+        SetValue(ini, "input.action_profile", "enabled",
+                 mikupan_configuration.input.action_profile_enabled);
+        SetValue(ini, "input.action_profile", "subjective_move",
+                 mikupan_configuration.input.action_profile_subjective_move);
+        SetValue(ini, "input.action_profile", "dpad_subjective_move",
+                 mikupan_configuration.input.action_profile_dpad_subjective_move);
+        SetValue(ini, "input.action_profile", "stick_subjective_move",
+                 mikupan_configuration.input.action_profile_stick_subjective_move);
+        SetValue(ini, "input.action_profile", "finder_reverse_y",
+                 mikupan_configuration.input.action_profile_finder_reverse_y);
+        SetValue(ini, "input.action_profile", "finder_swap_sticks",
+                 mikupan_configuration.input.action_profile_finder_swap_sticks);
+        SetValue(ini, "input", "finder_mouse_enabled",
+                 mikupan_configuration.input.finder_mouse_enabled);
+        SetValue(ini, "input", "finder_mouse_sensitivity",
+                 mikupan_configuration.input.finder_mouse_sensitivity);
+        for (int i = 0; i < 16; i++)
+        {
+            SetValue(ini, "input.action_profile",
+                     ("normal_action" + std::to_string(i)).c_str(),
+                     mikupan_configuration.input.action_profile_normal[i]);
+            SetValue(ini, "input.action_profile",
+                     ("finder_action" + std::to_string(i)).c_str(),
+                     mikupan_configuration.input.action_profile_finder[i]);
+        }
     }
 
     ini.sections["paths"]["data_folder"] = mikupan_configuration.data_folder;
@@ -339,6 +433,19 @@ bool TrySaveConfigurationFile(const std::filesystem::path& path)
 
     info_log("Saved configuration to %s", path.generic_string().c_str());
     return true;
+    }
+    catch (const std::exception& error)
+    {
+        info_log("Failed to save configuration file %s: %s",
+                 path.generic_string().c_str(), error.what());
+        return false;
+    }
+    catch (...)
+    {
+        info_log("Failed to save configuration file %s",
+                 path.generic_string().c_str());
+        return false;
+    }
 }
 }
 
@@ -359,13 +466,17 @@ extern "C" void MikuPan_LoadConfiguration(const char *filename)
         }
     }
 
-    // Default the data folder to the executable's resource directory (SDL's
-    // base path) when nothing configured one, so the game finds its assets
-    // out-of-the-box and the resolved path is shown/editable in the UI. An
-    // explicit [paths]/data_folder in the config still takes precedence.
     if (mikupan_configuration.data_folder[0] == '\0')
     {
+#ifdef __ANDROID__
+        const char *base = SDL_GetAndroidExternalStoragePath();
+        if (base == nullptr || base[0] == '\0')
+        {
+            base = SDL_GetAndroidInternalStoragePath();
+        }
+#else
         const char *base = SDL_GetBasePath();
+#endif
         if (base != nullptr)
         {
             std::strncpy(mikupan_configuration.data_folder, base,
@@ -374,10 +485,14 @@ extern "C" void MikuPan_LoadConfiguration(const char *filename)
                 [sizeof(mikupan_configuration.data_folder) - 1] = '\0';
         }
     }
+
+    MikuPan_ConfigurationValidate();
 }
 
 extern "C" int MikuPan_SaveConfiguration(const char *filename)
 {
+    MikuPan_ConfigurationValidate();
+
     if (filename != nullptr && filename[0] != '\0')
     {
         return TrySaveConfigurationFile(filename) ? 1 : 0;
@@ -411,15 +526,10 @@ extern "C" int MikuPan_ResolveUserPath(const char *path, char *buffer,
     const std::filesystem::path resolved_path =
         (GetDefaultConfigurationDirectory() / relative_path).lexically_normal();
     const std::filesystem::path parent = resolved_path.parent_path();
-    if (!parent.empty() && !std::filesystem::exists(parent))
+    if (!parent.empty() && !PathExistsNoThrow(parent, "user data directory"))
     {
-        std::error_code error;
-        std::filesystem::create_directories(parent, error);
-        if (error)
+        if (!CreateDirectoriesNoThrow(parent, "user data directory"))
         {
-            info_log("Failed to create user data directory %s: %s",
-                     parent.generic_string().c_str(),
-                     error.message().c_str());
             return 0;
         }
     }

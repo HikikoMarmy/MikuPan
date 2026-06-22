@@ -290,6 +290,12 @@ extern SDL_GPUShader* MikuPan_GetGPUFragmentShader(int idx);
 
 static SDL_GPUTextureFormat PickSupportedDepthFormat(void);
 
+static int CurrentTargetDrawable(void)
+{
+    return g_cmd != NULL && g_target_color != NULL && g_target_width > 0
+           && g_target_height > 0;
+}
+
 static unsigned int AllocBufferId(void)
 {
     for (unsigned int i = g_next_buffer_id; i < MIKUPAN_GPU_MAX_BUFFERS; i++)
@@ -1632,7 +1638,16 @@ static SDL_GPUGraphicsPipeline* GetPipeline(unsigned int primitive)
                                       ? SDL_GPU_BLENDFACTOR_ONE
                                       : SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
     blend.color_blend_op = SDL_GPU_BLENDOP_ADD;
-    blend.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_SRC_ALPHA;
+    /* Alpha channel: keep the destination (framebuffer) alpha opaque instead of
+     * blending it like a colour. With SRC_ALPHA here, every semi-transparent 2D
+     * sprite drives the framebuffer alpha below 1. D3D12 ignores swapchain alpha
+     * so desktop looks fine, but Android/Vulkan SurfaceFlinger composites the
+     * surface USING that alpha, making all 2D sprites/HUD translucent against
+     * whatever is behind the window. ONE + ONE_MINUS_SRC_ALPHA (and ONE + ONE
+     * for additive) leaves a cleared-to-1 target at alpha 1 everywhere. ImGui's
+     * backend does the same, which is why its overlay stayed correct. RGB
+     * (the visible colour) is unaffected on every backend. */
+    blend.src_alpha_blendfactor = SDL_GPU_BLENDFACTOR_ONE;
     blend.dst_alpha_blendfactor = g_state.additive_blend
                                       ? SDL_GPU_BLENDFACTOR_ONE
                                       : SDL_GPU_BLENDFACTOR_ONE_MINUS_SRC_ALPHA;
@@ -1713,6 +1728,11 @@ static void BeginTargetPassIfNeeded(void)
         MikuPan_GPUSetTarget(g_target, g_target_clear);
     }
 
+    if (!CurrentTargetDrawable())
+    {
+        return;
+    }
+
     SDL_GPUColorTargetInfo color = {0};
     const int resolving_scene = g_target_resolve != NULL
                                 && g_scene_resolve_requested;
@@ -1754,11 +1774,19 @@ static void BeginTargetPassIfNeeded(void)
 
     g_pass = SDL_BeginGPURenderPass(g_cmd, &color, 1, depth_ptr);
     g_pass_resolves_scene = resolving_scene && g_pass != NULL;
+
+    if (g_pass == NULL)
+    {
+        info_log("SDL_BeginGPURenderPass failed: %s", SDL_GetError());
+        return;
+    }
+
     if (g_pass != NULL && g_target == MIKUPAN_GPU_TARGET_SCENE
         && g_target_resolve != NULL && !resolving_scene)
     {
         g_scene_resolve_dirty = 1;
     }
+
     g_scene_resolve_requested = 0;
     g_scene_resolve_preserve_msaa = 1;
     g_target_clear = 0;
@@ -1782,7 +1810,9 @@ static void BeginTargetPassIfNeeded(void)
                           (float) g_viewport[3],
                           0.0f,
                           1.0f};
+
     SDL_SetGPUViewport(g_pass, &vp);
+
     if (g_scissor_enabled)
     {
         SDL_SetGPUScissor(g_pass, &g_scissor);
@@ -1911,22 +1941,27 @@ void MikuPan_GPUSetCullNone(void)
 void MikuPan_GPUSetColorWriteMask(int r, int g, int b, int a)
 {
     g_state.color_mask = 0;
+
     if (r)
     {
         g_state.color_mask |= SDL_GPU_COLORCOMPONENT_R;
     }
+
     if (g)
     {
         g_state.color_mask |= SDL_GPU_COLORCOMPONENT_G;
     }
+
     if (b)
     {
         g_state.color_mask |= SDL_GPU_COLORCOMPONENT_B;
     }
+
     if (a)
     {
         g_state.color_mask |= SDL_GPU_COLORCOMPONENT_A;
     }
+
     g_state.color_mask_enabled = 1;
 }
 void MikuPan_GPUSetFillLine(int enabled)
@@ -1940,6 +1975,7 @@ void MikuPan_GPUSetViewport(int x, int y, int w, int h)
     g_viewport[1] = y;
     g_viewport[2] = w;
     g_viewport[3] = h;
+
     if (g_pass != NULL)
     {
         SDL_GPUViewport vp = {(float) x, (float) y, (float) w,
@@ -1952,6 +1988,7 @@ void MikuPan_GPUSetScissor(int x, int y, int w, int h)
 {
     g_scissor = (SDL_Rect) {x, y, w, h};
     g_scissor_enabled = 1;
+
     if (g_pass != NULL)
     {
         SDL_SetGPUScissor(g_pass, &g_scissor);
@@ -1961,6 +1998,7 @@ void MikuPan_GPUSetScissor(int x, int y, int w, int h)
 void MikuPan_GPUDisableScissor(void)
 {
     g_scissor_enabled = 0;
+
     if (g_pass != NULL)
     {
         SDL_Rect sc = {0, 0, g_target_width, g_target_height};
@@ -1990,14 +2028,43 @@ void MikuPan_GPUSetTarget(MikuPan_GPUTarget target, int clear)
 
     if (target == MIKUPAN_GPU_TARGET_WINDOW)
     {
+        Uint32 swapchain_width = 0;
+        Uint32 swapchain_height = 0;
+
+        g_target_color = NULL;
+        g_target_color_format = g_swapchain_format;
+        g_target_width = 0;
+        g_target_height = 0;
+
+        if (g_cmd == NULL || g_window == NULL)
+        {
+            return;
+        }
+
         if (g_swapchain == NULL)
         {
-            SDL_WaitAndAcquireGPUSwapchainTexture(g_cmd, g_window, &g_swapchain,
-                                                  NULL, NULL);
+            if (!SDL_WaitAndAcquireGPUSwapchainTexture(g_cmd, g_window,
+                                                       &g_swapchain,
+                                                       &swapchain_width,
+                                                       &swapchain_height))
+            {
+                info_log("SDL_WaitAndAcquireGPUSwapchainTexture failed: %s",
+                         SDL_GetError());
+                return;
+            }
         }
+
         g_target_color = g_swapchain;
-        g_target_color_format = g_swapchain_format;
-        SDL_GetWindowSizeInPixels(g_window, &g_target_width, &g_target_height);
+        if (swapchain_width > 0 && swapchain_height > 0)
+        {
+            g_target_width = (int)swapchain_width;
+            g_target_height = (int)swapchain_height;
+        }
+        else if (g_target_color != NULL)
+        {
+            SDL_GetWindowSizeInPixels(g_window, &g_target_width,
+                                      &g_target_height);
+        }
     }
     else
     {
@@ -2073,6 +2140,7 @@ void MikuPan_GPUBindTextureSlot(int slot, unsigned int texture_id)
     {
         return;
     }
+
     g_bound_textures[slot] = texture_id;
 }
 
@@ -2090,8 +2158,13 @@ SDL_GPUTexture* MikuPan_GPUGetTextureHandle(unsigned int id)
 static void BindDrawState(unsigned int primitive)
 {
     BeginTargetPassIfNeeded();
+    if (g_pass == NULL)
+    {
+        return;
+    }
+
     SDL_GPUGraphicsPipeline* pipeline = GetPipeline(primitive);
-    if (pipeline == NULL || g_pass == NULL)
+    if (pipeline == NULL)
     {
         return;
     }
@@ -2118,6 +2191,7 @@ static void BindDrawState(unsigned int primitive)
         SDL_PushGPUVertexUniformData(g_cmd, 0, &g_uniforms, sizeof(g_uniforms));
         g_vertex_uniform_dirty = 0;
     }
+
     if (g_fragment_uniform_dirty)
     {
         SDL_PushGPUFragmentUniformData(g_cmd, 0, &g_uniforms,
@@ -2135,6 +2209,7 @@ static void BindDrawState(unsigned int primitive)
                                        sizeof(g_light_data));
         g_light_uniform_dirty = 0;
     }
+
     if (g_material_uniform_dirty)
     {
         SDL_PushGPUVertexUniformData(g_cmd, 2, &g_material_data,
@@ -2147,6 +2222,7 @@ static void BindDrawState(unsigned int primitive)
     GPUVaoEntry* vao = &g_vaos[g_bound_vao];
     SDL_GPUBufferBinding bindings[4] = {0};
     unsigned int binding_count = 0;
+
     for (unsigned int i = 0; i < vao->num_buffers && i < 4; i++)
     {
         GPUBufferEntry* bo = BufferEntry(vao->buffers[i]);
@@ -2157,6 +2233,7 @@ static void BindDrawState(unsigned int primitive)
             binding_count++;
         }
     }
+
     /* Skip the re-bind when the buffer set is identical to the last draw's.
      * Compare handles (not just the VAO id) so a buffer that grew — and was
      * recreated with a new handle — is correctly re-bound. */
@@ -2202,6 +2279,7 @@ static void BindDrawState(unsigned int primitive)
             samplers[i].sampler = g_fallback_sampler;
         }
     }
+
     /* Skip the re-bind when both sampler slots are unchanged from the last draw. */
     {
         int changed = !g_sampler_binding_valid;
@@ -2232,7 +2310,9 @@ void MikuPan_GPUDrawArrays(unsigned int gl_mode, int first, int count)
     {
         return;
     }
+
     BindDrawState(gl_mode);
+
     if (g_pass != NULL)
     {
         SDL_DrawGPUPrimitives(g_pass, (Uint32) count, 1, (Uint32) first, 0);
@@ -2243,6 +2323,7 @@ void MikuPan_GPUDrawElements(unsigned int gl_mode, int count,
                              unsigned int gl_index_type, const void* indices)
 {
     (void) indices;
+
     if (count <= 0 || g_bound_vao == 0)
     {
         return;
@@ -2251,6 +2332,7 @@ void MikuPan_GPUDrawElements(unsigned int gl_mode, int count,
     BindDrawState(gl_mode);
     GPUVaoEntry* vao = &g_vaos[g_bound_vao];
     GPUBufferEntry* ibo = BufferEntry(vao->ibo);
+
     if (g_pass != NULL && ibo != NULL && ibo->buffer != NULL)
     {
         SDL_GPUIndexElementSize index_size =
@@ -2269,6 +2351,7 @@ void MikuPan_GPUDrawElements(unsigned int gl_mode, int count,
             g_last_index_size = index_size;
             g_index_binding_valid = 1;
         }
+
         SDL_DrawGPUIndexedPrimitives(g_pass, (Uint32) count, 1, 0, 0, 0);
     }
 }
@@ -2338,6 +2421,7 @@ void MikuPan_GPUSetMatrix4(const char* name, const float* mat)
         memcpy(g_uniforms.uWorldClipView, mat,
                sizeof(g_uniforms.uWorldClipView));
     }
+
     /* All matrices feed the vertex stage; uShadowMatrix additionally feeds the
      * lighting fragment shader (handled above). */
     g_vertex_uniform_dirty = 1;
@@ -2353,6 +2437,7 @@ void MikuPan_GPUSetMatrix3(const char* name, const float* mat)
     {
         CopyMatrix3Std140(g_uniforms.viewNormalMatrix, mat);
     }
+
     g_vertex_uniform_dirty = 1;
 }
 
@@ -2380,6 +2465,7 @@ void MikuPan_GPUSetVec4(const char* name, const float* vec)
         memcpy(g_uniforms.uPhotoNegativeRect, vec,
                sizeof(g_uniforms.uPhotoNegativeRect));
     }
+
     g_vertex_uniform_dirty = 1;
     g_fragment_uniform_dirty = 1;
 }
@@ -2434,6 +2520,7 @@ void MikuPan_GPUSetInt(const char* name, int value)
     {
         g_uniforms.uFlags2[3] = value;
     }
+
     (void) name;
     g_vertex_uniform_dirty = 1;
     g_fragment_uniform_dirty = 1;
@@ -2529,6 +2616,7 @@ void MikuPan_GPUSetFloat(const char* name, float value)
     {
         g_uniforms.uParams1[1] = value;
     }
+
     g_vertex_uniform_dirty = 1;
     g_fragment_uniform_dirty = 1;
 }
@@ -2570,6 +2658,7 @@ void MikuPan_GPUSetVec2(const char* name, float x, float y)
         g_uniforms.uRenderSize[0] = x;
         g_uniforms.uRenderSize[1] = y;
     }
+
     g_vertex_uniform_dirty = 1;
     g_fragment_uniform_dirty = 1;
 }

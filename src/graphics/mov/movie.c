@@ -182,7 +182,7 @@ static u_long128 *viBufData;
 
 static u_long128 viBufTag[257];
 static TimeStamp timeStamp[512];
-static char _0_buf[2048] __attribute__((aligned(64)));
+ATTRIBUTE_ALIGNED(64, static char _0_buf[2048]);
 
 #define min(x, y) (((x) > (y)) ? (y) : (x))
 #define max(x, y) (((x) < (y)) ? (y) : (x))
@@ -204,6 +204,7 @@ typedef struct VideoDecoder
     int started;
     double wallBase;
     double fps;
+    int current_frame;
 } VideoDecoder;
 
 typedef struct ReadBuffer
@@ -320,7 +321,7 @@ int PlayMpegEvent()
                 smn = scene_movie_no;// HACK: regswap fix
             }
 
-            //ClearDispRoom(1);
+            ClearDispRoom(1);
 
 #ifdef BUILD_EU_VERSION
             if (movie_wrk.play_event_no == 0x60)
@@ -643,7 +644,7 @@ static int stepMovPlayback(void)
 
     movVblankPad();
 
-    if (*key_now[12] != 0
+    if (START_PRESSED() != 0
         && g_movie_playback.tick >= 31
         && movie_wrk.play_event_sta != 7)
     {
@@ -818,6 +819,26 @@ static int readMpeg(VideoDecoder *vd, ReadBuffer *rb)
         return 2;// EOF
     }
 
+    vd->current_frame++;
+
+#ifdef BUILD_EU_VERSION
+    if (sys_wrk.pal_disp_mode == 0)
+    {
+        SceneSetVibrate(movie_wrk.play_event_no, (vd->mpeg.frameCount * 6) / 5);
+    }
+    else
+    {
+        SceneSetVibrate(movie_wrk.play_event_no, vd->mpeg.frameCount);
+    }
+#else
+    SceneSetVibrate(movie_wrk.play_event_no, vd->current_frame);
+#endif
+
+    if (START_PRESSED() != 0 && vd->current_frame >= 31 && movie_wrk.play_event_sta != 7)
+    {
+        videoDec.state = 1;
+    }
+
     int strideBytes = 0;
     const unsigned char *rgba = movvid_rgba_ptr(vd->mov, &strideBytes);
 
@@ -871,7 +892,7 @@ static int readMpeg(VideoDecoder *vd, ReadBuffer *rb)
 #endif
         movVblankPad();
 
-        if (*key_now[12] != 0 && vd->mpeg.frameCount >= 31 && movie_wrk.play_event_sta != 7)
+        if (START_PRESSED() != 0 && vd->mpeg.frameCount >= 31 && movie_wrk.play_event_sta != 7)
         {
             videoDec.state = 1;
         }
@@ -3074,7 +3095,7 @@ u_int videoDecSetState(VideoDec *vd, u_int state)
     return old;
 }
 
-int videoDecPutTs(VideoDec *vd, long int pts_val, long int dts_val,
+int videoDecPutTs(VideoDec *vd, long long pts_val, long long dts_val,
                   u_char *start, int len)
 {
     TimeStamp ts;

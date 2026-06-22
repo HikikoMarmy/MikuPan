@@ -11,13 +11,12 @@
 extern "C" {
 #include "mikupan/ui/mikupan_ui.h"
 #include "mikupan/mikupan_utils.h"
+#include "mikupan/ui/mikupan_ui_debug.h"
 }
 
 GS::GSHelper gsHelper;
 std::vector<uint8_t> texture_buffer = std::vector<uint8_t>(4096 * 4096 * 8);
 
-/// Per-frame GS instrumentation. Reset by MikuPan_GsResetFrameMetrics() at the
-/// start of each frame; sampled by the perf graph.
 struct GsFrameMetrics
 {
     int    upload_count;
@@ -31,15 +30,10 @@ struct GsFrameMetrics
 static GsFrameMetrics g_gs_frame_metrics = {0, 0, 0.0, 0, 0, 0.0};
 static GsFrameMetrics g_gs_last_frame    = {0, 0, 0.0, 0, 0, 0.0};
 
-/// Pending-upload regions accumulated since the last drain. The texture L1
-/// drains this list and invalidates only those L1 entries whose source GS
-/// region overlaps any of these — replacing the old "wipe everything on any
-/// upload" behavior that forced an XXH3 over GS memory for every fresh-this-
-/// frame tex0 (the dominant cost in PERF_SECT_SC_TEXTURE).
 struct GsUploadRegion { int addr; int size; };
 static std::vector<GsUploadRegion> g_pending_uploads;
 
-int __attribute__((optimize("O3"))) GetBlockIdPSMCT32(int block, int x, int y)
+int MIKUPAN_OPTIMIZE_O3 GetBlockIdPSMCT32(int block, int x, int y)
 {
     const int block_y = (y >> 3) & 0x03;
     const int block_x = (x >> 3) & 0x07;
@@ -47,7 +41,7 @@ int __attribute__((optimize("O3"))) GetBlockIdPSMCT32(int block, int x, int y)
            + GS::kBlockTablePSMCT32[(block_y << 3) | block_x];
 }
 
-int __attribute__((optimize("O3"))) GetPixelAddressPSMCT32(int block, int width, int x, int y)
+int MIKUPAN_OPTIMIZE_O3 GetPixelAddressPSMCT32(int block, int width, int x, int y)
 {
     const int page = (block >> 5) + (y >> 5) * width + (x >> 6);
     const int column_base = ((y >> 1) & 0x03) << 4;
@@ -61,7 +55,7 @@ int __attribute__((optimize("O3"))) GetPixelAddressPSMCT32(int block, int width,
     return (addr << 2) & 0x003FFFFC;
 }
 
-int __attribute__((optimize("O3"))) GetBlockIdPSMCT16(int block, int x, int y)
+int MIKUPAN_OPTIMIZE_O3 GetBlockIdPSMCT16(int block, int x, int y)
 {
     static constexpr int block_table[] = {
         0,  2,  8,  10,
@@ -78,7 +72,7 @@ int __attribute__((optimize("O3"))) GetBlockIdPSMCT16(int block, int x, int y)
     return block + block_table[(block_y << 2) | block_x];
 }
 
-int __attribute__((optimize("O3"))) GetPixelAddressPSMCT16(int block, int width, int x, int y)
+int MIKUPAN_OPTIMIZE_O3 GetPixelAddressPSMCT16(int block, int width, int x, int y)
 {
     static constexpr int column_table[] = {
         0,  2,  8,  10, 16, 18, 24, 26,
@@ -99,7 +93,7 @@ int __attribute__((optimize("O3"))) GetPixelAddressPSMCT16(int block, int width,
     return addr & 0x003FFFFE;
 }
 
-int __attribute__((optimize("O3"))) GetBlockIdPSMT8(int block, int x, int y)
+int MIKUPAN_OPTIMIZE_O3 GetBlockIdPSMT8(int block, int x, int y)
 {
     const int block_y = (y >> 4) & 0x03;
     const int block_x = (x >> 4) & 0x07;
@@ -107,7 +101,7 @@ int __attribute__((optimize("O3"))) GetBlockIdPSMT8(int block, int x, int y)
            + GS::kBlockTablePSMT8[(block_y << 3) | block_x];
 }
 
-int __attribute__((optimize("O3"))) GetPixelAddressPSMT8(int block, int width, int x, int y)
+int MIKUPAN_OPTIMIZE_O3 GetPixelAddressPSMT8(int block, int width, int x, int y)
 {
     const int page = (block >> 5) + (y >> 6) * (width >> 1) + (x >> 7);
     const int column_y = y & 0x0F;
@@ -119,7 +113,7 @@ int __attribute__((optimize("O3"))) GetPixelAddressPSMT8(int block, int width, i
     return addr;
 }
 
-int  __attribute__((optimize("O3"))) GetBlockIdPSMT4(int block, int x, int y)
+int  MIKUPAN_OPTIMIZE_O3 GetBlockIdPSMT4(int block, int x, int y)
 {
     const int block_base = ((y >> 6) & 0x01) << 4;
     const int block_y = (y >> 4) & 0x03;
@@ -128,7 +122,7 @@ int  __attribute__((optimize("O3"))) GetBlockIdPSMT4(int block, int x, int y)
            + GS::kBlockTablePSMT4[(block_y << 2) | block_x];
 }
 
-int __attribute__((optimize("O3"))) GetPixelAddressPSMT4(int block, int width, int x, int y)
+int MIKUPAN_OPTIMIZE_O3 GetPixelAddressPSMT4(int block, int width, int x, int y)
 {
     const int page = ((block >> 5) + (y >> 7) * (width >> 1) + (x >> 7));
     const int column_y = y & 0x0F;
@@ -352,7 +346,7 @@ GS::GSHelper::GSHelper()
     mem_.resize(4 * 1024 * 1024);// 4 MB
 }
 
-void __attribute__((optimize("O3"))) GS::GSHelper::UploadPSMCT32(int dbp, int dbw, int dsax, int dsay, int rrw,
+void MIKUPAN_OPTIMIZE_O3 GS::GSHelper::UploadPSMCT32(int dbp, int dbw, int dsax, int dsay, int rrw,
                                  int rrh, const uint8_t *inbuf)
 {
     int src_addr = 0;
@@ -371,7 +365,7 @@ void __attribute__((optimize("O3"))) GS::GSHelper::UploadPSMCT32(int dbp, int db
     }
 }
 
-void __attribute__((optimize("O3"))) GS::GSHelper::UploadPSMCT16(int dbp, int dbw, int dsax, int dsay, int rrw,
+void MIKUPAN_OPTIMIZE_O3 GS::GSHelper::UploadPSMCT16(int dbp, int dbw, int dsax, int dsay, int rrw,
                                  int rrh, const uint8_t *inbuf)
 {
     int src_addr = 0;
@@ -388,7 +382,7 @@ void __attribute__((optimize("O3"))) GS::GSHelper::UploadPSMCT16(int dbp, int db
     }
 }
 
-void __attribute__((optimize("O3"))) GS::GSHelper::UploadPSMT8(int dbp, int dbw, int dsax, int dsay, int rrw,
+void MIKUPAN_OPTIMIZE_O3 GS::GSHelper::UploadPSMT8(int dbp, int dbw, int dsax, int dsay, int rrw,
                                int rrh, const uint8_t *inbuf)
 {
     int src_addr = 0;
@@ -403,7 +397,7 @@ void __attribute__((optimize("O3"))) GS::GSHelper::UploadPSMT8(int dbp, int dbw,
     }
 }
 
-void __attribute__((optimize("O3"))) GS::GSHelper::UploadPSMT4(int dbp, int dbw, int dsax, int dsay, int rrw,
+void MIKUPAN_OPTIMIZE_O3 GS::GSHelper::UploadPSMT4(int dbp, int dbw, int dsax, int dsay, int rrw,
                                int rrh, const uint8_t *inbuf)
 {
     int src_addr = 0;
@@ -420,7 +414,7 @@ void __attribute__((optimize("O3"))) GS::GSHelper::UploadPSMT4(int dbp, int dbw,
     }
 }
 
-void __attribute__((optimize("O3"))) GS::GSHelper::DownloadPSMCT32(unsigned char* outbuf, int dbp, int dbw, int dsax,
+void MIKUPAN_OPTIMIZE_O3 GS::GSHelper::DownloadPSMCT32(unsigned char* outbuf, int dbp, int dbw, int dsax,
                                                    int dsay, int rrw, int rrh)
 {
     int dst_addr = 0;
@@ -451,7 +445,7 @@ static inline void ExpandPSMCT16Pixel(uint16_t p, unsigned char *out)
     out[3] = (p & 0x8000) ? 0x80 : 0x00;
 }
 
-void __attribute__((optimize("O3"))) GS::GSHelper::DownloadPSMCT16(unsigned char* outbuf, int dbp, int dbw, int dsax,
+void MIKUPAN_OPTIMIZE_O3 GS::GSHelper::DownloadPSMCT16(unsigned char* outbuf, int dbp, int dbw, int dsax,
                                                    int dsay, int rrw, int rrh)
 {
     int dst_addr = 0;
@@ -470,7 +464,7 @@ void __attribute__((optimize("O3"))) GS::GSHelper::DownloadPSMCT16(unsigned char
     }
 }
 
-void __attribute__((optimize("O3"))) GS::GSHelper::StorePSMCT16(unsigned char* outbuf, int dbp, int dbw, int dsax,
+void MIKUPAN_OPTIMIZE_O3 GS::GSHelper::StorePSMCT16(unsigned char* outbuf, int dbp, int dbw, int dsax,
                                                 int dsay, int rrw, int rrh)
 {
     int dst_addr = 0;
@@ -487,10 +481,10 @@ void __attribute__((optimize("O3"))) GS::GSHelper::StorePSMCT16(unsigned char* o
     }
 }
 
-void __attribute__((optimize("O3"))) GS::GSHelper::DownloadImagePSMT8(unsigned char* outbuf, int dbp, int dbw,
+void MIKUPAN_OPTIMIZE_O3 GS::GSHelper::DownloadImagePSMT8(unsigned char* outbuf, int dbp, int dbw,
                                                       int dsax, int dsay,
                                                       int rrw, int rrh, int cbp,
-                                                      int cbw, char alpha_reg)
+                                                      int cbw, int alpha_reg)
 {
     int dst_addr = 0;
 
@@ -519,7 +513,8 @@ void __attribute__((optimize("O3"))) GS::GSHelper::DownloadImagePSMT8(unsigned c
             }
             else
             {
-                const char src_alpha = mem_[p + 0x03];
+                const unsigned char src_alpha =
+                    (unsigned char)mem_[p + 0x03];
                 outbuf[dst_addr + 0x03] = src_alpha;
             }
 
@@ -528,11 +523,11 @@ void __attribute__((optimize("O3"))) GS::GSHelper::DownloadImagePSMT8(unsigned c
     }
 }
 
-void __attribute__((optimize("O3"))) GS::GSHelper::DownloadImagePSMT4(unsigned char* outbuf, int dbp, int dbw,
+void MIKUPAN_OPTIMIZE_O3 GS::GSHelper::DownloadImagePSMT4(unsigned char* outbuf, int dbp, int dbw,
                                                       int dsax, int dsay,
                                                       int rrw, int rrh, int cbp,
                                                       int cbw, int csa,
-                                                      char alpha_reg)
+                                                      int alpha_reg)
 {
     int dst_addr = 0;
 
@@ -551,13 +546,16 @@ void __attribute__((optimize("O3"))) GS::GSHelper::DownloadImagePSMT4(unsigned c
             outbuf[dst_addr + 0x01] = mem_[p + 0x01];
             outbuf[dst_addr + 0x02] = mem_[p + 0x02];
 
+            /* Keep alpha_reg as int: -1 is the "use CLUT alpha" sentinel, and
+             * plain char is unsigned on Android/ARM. */
             if (alpha_reg >= 0)
             {
                 outbuf[dst_addr + 0x03] = alpha_reg;
             }
             else
             {
-                const char src_alpha = mem_[p + 0x03];
+                const unsigned char src_alpha =
+                    (unsigned char)mem_[p + 0x03];
                 outbuf[dst_addr + 0x03] = src_alpha;// >= 0 ? (src_alpha << 1) : 0xFF;
             }
 
@@ -578,10 +576,6 @@ void MikuPan_GsUpload(sceGsLoadImage *image_load, unsigned char *image)
         return;
     }
 
-    // spdlog::debug() always formats its arguments at runtime (only the *write*
-    // is gated by log level), so leaving it on the hot path is wasteful even
-    // with debug logging disabled. Use SPDLOG_DEBUG so the entire call site is
-    // eliminated by the preprocessor when SPDLOG_ACTIVE_LEVEL > debug.
     SPDLOG_DEBUG("GS upload request for DBP {:#x} DPSM {} X: {} Y: {}",
                  static_cast<int>(image_load->bitbltbuf.DBP),
                  static_cast<int>(image_load->bitbltbuf.DPSM),
@@ -590,11 +584,6 @@ void MikuPan_GsUpload(sceGsLoadImage *image_load, unsigned char *image)
 
     MikuPan_FirstUploadDone();
 
-    // Record the upload's affected GS-memory region so the L1 cache can
-    // selectively invalidate just the entries it overlaps (instead of
-    // wiping the entire L1, which forced an XXH3 over GS memory for every
-    // fresh-this-frame tex0). Region uses the same byte-address convention
-    // as MikuPan_GetTextureHash so overlap testing is symmetrical.
     {
         int up_addr;
         int up_size;
@@ -651,8 +640,7 @@ void MikuPan_GsUpload(sceGsLoadImage *image_load, unsigned char *image)
     Uint64 t1 = SDL_GetPerformanceCounter();
     g_gs_frame_metrics.upload_count++;
     g_gs_frame_metrics.upload_bytes += upload_w * upload_h * 4; // approximate
-    g_gs_frame_metrics.upload_ms +=
-        (double)(t1 - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency();
+    g_gs_frame_metrics.upload_ms += (double)(t1 - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency();
 }
 
 unsigned char *MikuPan_GsDownloadTexture(sceGsTex0 *tex0, uint64_t* hash)
@@ -725,8 +713,7 @@ unsigned char *MikuPan_GsDownloadTexture(sceGsTex0 *tex0, uint64_t* hash)
     Uint64 t1 = SDL_GetPerformanceCounter();
     g_gs_frame_metrics.download_count++;
     g_gs_frame_metrics.download_bytes += width * height * 4;
-    g_gs_frame_metrics.download_ms +=
-        (double)(t1 - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency();
+    g_gs_frame_metrics.download_ms += (double)(t1 - t0) * 1000.0 / (double)SDL_GetPerformanceFrequency();
 
     return image_data;
 }
@@ -779,8 +766,6 @@ void MikuPan_GsResetFrameMetrics(void)
     g_gs_frame_metrics.download_count = 0;
     g_gs_frame_metrics.download_bytes = 0;
     g_gs_frame_metrics.download_ms    = 0.0;
-    // g_pending_uploads is preserved — invalidation is lazy (drained by the
-    // L1 cache on its next lookup).
 }
 
 int    MikuPan_GsGetUploadCount(void)    { return g_gs_last_frame.upload_count; }
@@ -805,14 +790,12 @@ void MikuPan_GsConsumePendingUploads(
             cb(r.addr, r.size, ud);
         }
     }
+
     g_pending_uploads.clear();
 }
 
 void MikuPan_GetTextureGsRegion(sceGsTex0 *tex0, int *out_addr, int *out_size)
 {
-    // Cover every GS-memory byte that can affect the decoded GL texture. For
-    // indexed textures that includes the CLUT, otherwise black/white CLUT
-    // swaps can leave a stale color texture cached behind the same TEX0.
     if (!MikuPan_GetTextureInvalidationRegion(tex0, out_addr, out_size))
     {
         *out_addr = 0;

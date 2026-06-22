@@ -97,7 +97,7 @@ void IngameMenuMap()
 
     if (yw2d.pad_lock == 0)
     {
-        if (*key_now[4] == 1)
+        if (TRIANGLE_PRESSED() == 1)
         {
             SeStartFix(SE_CANCEL, 0, 0x1000, 0x1000, 1);
 
@@ -121,13 +121,13 @@ void IngameMenuMap()
                 yw2d.menu_io_cnt = 20;
             }
         }
-        else if (*key_now[5] == 1)
+        else if (CROSS_PRESSED() == 1)
         {
             map.scl_mod = 1 - map.scl_mod;
 
             SeStartFix(SE_CLIC, 0, 0x1000, 0x1000, 1);
         }
-        else if (*key_now[10] == 1)
+        else if (R1_PRESSED() == 1)
         {
             if (map.visit_flr > 1)
             {
@@ -155,7 +155,7 @@ void IngameMenuMap()
                 }
             }
         }
-        else if (*key_now[8] == 1)
+        else if (L1_PRESSED() == 1)
         {
             if (map.visit_flr > 1)
             {
@@ -401,24 +401,24 @@ static void MapMove(u_char alp)
 
     if (yw2d.pad_lock == 0)
     {
-        if (*key_now[0] != 0 || *key_now[1] != 0 || *key_now[2] != 0 || *key_now[3] != 0)
+        if (DPAD_UP_PRESSED() != 0 || DPAD_DOWN_PRESSED() != 0 || DPAD_LEFT_PRESSED() != 0 || DPAD_RIGHT_PRESSED() != 0)
         {
-            if (*key_now[0] != 0)
+            if (DPAD_UP_PRESSED() != 0)
             {
                 map.mvy++;
             }
 
-            if (*key_now[1] != 0)
+            if (DPAD_DOWN_PRESSED() != 0)
             {
                 map.mvy--;
             }
 
-            if (*key_now[2] != 0)
+            if (DPAD_LEFT_PRESSED() != 0)
             {
                 map.mvx++;
             }
 
-            if (*key_now[3] != 0)
+            if (DPAD_RIGHT_PRESSED() != 0)
             {
                 map.mvx--;
             }
@@ -1242,7 +1242,7 @@ static void SetLineStrip(int pri, u_char num, LINE_PRT *prot, u_short alp)
 
     z = 0xfffffff - pri;
 
-    pbuf[ndpkt].ul128 = (u_long128)0;
+    pbuf[ndpkt].ul128 = u_long128_from_u64(0);
     pbuf[ndpkt++].ui32[0] = (DMAend | 4) + num * 2;
 
     pbuf[ndpkt].ul64[0] = SCE_GIF_SET_TAG(2, SCE_GS_FALSE, SCE_GS_FALSE, 0, SCE_GIF_PACKED, 1);
@@ -1308,7 +1308,7 @@ static void SetCircle(int pri, short int xo, short int yo, short int r, u_char d
 
     z = 0xfffffff - mpri;
 
-    pbuf[ndpkt].ul128 = (u_long128)0;
+    pbuf[ndpkt].ul128 = u_long128_from_u64(0);
     pbuf[ndpkt++].ui32[0] = (DMAend | 4) + (dtl + 2) * 2;
 
     pbuf[ndpkt].ul64[0] = SCE_GIF_SET_TAG(2, SCE_GS_FALSE, SCE_GS_FALSE, 0, SCE_GIF_PACKED, 1);
@@ -1395,7 +1395,7 @@ void AngleForWin(int pri, short int xo, short int yo, short int r, u_char ptn)
 
     z = 0xfffffff - mpri;
 
-    pbuf[ndpkt].ul128 = (u_long128)0;
+    pbuf[ndpkt].ul128 = u_long128_from_u64(0);
     pbuf[ndpkt++].ui32[0] = (DMAend | 26);
 
     pbuf[ndpkt].ul64[0] = SCE_GIF_SET_TAG(2, SCE_GS_FALSE, SCE_GS_FALSE, 0, SCE_GIF_PACKED, 1);

@@ -1,17 +1,17 @@
 #include "mikupan_memory.h"
-
 #include "mikupan_logging_c.h"
-
+#include "typedefs.h"
 #include <stdint.h>
 #include <string.h>
 
 #define PS2_VIRTUAL_RAM_SIZE (1024 * 1024 * 32)
+#define PS2_SCRATCHPAD_MEM_SIZE (1024 * 16)
 
-/// Allocate double the amount of PS2 RAM to avoid overflow issues
-unsigned char ps2_virtual_ram[PS2_VIRTUAL_RAM_SIZE];
+/// Allocate double the amount of PS2 RAM to avoid overflow issues.
+ATTRIBUTE_ALIGNED(64, unsigned char ps2_virtual_ram[PS2_VIRTUAL_RAM_SIZE]);
 
 /// 16kb of scratchpad memory
-unsigned char ps2_virtual_scratchpad[1024*16];
+ATTRIBUTE_ALIGNED(64, unsigned char ps2_virtual_scratchpad[PS2_SCRATCHPAD_MEM_SIZE]);
 
 int64_t MikuPan_GetHostAddress(int offset)
 {
@@ -77,8 +77,6 @@ int MikuPan_IsPs2AddressMainMemoryRange64(uint64_t address)
 
 int MikuPan_TryGetHostAddressFromPs2Address(uint64_t address, int64_t *host_address)
 {
-    int offset;
-
     if (host_address == NULL)
     {
         return 0;
@@ -95,7 +93,7 @@ int MikuPan_TryGetHostAddressFromPs2Address(uint64_t address, int64_t *host_addr
         return 0;
     }
 
-    offset = MikuPan_SanitizePs2Address((int)address);
+    int offset = MikuPan_SanitizePs2Address((int) address);
     *host_address = (int64_t)(uintptr_t)(ps2_virtual_ram + offset);
 
     return 1;

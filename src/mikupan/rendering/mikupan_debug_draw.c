@@ -1,10 +1,13 @@
-#include "mikupan_renderer_internal.h"
 #include "ingame/camera/camera.h"
 #include "main/glob.h"
 #include "mikupan/ui/mikupan_ui.h"
-#include "mikupan_pipeline.h"
+#include "mikupan/ui/mikupan_ui_debug.h"
 #include "mikupan_gpu.h"
+#include "mikupan_pipeline.h"
+#include "mikupan_profiler.h"
+#include "mikupan_renderer_internal.h"
 #include "mikupan_shader.h"
+
 #include <math.h>
 
 #define CAMERA_DEBUG_MAX_VERTS 24
