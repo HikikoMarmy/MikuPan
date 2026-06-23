@@ -11,6 +11,7 @@
 #include "outgame/title.h"
 #include "outgame/outgame.h"
 #include "outgame/scn_test.h"
+#include "outgame/mot_test.h"
 #include "outgame/mode_slct.h"
 #include "outgame/btl_mode/btl_menu.h"
 #include "graphics/graph2d/message.h"
@@ -73,7 +74,7 @@ void OutGameCtrl(void)
           SceneTestCtrl();
         break;
         case OUTGAME_MODE_MOTION_TEST:
-            gra2dDraw(0);
+            MotTestCtrl();
         break;
         case OUTGAME_MODE_ROOM_SIZE_CHECK:
             RoomSizeCheckCtrl();
@@ -107,6 +108,9 @@ void OutGameModeChange(u_char mode)
             break;
         case OUTGAME_MODE_SCENE_TEST:
             scn_test_wrk.mode = 0;
+            break;
+        case OUTGAME_MODE_MOTION_TEST:
+            MotTestInit();
             break;
         case OUTGAME_MODE_ROOM_SIZE_CHECK:
             RoomSizeCheckInit();

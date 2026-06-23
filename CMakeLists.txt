@@ -222,6 +222,7 @@ set(MIKUPAN_SOURCES
         "src/outgame/btl_mode/btl_dat.c"
         "src/outgame/memory_album.c"
         "src/outgame/mode_slct.c"
+        "src/outgame/mot_test.c"
         "src/outgame/outgame.c"
         "src/outgame/scn_test.c"
         "src/outgame/sound_test.c"
