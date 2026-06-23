@@ -33,8 +33,8 @@ int MikuPan_IsShadowReceiverPassActive(void);
 int MikuPan_IsMirrorReflectionPass(void);
 void MikuPan_SetViewProjectionMatrices(float *view_matrix,
                                        float *projection_matrix);
+void MikuPan_SetWorldSpaceModelTransform(void);
 void MikuPan_InvalidateModelTransformCache(void);
-void MikuPan_SetModelTransformIdentity(void);
 void MikuPan_ShadowDebugBeginFrame(void);
 void MikuPan_ShadowDebugRecordCasterMeshType(int mesh_type);
 void MikuPan_ShadowDebugRecordReceiverMeshType(int mesh_type);

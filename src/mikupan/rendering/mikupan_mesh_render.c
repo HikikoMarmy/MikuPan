@@ -402,8 +402,7 @@ void MikuPan_RenderShadowSilhouettePrepared(unsigned int *pVUVN,
         return;
     }
 
-    SGDVUMESHPOINTNUM *pMeshInfo =
-        (SGDVUMESHPOINTNUM *) &(((SGDPROCUNITHEADER *) pPUHead)[4]);
+    SGDVUMESHPOINTNUM* pMeshInfo = (SGDVUMESHPOINTNUM*) &((unsigned int*) pPUHead)[6];
     VUVN_PRIM *v = ((VUVN_PRIM *) &((int *) pVUVN)[2]);
 
     const int num_mesh = (int) GET_NUM_MESH(pPUHead);
@@ -441,10 +440,18 @@ void MikuPan_RenderShadowSilhouettePrepared(unsigned int *pVUVN,
             (long long) index_write_offset + (long long) (vertex_count - 2) * 3 >
                 (long long) MIKUPAN_MESH_BUFFER_CAPACITY)
         {
-            index_write_offset += MikuPan_SetTriangleIndex(
-                g_mesh_buffers_0x82.indices, vertex_count, vertex_offset, index_write_offset);
+            static int logged = 0;
+            if (!logged)
+            {
+                logged = 1;
+                info_log("Shadow silhouette skipped: mtype=0x%x submesh %d count=%d off=%d vnum=%d",
+                         mesh_type, i, vertex_count, vertex_offset, vnum);
+            }
+            return;
         }
 
+        index_write_offset += MikuPan_SetTriangleIndex(
+            g_mesh_buffers_0x82.indices, vertex_count, vertex_offset, index_write_offset);
         vertex_offset += vertex_count;
     }
 
@@ -478,6 +485,10 @@ void MikuPan_RenderShadowSilhouettePrepared(unsigned int *pVUVN,
     MikuPan_FlushTexturedSpriteBatch();
     MikuPan_SetCurrentShaderProgram(SHADOW_SILHOUETTE_SHADER);
     MikuPan_SetMeshRenderStateForCurrentPass();
+
+    /* SetVUVNDataShadowModel already produced world/skinned-space positions. */
+    MikuPan_SetWorldSpaceModelTransform();
+
     MikuPan_BindVAO(pipeline->vao);
 
     /* Upload positions (interleaved pos+normal; the silhouette shader reads only
@@ -488,14 +499,6 @@ void MikuPan_RenderShadowSilhouettePrepared(unsigned int *pVUVN,
     MikuPan_StreamUploadFull(GL_ELEMENT_ARRAY_BUFFER, pipeline->ibo,
         (GLsizeiptr) ((long long) index_write_offset * (int) sizeof(unsigned int)),
         g_mesh_buffers_0x82.indices);
-
-    /// Skinned type-0 casters (vtype 2/3) are CPU-skinned to world space; reset
-    /// the model to identity so the silhouette shader's `model` doesn't transform
-    /// them a second time. Rigid (vtype 0) keeps the lwmtx from case 4.
-    if (v->vtype == 2 || v->vtype == 3)
-    {
-        MikuPan_SetModelTransformIdentity();
-    }
 
     MikuPan_ShadowDebugRecordCasterDraw(mesh_type, index_write_offset);
 
@@ -520,7 +523,7 @@ void MikuPan_RenderShadowSilhouette0x80(unsigned int *pVUVN,
     }
 
     SGDVUVNDATA_PRESET *pVUVNData = (SGDVUVNDATA_PRESET *) &(((SGDPROCUNITHEADER *) pVUVN)[1]);
-    SGDVUMESHPOINTNUM *pMeshInfo = (SGDVUMESHPOINTNUM *) &(((SGDPROCUNITHEADER *) pPUHead)[4]);
+    SGDVUMESHPOINTNUM* pMeshInfo = (SGDVUMESHPOINTNUM*) &((unsigned int*) pPUHead)[6];
     VUVN_PRIM *v = ((VUVN_PRIM *) &((int *) pVUVN)[2]);
 
     const int num_mesh = (int) GET_NUM_MESH(pPUHead);
@@ -565,7 +568,7 @@ void MikuPan_RenderShadowSilhouette0x80(unsigned int *pVUVN,
             MikuPan_BindVAO(cache_entry->vao);
             MikuPan_ShadowDebugRecordCasterDraw(mesh_type, cache_entry->index_count);
             MikuPan_PerfDrawCall();
-            MikuPan_TimedDrawElements(GL_TRIANGLE_STRIP,
+            MikuPan_TimedDrawElements(GL_TRIANGLES,
                                       cache_entry->index_count, GL_UNSIGNED_INT, (void *) 0);
             MikuPan_PerfMeshCacheHit();
             return;
@@ -635,7 +638,7 @@ void MikuPan_RenderShadowSilhouette0x80(unsigned int *pVUVN,
     MikuPan_ShadowDebugRecordCasterDraw(mesh_type, index_write_offset);
 
     MikuPan_PerfDrawCall();
-    MikuPan_TimedDrawElements(GL_TRIANGLE_STRIP,
+    MikuPan_TimedDrawElements(GL_TRIANGLES,
                               index_write_offset, GL_UNSIGNED_INT, (void *) 0);
 }
 
