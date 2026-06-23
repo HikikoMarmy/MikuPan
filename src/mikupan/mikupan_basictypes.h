@@ -177,6 +177,19 @@ typedef struct
 
 typedef struct
 {
+    int enabled;
+    int r3_toggle_enabled;
+    int auto_run_enabled;
+    float eye_height;
+    float eye_forward;
+    float look_distance;
+    float fov_deg;
+    float stick_yaw_speed_deg;
+    float stick_pitch_speed_deg;
+} MikuPan_ConfigFirstPersonCamera;
+
+typedef struct
+{
     MikuPan_ConfigRenderer renderer;
     MikuPan_ConfigCrt crt;
     int selected_theme;
@@ -185,6 +198,7 @@ typedef struct
     int show_fps;
     int title_room_background;
     MikuPan_ConfigThirdPersonCamera third_person_camera;
+    MikuPan_ConfigFirstPersonCamera first_person_camera;
     MikuPan_ConfigInput input;
     char data_folder[512];
 } MikuPan_Config;
