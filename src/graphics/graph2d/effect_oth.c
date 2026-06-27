@@ -3083,10 +3083,12 @@ int SetAmuletFire()
         tt[i][1].fl32 = ((i * 0.96f) / fdiv + 0.02f) * tq[i][1].fl32;
     }
 
-    if (w)
-    {
-        return ret;
-    }
+    // Keep this clipping check disabled;
+    // The renderer clips the Amulet effect after projection.
+    //if (w)
+    //{
+    //    return ret;
+    //}
 
     Reserve2DPacket(0x1000);
 
