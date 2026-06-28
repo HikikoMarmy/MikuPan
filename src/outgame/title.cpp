@@ -81,6 +81,8 @@ static int exit_prompt_sel = 1;
 #define TITLE_BG_LOAD_TIMEOUT (60 * 8)
 #define TITLE_BG_FADE_FRAMES 30
 #define TITLE_BG_FADE_ALPHA_MAX 0x80
+#define TITLE_BGM_FADE_OUT_FRAMES 0x1e
+#define TITLE_BGM_FADE_IN_FRAMES 0x1e
 #define TITLE_BGM_DEFAULT_FILE_NO 1541
 #define TITLE_AUDIO_FILE_MAX RSHADE_SGD
 
@@ -543,18 +545,18 @@ static int TitleAudioActiveFileNo(void)
     return TitleAudioFileNo();
 }
 
-static void TitleAudioPlayBgm(void)
+static void TitleAudioPlayBgm(u_short fade_in_frames)
 {
     int file_no = TitleAudioActiveFileNo();
 
-    EAdpcmCmdPlay(0, 1, file_no, 0, GetAdpcmVol(file_no), 0x280, 0xfff, 0);
+    EAdpcmCmdPlay(0, 1, file_no, 0, GetAdpcmVol(file_no), 0x280, 0xfff, fade_in_frames);
     title_bgm_playing_file_no = file_no;
 }
 
 static void TitleAudioRestartBgm(void)
 {
-    EAdpcmCmdStop(0, 0, 0);
-    TitleAudioPlayBgm();
+    EAdpcmCmdStop(0, 0, TITLE_BGM_FADE_OUT_FRAMES);
+    TitleAudioPlayBgm(TITLE_BGM_FADE_IN_FRAMES);
 }
 
 static void TitleAudioStopBgm(void)
@@ -805,6 +807,12 @@ static void TitleBgBeginPresetTransition(int preset_index)
     title_bg_fade_state = TITLE_BG_FADE_OUT;
     title_bg_fade_timer = 0;
     title_bg_fade_alpha = 0;
+
+    if (title_bgm_playing_file_no != -1 && title_bgm_playing_file_no != preset->audio_file_no)
+    {
+        title_bgm_file_no = preset->audio_file_no;
+        TitleAudioRestartBgm();
+    }
 }
 
 static void TitleBgBeginRoomTransition(int msn_no, int room_no)
@@ -2412,7 +2420,7 @@ void TitleCtrl()
 
         if (IsEndAdpcmFadeOut() != 0)
         {
-            TitleAudioPlayBgm();
+            TitleAudioPlayBgm(0);
 
             title_wrk.mode = TITLE_TITLE;
             ttl_dsp.timer = 0;
@@ -2473,7 +2481,7 @@ void TitleCtrl()
     case TITLE_INIT_FROM_IN_BGMREQ:
         if (IsEndAdpcmFadeOut() != 0)
         {
-            TitleAudioPlayBgm();
+            TitleAudioPlayBgm(0);
 
             title_wrk.mode = TITLE_INIT_FROM_IN;
         }
@@ -2512,7 +2520,7 @@ void TitleCtrl()
     case TITLE_TITLE_SEL_BGMREQ:
         if (IsEndAdpcmFadeOut() != 0)
         {
-            TitleAudioPlayBgm();
+            TitleAudioPlayBgm(0);
 
             title_wrk.mode = TITLE_TITLE_SEL_INIT;
         }
@@ -2614,7 +2622,7 @@ void TitleCtrl()
     case TITLE_MODE_SEL_BGMREQ:
         if (IsEndAdpcmFadeOut() != 0)
         {
-            TitleAudioPlayBgm();
+            TitleAudioPlayBgm(0);
 
             title_wrk.mode = TITLE_MODE_SEL;
         }
