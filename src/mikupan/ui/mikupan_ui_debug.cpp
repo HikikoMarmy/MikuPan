@@ -46,6 +46,7 @@ static float shadow_debug_preview_size = 384.0f;
 static float photo_debug_preview_size = 256.0f;
 static int disable_gs_uploads = 0;
 static int show_bounding_boxes = 0;
+static int show_event_hitboxes = 0;
 static int show_mesh_0x82 = 1;
 static int show_mesh_0x32 = 1;
 static int show_mesh_0x10 = 1;
@@ -939,6 +940,7 @@ void MikuPan_UiDebugMenuRender(void)
             {
                 igCheckbox("Wireframe", (bool*) &render_wireframe);
                 igCheckbox("Bounding Boxes", (bool*) &show_bounding_boxes);
+                igCheckbox("Event Hitboxes", (bool*) &show_event_hitboxes);
                 igCheckbox("Normals", (bool*) &render_normals);
 
                 if (render_normals)
@@ -1155,6 +1157,11 @@ void MikuPan_UiDebugWindowsRender(void)
 int MikuPan_IsBoundingBoxRendering(void)
 {
     return show_bounding_boxes;
+}
+
+int MikuPan_IsEventHitboxRendering(void)
+{
+    return show_event_hitboxes;
 }
 
 int MikuPan_ShowCameraDebug(void)

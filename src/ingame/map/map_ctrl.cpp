@@ -23,6 +23,8 @@
 #include "ingame/map/map_htck.h"
 #include "main/glob.h"
 #include "mikupan/mikupan_logging_c.h"
+#include "mikupan/rendering/mikupan_renderer.h"
+#include "mikupan/ui/mikupan_ui_debug.h"
 #include "os/eeiop/cdvd/eecdvd.h"
 #include "os/eeiop/eese.h"
 #include "os/eeiop/sd_room.h"
@@ -1355,6 +1357,181 @@ u_char PosInAreaJudge1(u_char map, u_char room, u_char data, u_short pos_x, u_sh
     }
 
     return 0;
+}
+
+static int *MapDebugGetDataRecord(u_char map, u_char room, u_char data)
+{
+    int *addr;
+
+    if (map_wrk.dat_adr == 0 || room == 0xff)
+    {
+        return NULL;
+    }
+
+    addr = (int *)map_wrk.dat_adr + map;
+    addr = (int *)MikuPan_GetHostPointer(*addr + MAP_DATA_ADDRESS);
+    addr = &addr[room] + 1;
+    addr = (int *)MikuPan_GetHostPointer(*addr + MAP_DATA_ADDRESS);
+    addr = &addr[data] + 1;
+
+    return (int *)MikuPan_GetHostPointer(*addr + MAP_DATA_ADDRESS);
+}
+
+static u_char MapDebugGetAreaCount(int *record, u_char map)
+{
+    u_char ofs[13] = { 8, 4, 4, 4, 8, 4, 4, 4, 4, 4, 4, 24, 4 };
+
+    return *(u_char *)MikuPan_GetHostPointer(*record + MAP_DATA_ADDRESS + ofs[map]);
+}
+
+static u_char MapDebugGetEventNo(int *record)
+{
+    return *(u_char *)MikuPan_GetHostPointer(*record + MAP_DATA_ADDRESS);
+}
+
+static int *MapDebugGetAreaRecord(int *record, int area_index)
+{
+    return (int *)MikuPan_GetHostPointer(record[area_index + 1] + MAP_DATA_ADDRESS);
+}
+
+static short MapDebugAreaShort(int *area, int line, int ofs)
+{
+    return *(short *)((u_char *)area + line * 8 + ofs);
+}
+
+static int MapDebugAreaInt(int *area, int line, int ofs)
+{
+    return *(int *)((u_char *)area + line * 8 + ofs);
+}
+
+static int MapDebugAreaLineCross(float *x, float *y, int *area, int line0, int line1)
+{
+    float a0 = (float)MapDebugAreaShort(area, line0, 0);
+    float b0 = (float)MapDebugAreaShort(area, line0, 2);
+    float c0 = (float)MapDebugAreaInt(area, line0, 4);
+    float a1 = (float)MapDebugAreaShort(area, line1, 0);
+    float b1 = (float)MapDebugAreaShort(area, line1, 2);
+    float c1 = (float)MapDebugAreaInt(area, line1, 4);
+    float denom = (a0 * b1) - (b0 * a1);
+
+    if (denom > -0.0001f && denom < 0.0001f)
+    {
+        return 0;
+    }
+
+    *x = ((b0 * c1) - (c0 * b1)) / denom;
+    *y = ((c0 * a1) - (a0 * c1)) / denom;
+
+    return 1;
+}
+
+static float MapDebugGetFloorY(float world_x, float world_z)
+{
+    u_short pos_x = (u_short)world_x;
+    u_short pos_z = (u_short)world_z;
+
+    if (GetPointRoomNo(pos_x, pos_z) == 0xff)
+    {
+        return (float)plyr_wrk.move_box.pos[1] + 12.0f;
+    }
+
+    return GetPointHeight(pos_x, pos_z) + 12.0f;
+}
+
+static int MapDebugBuildAreaVertices(int *area, sceVu0FVECTOR vertices[4])
+{
+    static const int edge_pairs[4][2] = {
+        {0, 1},
+        {1, 2},
+        {2, 3},
+        {3, 0},
+    };
+
+    for (int i = 0; i < 4; i++)
+    {
+        float area_x;
+        float area_y;
+
+        if (MapDebugAreaLineCross(&area_x, &area_y, area, edge_pairs[i][0], edge_pairs[i][1]) == 0)
+        {
+            return 0;
+        }
+
+        vertices[i][0] = area_y;
+        vertices[i][1] = MapDebugGetFloorY(area_y, area_x);
+        vertices[i][2] = area_x;
+        vertices[i][3] = 1.0f;
+    }
+
+    return 1;
+}
+
+void MikuPan_RenderMapEventHitboxes(void)
+{
+    static const u_char colors[][4] = {
+        {0xff, 0x4d, 0x4d, 0xff},
+        {0x33, 0xd1, 0xff, 0xff},
+        {0x71, 0xe3, 0x52, 0xff},
+        {0xff, 0xd2, 0x3f, 0xff},
+        {0xd6, 0x6b, 0xff, 0xff},
+        {0xff, 0x8a, 0x3d, 0xff},
+        {0x4d, 0xff, 0xd2, 0xff},
+        {0xff, 0x5c, 0xb8, 0xff},
+        {0xb5, 0xff, 0x38, 0xff},
+        {0x9c, 0xb8, 0xff, 0xff},
+    };
+    const int color_count = (int)(sizeof(colors) / sizeof(colors[0]));
+    u_char saved_height_no;
+    u_char room;
+
+    if (!MikuPan_IsEventHitboxRendering() || map_wrk.dat_adr == 0 || room_wrk.ev_num == 0)
+    {
+        return;
+    }
+
+    saved_height_no = room_wrk.height_no;
+    room = GetDataRoom(MAP_REQ_EVENT, plyr_wrk.pr_info.room_no);
+
+    for (int i = 0; i < room_wrk.ev_num; i++)
+    {
+        int *record = MapDebugGetDataRecord(MAP_REQ_EVENT, room, (u_char)i);
+        u_char event_no;
+        u_char area_count;
+
+        if (record == NULL)
+        {
+            continue;
+        }
+
+        event_no = MapDebugGetEventNo(record);
+
+        if (event_no == 0xff || event_no >= sizeof(event_stts) || event_stts[event_no] != 0)
+        {
+            continue;
+        }
+
+        area_count = MapDebugGetAreaCount(record, MAP_REQ_EVENT);
+        if (area_count > 16)
+        {
+            area_count = 16;
+        }
+
+        for (int area_index = 0; area_index < area_count; area_index++)
+        {
+            sceVu0FVECTOR vertices[4];
+            int *area = MapDebugGetAreaRecord(record, area_index);
+            const u_char *color = colors[(event_no + area_index) % color_count];
+
+            if (MapDebugBuildAreaVertices(area, vertices) == 0)
+            {
+                continue;
+            }
+
+            MikuPan_RenderLineLoop3D(vertices, 4, color[0], color[1], color[2], color[3]);
+        }
+    }
+
+    room_wrk.height_no = saved_height_no;
 }
 
 u_char MapHitCheck(u_short pos_x, u_short pos_y, u_char room_id)

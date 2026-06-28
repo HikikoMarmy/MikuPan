@@ -40,6 +40,7 @@
 #include "ingame/ig_glob.h"
 #include "ingame/map/door_ctl.h"
 #include "ingame/map/furn_dat.h"
+#include "ingame/map/map_ctrl.h"
 #include "ingame/camera/camera.h"
 #include "main/glob.h"
 #include "mikupan/mikupan_first_person.h"
@@ -2157,6 +2158,7 @@ void gra3dDraw()
     }
 
     CheckDMATrans();
+    MikuPan_RenderMapEventHitboxes();
     MikuPan_RenderCameraDebug();
 }
 

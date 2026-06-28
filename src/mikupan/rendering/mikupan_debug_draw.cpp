@@ -170,6 +170,42 @@ static int CameraDebugDifferent(const float a[4], const float b[4])
     return (dx * dx + dy * dy + dz * dz) > 4.0f;
 }
 
+void MikuPan_RenderLineLoop3D(const sceVu0FVECTOR *vertices, int count, u_char r,
+                              u_char g, u_char b, u_char a)
+{
+    if (count < 2)
+    {
+        return;
+    }
+
+    float color[4] = {
+        (float)r / 255.0f,
+        (float)g / 255.0f,
+        (float)b / 255.0f,
+        (float)a / 255.0f,
+    };
+
+    MikuPan_FlushTexturedSpriteBatch();
+    MikuPan_SetCurrentShaderProgram(BOUNDING_BOX_SHADER);
+    MikuPan_SetUniform4fvToCurrentShader(color, "uColor");
+    MikuPan_SetWorldSpaceModelTransform();
+    MikuPan_SetRenderState3D();
+    MikuPan_GPUSetCullNone();
+    MikuPan_GPUSetDepthFunc(GL_ALWAYS);
+    MikuPan_GPUSetDepthWrite(0);
+
+    MikuPan_PipelineInfo *pipeline = MikuPan_GetPipelineInfo(POSITION4);
+    MikuPan_BindVAO(pipeline->vao);
+    MikuPan_StreamUploadFull(
+        GL_ARRAY_BUFFER, pipeline->buffers[0].id,
+        (GLsizeiptr)(count * sizeof(vertices[0])),
+        vertices);
+    MikuPan_TimedDrawArrays(GL_LINE_LOOP, 0, count);
+
+    MikuPan_GPUSetDepthWrite(1);
+    MikuPan_ResetRenderStateCache();
+}
+
 void MikuPan_RenderCameraDebug(void)
 {
     if (!MikuPan_ShowCameraDebug())

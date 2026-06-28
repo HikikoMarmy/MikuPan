@@ -166,6 +166,7 @@ void MikuPan_BeginLate2DOverlayQueue(void);
 void MikuPan_EndLate2DOverlayQueue(void);
 void MikuPan_FlushLate2DOverlayQueue(void);
 void MikuPan_RenderLine(float x1, float y1, float x2, float y2, u_char r, u_char g, u_char b, u_char a);
+void MikuPan_RenderLineLoop3D(const sceVu0FVECTOR* vertices, int count, u_char r, u_char g, u_char b, u_char a);
 void MikuPan_RenderBoundingBox(sceVu0FVECTOR* vertices);
 void MikuPan_RenderCameraDebug(void);
 void MikuPan_RenderSprite(MikuPan_Rect src, MikuPan_Rect dst, u_char r, u_char g, u_char b, u_char a, MikuPan_TextureInfo* texture_info);
