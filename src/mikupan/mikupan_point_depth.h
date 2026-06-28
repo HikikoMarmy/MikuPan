@@ -4,13 +4,6 @@
 #include "graphics/graph2d/effect_sub.h"
 #include "mikupan/rendering/mikupan_gpu.h"
 
-/* SDL GPU equivalent of the original PS2 depth visibility test.
- * Uses the same PP_JUDGE payload as CheckPointDepth(), but queries
- * MikuPan's native GPU depth state instead of reading the emulated GS
- * z-buffer through sceGsExecStoreImage(), which may be stale after
- * SDL GPU rendering.
- */
-
 static inline void MikuPan_CheckPointDepth(PP_JUDGE *ppj)
 {
     int i;
@@ -22,7 +15,12 @@ static inline void MikuPan_CheckPointDepth(PP_JUDGE *ppj)
 
     for (i = 0; i < ppj->num; i++)
     {
-        int visible = MikuPan_GPUDepthQueryPointVisibleWorld(ppj->p[i]);
+        float tx;
+        float ty;
+        int visible;
+
+        GetCamI2DPos(ppj->p[i], &tx, &ty);
+        visible = MikuPan_GPUDepthQueryPointVisibleWorldScreen(ppj->p[i], tx, ty);
         if (visible < 0)
         {
             CheckPointDepth(ppj);

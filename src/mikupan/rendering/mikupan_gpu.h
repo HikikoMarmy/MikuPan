@@ -64,8 +64,6 @@ typedef enum MikuPan_GSAlphaMode
 
 } MikuPan_GSAlphaMode;
 
-MikuPan_GPUBlendMode MikuPan_GPUBlendModeFromGSAlpha(u_long gs_alpha);
-
 typedef struct MikuPan_GPUUniformBlock
 {
     float model[16];
@@ -178,6 +176,9 @@ int MikuPan_GPUReadTextureR8(unsigned int texture_id, int size,
  *  -1 = unavailable
  */
 int MikuPan_GPUDepthQueryPointVisibleWorld(const float world_pos[4]);
+int MikuPan_GPUDepthQueryPointVisibleWorldScreen(const float world_pos[4],
+                                                 float screen_x,
+                                                 float screen_y);
 void MikuPan_GPUCopyTexture(unsigned int src_texture_id,
                             unsigned int dst_texture_id,
                             int width,

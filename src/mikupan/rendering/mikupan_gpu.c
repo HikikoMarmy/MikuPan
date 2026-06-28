@@ -1,6 +1,7 @@
 #include "mikupan_gpu.h"
 
 #include "mikupan/mikupan_logging_c.h"
+#include "mikupan/mikupan_utils.h"
 #include "mikupan_pipeline.h"
 #include "mikupan_shader.h"
 #include <glad/gl.h>
@@ -11,6 +12,13 @@
 #define MIKUPAN_GPU_MAX_TEXTURES 8192
 #define MIKUPAN_GPU_MAX_VAOS 4096
 #define MIKUPAN_GPU_MAX_PIPELINES 4096
+
+#define MIKUPAN_DEPTH_QUERY_REFERENCE_WIDTH PS2_RESOLUTION_X_INT
+#define MIKUPAN_DEPTH_QUERY_REFERENCE_HEIGHT (PS2_RESOLUTION_Y_INT / 2)
+#define MIKUPAN_DEPTH_QUERY_SCREEN_MARGIN 32.0f
+#define MIKUPAN_DEPTH_QUERY_SCREEN_RADIUS 8
+#define MIKUPAN_DEPTH_QUERY_MIN_READ_RADIUS 4
+#define MIKUPAN_DEPTH_QUERY_MAX_READ_RADIUS 32
 
 typedef struct
 {
@@ -1636,6 +1644,70 @@ int MikuPan_GPUReadTextureRGBA8(unsigned int texture_id, int width, int height,
     return mapped != NULL;
 }
 
+static int MikuPan_GPUReadTextureRGBA8Region(unsigned int texture_id, int x,
+                                             int y, int width, int height,
+                                             unsigned char* out_rgba)
+{
+    GPUTextureEntry* entry = TextureEntry(texture_id);
+    if (entry == NULL || out_rgba == NULL || width <= 0 || height <= 0)
+    {
+        return 0;
+    }
+
+    if (x < 0 || y < 0 || x + width > entry->width || y + height > entry->height)
+    {
+        return 0;
+    }
+
+    if (texture_id == g_scene_texture_id)
+    {
+        MikuPan_GPUResolveSceneForSampling();
+    }
+    MikuPan_GPUFlushRenderPass();
+
+    const unsigned int pitch = (unsigned int)width * 4u;
+    const unsigned int size = pitch * (unsigned int)height;
+    SDL_GPUTransferBufferCreateInfo info = {0};
+    info.usage = SDL_GPU_TRANSFERBUFFERUSAGE_DOWNLOAD;
+    info.size = size;
+    SDL_GPUTransferBuffer* transfer =
+        SDL_CreateGPUTransferBuffer(g_device, &info);
+    if (transfer == NULL)
+    {
+        return 0;
+    }
+
+    SDL_GPUTextureRegion src = {0};
+    src.texture = entry->texture;
+    src.x = (Uint32)x;
+    src.y = (Uint32)y;
+    src.w = (Uint32)width;
+    src.h = (Uint32)height;
+    src.d = 1;
+    SDL_GPUTextureTransferInfo dst = {0};
+    dst.transfer_buffer = transfer;
+    dst.pixels_per_row = (Uint32)width;
+    dst.rows_per_layer = (Uint32)height;
+
+    SDL_GPUCopyPass* copy = SDL_BeginGPUCopyPass(g_cmd);
+    SDL_DownloadFromGPUTexture(copy, &src, &dst);
+    SDL_EndGPUCopyPass(copy);
+
+    SDL_GPUFence* fence = SDL_SubmitGPUCommandBufferAndAcquireFence(g_cmd);
+    g_cmd = SDL_AcquireGPUCommandBuffer(g_device);
+    SDL_WaitForGPUFences(g_device, true, &fence, 1);
+    SDL_ReleaseGPUFence(g_device, fence);
+
+    void* mapped = SDL_MapGPUTransferBuffer(g_device, transfer, false);
+    if (mapped != NULL)
+    {
+        memcpy(out_rgba, mapped, size);
+        SDL_UnmapGPUTransferBuffer(g_device, transfer);
+    }
+    SDL_ReleaseGPUTransferBuffer(g_device, transfer);
+    return mapped != NULL;
+}
+
 int MikuPan_GPUReadTextureR8(unsigned int texture_id, int size,
                              unsigned char* out_r8)
 {
@@ -1714,7 +1786,77 @@ static void RestoreDepthQueryGpuState(const GPURenderState *state,
     MikuPan_ResetRenderStateCache();
 }
 
-int MikuPan_GPUDepthQueryPointVisibleWorld(const float world_pos[4])
+static int MikuPan_GPUDepthQueryReadMarkerRegion(float screen_x,
+                                                   float screen_y)
+{
+    if (g_depth_query_texture_id == 0 || g_depth_query_width <= 0 ||
+        g_depth_query_height <= 0 || g_depth_query_readback == NULL)
+    {
+        return -1;
+    }
+
+    if (screen_x < -MIKUPAN_DEPTH_QUERY_SCREEN_MARGIN ||
+        screen_x > (float)MIKUPAN_DEPTH_QUERY_REFERENCE_WIDTH +
+                       MIKUPAN_DEPTH_QUERY_SCREEN_MARGIN ||
+        screen_y < -MIKUPAN_DEPTH_QUERY_SCREEN_MARGIN ||
+        screen_y > (float)MIKUPAN_DEPTH_QUERY_REFERENCE_HEIGHT +
+                       MIKUPAN_DEPTH_QUERY_SCREEN_MARGIN)
+    {
+        return -1;
+    }
+
+    const float sx = (float)g_depth_query_width /
+                     (float)MIKUPAN_DEPTH_QUERY_REFERENCE_WIDTH;
+    const float sy = (float)g_depth_query_height /
+                     (float)MIKUPAN_DEPTH_QUERY_REFERENCE_HEIGHT;
+    const int cx = MikuPan_ClampInt((int)(screen_x * sx + 0.5f), 0,
+                                    g_depth_query_width - 1);
+    const int cy = MikuPan_ClampInt((int)(screen_y * sy + 0.5f), 0,
+                                    g_depth_query_height - 1);
+    const int rx = MikuPan_ClampInt(
+        (int)(MIKUPAN_DEPTH_QUERY_SCREEN_RADIUS * sx + 0.5f),
+        MIKUPAN_DEPTH_QUERY_MIN_READ_RADIUS,
+        MIKUPAN_DEPTH_QUERY_MAX_READ_RADIUS);
+    const int ry = MikuPan_ClampInt(
+        (int)(MIKUPAN_DEPTH_QUERY_SCREEN_RADIUS * sy + 0.5f),
+        MIKUPAN_DEPTH_QUERY_MIN_READ_RADIUS,
+        MIKUPAN_DEPTH_QUERY_MAX_READ_RADIUS);
+
+    const int x0 = MikuPan_ClampInt(cx - rx, 0, g_depth_query_width - 1);
+    const int y0 = MikuPan_ClampInt(cy - ry, 0, g_depth_query_height - 1);
+    const int x1 = MikuPan_ClampInt(cx + rx + 1, 1, g_depth_query_width);
+    const int y1 = MikuPan_ClampInt(cy + ry + 1, 1, g_depth_query_height);
+    const int width = x1 - x0;
+    const int height = y1 - y0;
+
+    if (width <= 0 || height <= 0)
+    {
+        return -1;
+    }
+
+    if (!MikuPan_GPUReadTextureRGBA8Region(g_depth_query_texture_id, x0, y0,
+                                           width, height,
+                                           g_depth_query_readback))
+    {
+        return -1;
+    }
+
+    const unsigned int count = (unsigned int)width * (unsigned int)height;
+    for (unsigned int i = 0; i < count; i++)
+    {
+        const unsigned char *p = &g_depth_query_readback[i * 4u];
+        if (p[0] != 0 || p[1] != 0 || p[2] != 0 || p[3] != 0)
+        {
+            return 1;
+        }
+    }
+
+    return 0;
+}
+
+int MikuPan_GPUDepthQueryPointVisibleWorldScreen(const float world_pos[4],
+                                                 float screen_x,
+                                                 float screen_y)
 {
     if (world_pos == NULL || g_cmd == NULL)
     {
@@ -1786,30 +1928,45 @@ int MikuPan_GPUDepthQueryPointVisibleWorld(const float world_pos[4])
     MikuPan_GPUDrawArrays(GL_POINTS, 0, 1);
     MikuPan_GPUFlushRenderPass();
 
-    int ok = MikuPan_GPUReadTextureRGBA8(
-        g_depth_query_texture_id, g_depth_query_width, g_depth_query_height,
-        g_depth_query_readback);
-
-    int visible = 0;
-    if (ok)
+    int visible = MikuPan_GPUDepthQueryReadMarkerRegion(screen_x, screen_y);
+    if (visible < 0)
     {
-        const unsigned int count =
-            (unsigned int)g_depth_query_width * (unsigned int)g_depth_query_height;
-        for (unsigned int i = 0; i < count; i++)
+        int ok = MikuPan_GPUReadTextureRGBA8(
+            g_depth_query_texture_id, g_depth_query_width, g_depth_query_height,
+            g_depth_query_readback);
+
+        visible = 0;
+        if (ok)
         {
-            const unsigned char *p = &g_depth_query_readback[i * 4u];
-            if (p[0] != 0 || p[1] != 0 || p[2] != 0 || p[3] != 0)
+            const unsigned int count =
+                (unsigned int)g_depth_query_width * (unsigned int)g_depth_query_height;
+            for (unsigned int i = 0; i < count; i++)
             {
-                visible = 1;
-                break;
+                const unsigned char *p = &g_depth_query_readback[i * 4u];
+                if (p[0] != 0 || p[1] != 0 || p[2] != 0 || p[3] != 0)
+                {
+                    visible = 1;
+                    break;
+                }
             }
+        }
+        else
+        {
+            visible = -1;
         }
     }
 
     RestoreSceneTargetAfterDepthQuery();
     RestoreDepthQueryGpuState(&saved_state, saved_vao, saved_shader);
-    return ok ? visible : -1;
+    return visible;
 }
+
+int MikuPan_GPUDepthQueryPointVisibleWorld(const float world_pos[4])
+{
+    return MikuPan_GPUDepthQueryPointVisibleWorldScreen(
+        world_pos, 320.0f, 112.0f);
+}
+
 
 void MikuPan_GPUCopyTexture(unsigned int src_texture_id,
                             unsigned int dst_texture_id, int width, int height)
