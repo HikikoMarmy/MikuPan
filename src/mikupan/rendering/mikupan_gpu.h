@@ -64,6 +64,8 @@ typedef enum MikuPan_GSAlphaMode
 
 } MikuPan_GSAlphaMode;
 
+MikuPan_GPUBlendMode MikuPan_GPUBlendModeFromGSAlpha(u_long gs_alpha);
+
 typedef struct MikuPan_GPUUniformBlock
 {
     float model[16];
@@ -97,6 +99,10 @@ typedef struct MikuPan_GPUUniformBlock
     float uCrt2[4];
     float uCrt3[4];
     float uParams1[4];
+    // x=strength, y=burn/darkness, z=saturation, w=previous-frame ghost
+    float uPs2Feedback[4];
+    // rgb=Himuro EF_NEGA colour, a=fade strength
+    float uScreenNegative[4];
 
     int uFlags0[4];
     int uFlags1[4];
@@ -139,6 +145,9 @@ unsigned int MikuPan_GPUCreateBuffer(unsigned int size,
                                      MikuPan_GPUBufferKind kind);
 unsigned int MikuPan_GPUCreateUniformCPUBuffer(unsigned int size);
 void MikuPan_GPUReleaseBuffer(unsigned int id);
+unsigned int MikuPan_GPUGetLiveBufferCount(void);
+unsigned int MikuPan_GPUGetFreeBufferSlotCount(void);
+unsigned int MikuPan_GPUGetMaxBufferCount(void);
 void MikuPan_GPUUploadBuffer(unsigned int id, unsigned int size,
                              const void *data);
 void MikuPan_GPUUpdateUniformCPUBuffer(unsigned int id, unsigned int size,
@@ -162,6 +171,13 @@ int MikuPan_GPUReadTextureRGBA8(unsigned int texture_id, int width, int height,
                                 unsigned char *out_rgba);
 int MikuPan_GPUReadTextureR8(unsigned int texture_id, int size,
                              unsigned char *out_r8);
+
+/* Render-depth point visibility test.
+ *   1 = visible
+ *   0 = occluded or clipped
+ *  -1 = unavailable
+ */
+int MikuPan_GPUDepthQueryPointVisibleWorld(const float world_pos[4]);
 void MikuPan_GPUCopyTexture(unsigned int src_texture_id,
                             unsigned int dst_texture_id,
                             int width,
