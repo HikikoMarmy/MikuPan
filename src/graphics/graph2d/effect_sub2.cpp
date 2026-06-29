@@ -18,7 +18,7 @@
 #include "ingame/event/ev_main.h"
 #include "ingame/plyr/plyr_ctl.h"
 #include "mikupan/mikupan_memory.h"
-#include "mikupan/mikupan_effect_compat.h"
+#include "mikupan/gameplay/mikupan_effect_compat.h"
 
 #include <string.h>
 

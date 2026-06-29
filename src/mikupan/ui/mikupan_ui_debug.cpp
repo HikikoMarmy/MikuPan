@@ -12,7 +12,7 @@
 #include "mikupan/gs/mikupan_texture_manager_c.h"
 #include "mikupan/mikupan_basictypes.h"
 #include "mikupan/mikupan_config.h"
-#include "mikupan/mikupan_first_person.h"
+#include "mikupan/gameplay/mikupan_first_person.h"
 #include "mikupan/rendering/mikupan_gpu.h"
 #include "mikupan/rendering/mikupan_meshcache.h"
 #include "mikupan/rendering/mikupan_profiler.h"

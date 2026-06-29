@@ -3,7 +3,7 @@ project(MikuPan LANGUAGES C CXX)
 
 if (NOT MSVC)
     set(CMAKE_C_FLAGS "${CMAKE_C_FLAGS} -Wno-implicit-function-declaration -fno-fast-math -fno-trapping-math -Wno-int-conversion")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}  -Wno-implicit-function-declaration -fno-fast-math -fno-trapping-math -Wno-int-conversion")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS}")
 endif()
 
 if(WIN32)
@@ -55,8 +55,8 @@ set(MIKUPAN_SOURCES
         resources/shaders/untextured_coloured_sprite.vert
         resources/shaders/normals_debug.geom
         resources/shaders/normals_debug.frag
-        "src/mikupan/mikupan_file.cpp"
-        "src/mikupan/mikupan_first_person.cpp"
+        "src/mikupan/io/mikupan_file.cpp"
+        "src/mikupan/gameplay/mikupan_first_person.cpp"
         "src/common/ul_math.cpp"
         "src/common/utility.cpp"
         "src/edit/map_data.cpp"
@@ -286,21 +286,21 @@ set(MIKUPAN_SOURCES
         src/mikupan/rendering/mikupan_texture.cpp
         src/mikupan/gs/mikupan_gs.cpp
         src/mikupan/gs/mikupan_texture_manager.cpp
-        src/mikupan/mikupan_logging.cpp
+        "src/mikupan/debug/mikupan_logging.cpp"
         src/graphics/graph3d/libsg.cpp
         src/ingame/map/find_dat.cpp
         src/mikupan/rendering/mikupan_pipeline.cpp
         src/mikupan/rendering/mikupan_meshcache.cpp
-        src/mikupan/mikupan_graph3d_compat.cpp
-        src/mikupan/mikupan_effect_compat.cpp
-        src/mikupan/mikupan_photo_capture.cpp
+        "src/mikupan/gameplay/mikupan_graph3d_compat.cpp"
+        "src/mikupan/gameplay/mikupan_effect_compat.cpp"
+        "src/mikupan/gameplay/mikupan_photo_capture.cpp"
         "src/mikupan/mikupan_utils.cpp"
         src/ingame/map/furn_spe/fsla_dat.cpp
         src/mikupan/mikupan_config.cpp
         src/mikupan/mikupan_config_ini.cpp
         src/mikupan/mikupan_config.h
-        src/mikupan/mikupan_controller.cpp
-        src/mikupan/mikupan_controller.h
+        "src/mikupan/io/mikupan_controller.cpp"
+        "src/mikupan/io/mikupan_controller.h"
         src/mikupan/mikupan_screenshot.cpp
         src/mikupan/mikupan_screenshot.h
         src/mikupan/mikupan_rng.cpp

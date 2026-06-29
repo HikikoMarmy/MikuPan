@@ -1,6 +1,6 @@
 #include "libcdvd.h"
 
-#include "mikupan/mikupan_file_c.h"
+#include "mikupan/io/mikupan_file_c.h"
 
 #include <SDL3/SDL.h>
 #include <stdio.h>

@@ -59,8 +59,8 @@
 #include "ingame/event/wan_soul.h"
 #include "ingame/menu/ig_camra.h"
 #include "outgame/btl_mode/btl_mode.h"
-#include "mikupan/mikupan_enemy_entry.h"
-#include "mikupan/mikupan_point_depth.h"
+#include "mikupan/gameplay/mikupan_enemy_entry.h"
+#include "mikupan/gameplay/mikupan_point_depth.h"
 int erootd0[20][3] = {0};
 int erootd1[20][3] = {0};
 int erootd2[20][3] = {0};

@@ -37,7 +37,7 @@
 #include "memory_album.h"
 #include "mikupan/gs/mikupan_gs_c.h"
 #include "mikupan/mikupan_config.h"
-#include "mikupan/mikupan_logging_c.h"
+#include "mikupan/debug/mikupan_logging_c.h"
 #include "mikupan/mikupan_memory.h"
 #include "mikupan/mikupan_rng.h"
 #include "mikupan/rendering/mikupan_renderer.h"
@@ -2375,9 +2375,6 @@ void TitleCtrl()
 #else
         title_wrk.load_id = LoadReq(TITLE_PK2, SPRITE_ADDRESS);
 #endif
-        /* Kick off on the configured setting, not TitleUseRoomBackground(): the
-         * latter reads 0 after a prior watchdog give-up, which would stop us from
-         * ever retrying the room background. TitleBgBeginRoomLoad clears the flag. */
         if (mikupan_configuration.title_room_background != 0)
         {
             TitleBgBeginRoomLoad();

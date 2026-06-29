@@ -1,8 +1,8 @@
 #include "typedefs.h"
 #include "mikupan_file.h"
-#include "mikupan_config.h"
-#include "gs/mikupan_texture_manager.h"
-#include "mikupan_logging.h"
+#include "mikupan/mikupan_config.h"
+#include "mikupan/gs/mikupan_texture_manager.h"
+#include "mikupan/debug/mikupan_logging.h"
 #include "spdlog/spdlog.h"
 #include <SDL3/SDL_dialog.h>
 #include <SDL3/SDL_events.h>
@@ -24,7 +24,7 @@
 #include <system_error>
 #include <vector>
 
-#include "mikupan_memory.h"
+#include "mikupan/mikupan_memory.h"
 
 static inline std::vector<int> file_loaded_address;
 

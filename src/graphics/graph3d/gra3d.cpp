@@ -43,7 +43,7 @@
 #include "ingame/map/map_ctrl.h"
 #include "ingame/camera/camera.h"
 #include "main/glob.h"
-#include "mikupan/mikupan_first_person.h"
+#include "mikupan/gameplay/mikupan_first_person.h"
 #include "mikupan/rendering/mikupan_renderer.h"
 #include "mikupan/ui/mikupan_ui.h"
 #include "mikupan/ui/mikupan_ui_cheats.h"

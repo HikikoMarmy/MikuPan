@@ -26,7 +26,7 @@
 #include "graphics/graph3d/sglib.h"
 #include "main/glob.h"
 #include "mikupan/mikupan_rng.h"
-#include "mikupan/mikupan_effect_compat.h"
+#include "mikupan/gameplay/mikupan_effect_compat.h"
 #include "mikupan/mikupan_utils.h"
 #include "mikupan/gs/mikupan_texture_manager_c.h"
 #include "mikupan/rendering/mikupan_renderer.h"

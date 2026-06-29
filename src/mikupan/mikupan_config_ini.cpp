@@ -1,6 +1,6 @@
 #include "mikupan_config.h"
 
-#include "mikupan_logging.h"
+#include "debug/mikupan_logging.h"
 
 #include <SDL3/SDL_filesystem.h>
 #ifdef __ANDROID__

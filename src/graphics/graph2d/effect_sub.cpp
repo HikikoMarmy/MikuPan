@@ -21,7 +21,7 @@
 #include "mikupan/gs/mikupan_gs_c.h"
 #include "mikupan/mikupan_memory.h"
 #include "mikupan/mikupan_utils.h"
-#include "mikupan/mikupan_effect_compat.h"
+#include "mikupan/gameplay/mikupan_effect_compat.h"
 #include "mikupan/rendering/mikupan_renderer.h"
 #include "os/pad.h"
 #include "os/system.h"

@@ -100,28 +100,38 @@ static void ICdvdInitOnce()
     memset(&iop_stat.cdvd, 0, sizeof(iop_stat.cdvd));
     memset(cdvd_trans, 0, sizeof(cdvd_trans));
 
-    if (cdvd_lock == NULL) {
+    if (cdvd_lock == NULL) 
+    {
         cdvd_lock = SDL_CreateMutex();
     }
 
     load_buf_table[0] = (u_int *)AllocSysMemory(0, 0x64000, 0);
-    if (!load_buf_table[0]) {
-    } else {
+
+    if (!load_buf_table[0]) 
+    {
+    } 
+    else 
+    {
         load_buf_table[1] = (u_int*)((u_char*)load_buf_table[0] + 0x32000);
         iop_stat.cdvd.ld_addr = 0;
     }
 
-    if (sceCdSync(1)) {
-        while (!MikuPan_IopHostShouldShutdown() && !sceCdBreak())
-            ;
+    if (sceCdSync(1)) 
+    {
+        while (!MikuPan_IopHostShouldShutdown() && !sceCdBreak());
     }
 
     strcpy(fname, "\\IMG_HD.BIN;1");
-    if (!sceCdSearchFile(&cdlf, fname)) {
+
+    if (!sceCdSearchFile(&cdlf, fname)) 
+    {
         return;
     }
+
     strcpy(fname, "\\IMG_BD.BIN;1");
-    if (!sceCdSearchFile(&cdvd_stat.cdlf, fname)) {
+
+    if (!sceCdSearchFile(&cdvd_stat.cdlf, fname)) 
+    {
         return;
     }
 
@@ -129,57 +139,79 @@ static void ICdvdInitOnce()
     cdvd_stat.rmode.spindlctrl = 1;
     cdvd_stat.rmode.datapattern = 0;
 
-    while (!MikuPan_IopHostShouldShutdown()) {
+    while (!MikuPan_IopHostShouldShutdown()) 
+    {
         ld_error = 0;
-        if (sceCdDiskReady(1) == 2) {
-            if (!sceCdRead(cdlf.lsn, (cdlf.size + 2047) >> 11, load_buf_table[0], &cdvd_stat.rmode)) {
+
+        if (sceCdDiskReady(1) == 2) 
+        {
+            if (!sceCdRead(cdlf.lsn, (cdlf.size + 2047) >> 11, load_buf_table[0], &cdvd_stat.rmode)) 
+            {
                 ret_count0 = 0;
-                while (!MikuPan_IopHostShouldShutdown() && sceCdSync(1)) {
+
+                while (!MikuPan_IopHostShouldShutdown() && sceCdSync(1)) 
+                {
                     ret_count0++;
-                    if (ret_count0 > 0xF00000) {
-                        while (!MikuPan_IopHostShouldShutdown() && !sceCdBreak())
-                            ;
+
+                    if (ret_count0 > 0xF00000) 
+                    {
+                        while (!MikuPan_IopHostShouldShutdown() && !sceCdBreak());
                         break;
                     }
                 }
+
                 ld_error = 1;
-            } else {
+            } 
+            else 
+            {
                 ret_count0 = 0;
-                while (!MikuPan_IopHostShouldShutdown() && sceCdSync(1)) {
-                    ret_count0++;
-                    for (ret_count1 = 0; ret_count1 <= 0x7FFFFF; ++ret_count1)
-                        ;
 
-                    if (ret_count0 >= 0x33) {
-                        while (!MikuPan_IopHostShouldShutdown() && !sceCdBreak())
-                            ;
+                while (!MikuPan_IopHostShouldShutdown() && sceCdSync(1)) 
+                {
+                    ret_count0++;
+
+                    for (ret_count1 = 0; ret_count1 <= 0x7FFFFF; ++ret_count1);
+
+                    if (ret_count0 >= 0x33) 
+                    {
+                        while (!MikuPan_IopHostShouldShutdown() && !sceCdBreak());
                         ld_error = 1;
                         break;
                     }
                 }
 
-                if (!ld_error) {
+                if (!ld_error) 
+                {
                     if (!sceCdGetError())
+                    {
                         ld_error = 0;
+                    }
                     else
+                    {
                         ld_error = 1;
+                    }
                 }
             }
-        } else {
+        } 
+        else 
+        {
             ld_error = 1;
         }
 
-        if (ld_error) {
-            for (i = 0; i <= 0x7FFFF; ++i)
-                ;
+        if (ld_error)
+        {
+            for (i = 0; i <= 0x7FFFF; ++i);
 
             ld_error = 0;
-        } else {
+        } 
+        else 
+        {
             break;
         }
     }
 
-    if (MikuPan_IopHostShouldShutdown()) {
+    if (MikuPan_IopHostShouldShutdown()) 
+    {
         return;
     }
 
@@ -190,8 +222,9 @@ static void ICdvdInitOnce()
     CpuSuspendIntr(&oldstat);
     dma_id = sceSifSetDma(&sdd, 1);
     CpuResumeIntr(oldstat);
-    while (!MikuPan_IopHostShouldShutdown() && sceSifDmaStat(dma_id) >= 0)
-        ;
+
+    while (!MikuPan_IopHostShouldShutdown() && sceSifDmaStat(dma_id) >= 0);
+
     tmp = QueryMemSize();
     tmp = QueryTotalFreeMemSize();
     tmp = QueryMaxFreeMemSize();
@@ -205,9 +238,9 @@ static void ICdvdInitSoftReset()
     memset(&iop_stat.cdvd, 0, sizeof(iop_stat.cdvd));
     ICdvdUnlock();
 
-    if (sceCdSync(1)) {
-        while (!MikuPan_IopHostShouldShutdown() && !sceCdBreak())
-            ;
+    if (sceCdSync(1)) 
+    {
+        while (!MikuPan_IopHostShouldShutdown() && !sceCdBreak());
     }
 }
 
@@ -223,57 +256,70 @@ static void ICdvdMainLocked()
 
     ICdvdTransCheck();
 
-    if (sceCdDiskReady(1) != 2) {
+    if (sceCdDiskReady(1) != 2) 
+    {
 
         return;
     }
-    if (cdvd_stat.error_cnt) {
+
+    if (cdvd_stat.error_cnt) 
+    {
 
         cdvd_stat.error_cnt--;
         if (!cdvd_stat.error_cnt)
+        {
+            sceCdRead(cdvd_stat.end_size / 2048 + cdvd_stat.start,
+                      (cdvd_stat.now_size + 2047) / 2048,
+                      load_buf_table[cdvd_stat.now_lbuf], &cdvd_stat.rmode);
+        }
 
-            sceCdRead(
-                cdvd_stat.end_size / 2048 + cdvd_stat.start,
-                (cdvd_stat.now_size + 2047) / 2048,
-                load_buf_table[cdvd_stat.now_lbuf],
-                &cdvd_stat.rmode);
         return;
     }
-    if (cdvd_stat.stat == CDVD_STAT_FREE) {
 
-        if (cdvd_stat.adpcm_req) {
+    if (cdvd_stat.stat == CDVD_STAT_FREE) 
+    {
 
+        if (cdvd_stat.adpcm_req) 
+        {
             ICdvdAdpcmLoad();
             cdvd_stat.stat = 2;
-        } else {
-
-            if (cdvd_stat.cmd_on) {
+        }
+        else 
+        {
+            if (cdvd_stat.cmd_on) 
+            {
                 ICdvdDataReadOnceSector();
                 cdvd_stat.stat = 1;
-            } else {
+            } 
+            else 
+            {
 
                 ICdvdExecCmd();
             }
         }
+
         return;
     }
 
-    if (cdvd_stat.stat == CDVD_STAT_LOADING) {
-        if (!sceCdSync(1)) {
+    if (cdvd_stat.stat == CDVD_STAT_LOADING) 
+    {
+        if (!sceCdSync(1)) 
+        {
             int error_stat;
 
             cdvd_stat.ctime = 0;
 
             error_stat = ICdvdCheckLoadError();
 
-            if (error_stat == 1) {
+            if (error_stat == 1) 
+            {
                 cdvd_stat.error_cnt = 10;
-
                 return;
-            } else {
-
-                if (error_stat == -1) {
-
+            }
+            else 
+            {
+                if (error_stat == -1) 
+                {
                     return;
                 }
             }
@@ -282,22 +328,25 @@ static void ICdvdMainLocked()
 
             cdvd_stat.end_size += cdvd_stat.now_size;
 
-            if (cdvd_stat.size <= cdvd_stat.end_size) {
-
+            if (cdvd_stat.size <= cdvd_stat.end_size) 
+            {
                 cdvd_stat.stat = 0;
                 cdvd_stat.start_pos = (cdvd_stat.start_pos + 1) % 32;
                 cdvd_stat.buf_use_num--;
                 cdvd_stat.cmd_on = 0;
             }
 
-            if (cdvd_stat.adpcm_req) {
-
+            if (cdvd_stat.adpcm_req) 
+            {
                 ICdvdAdpcmLoad();
                 cdvd_stat.stat = 2;
-            } else {
-                if (cdvd_stat.cmd_on) {
-
-                    if (!ICdvdCheckBufStatus()) {
+            } 
+            else 
+            {
+                if (cdvd_stat.cmd_on) 
+                {
+                    if (!ICdvdCheckBufStatus()) 
+                    {
                         cdvd_stat.stat = 3;
                         return;
                     }
@@ -305,17 +354,25 @@ static void ICdvdMainLocked()
                     ICdvdDataReadOnceSector();
                 }
             }
-        } else {
-            if (cdvd_stat.ctime >= 0x960) {
+        } 
+        else 
+        {
+            if (cdvd_stat.ctime >= 0x960) 
+            {
             retry:
-                if (sceCdBreak()) {
-                } else {
+                if (sceCdBreak()) 
+                {
+                } 
+                else 
+                {
                     cdvd_stat.ctime = 0;
                     cdvd_stat.error_cnt = 10;
                     return;
                     goto retry;
                 }
-            } else {
+            } 
+            else 
+            {
                 cdvd_stat.ctime++;
             }
         }
@@ -525,10 +582,12 @@ static void ICdvdDataReadOnceSector()
 {
     cdvd_stat.now_size = cdvd_stat.size - cdvd_stat.end_size;
 
-    if (cdvd_stat.now_size > 204800) {
+    if (cdvd_stat.now_size > 204800) 
+    {
         cdvd_stat.now_size = 204800;
         cdvd_trans[cdvd_stat.now_lbuf].ltrans = 0;
-    } else {
+    } else 
+    {
         cdvd_trans[cdvd_stat.now_lbuf].ltrans = 1;
     }
 
@@ -541,7 +600,8 @@ static void ICdvdDataReadOnceSector()
 
 u_char ICdvdOnPreLoadEnd()
 {
-    if (cdvd_stat.pcm_pre_end) {
+    if (cdvd_stat.pcm_pre_end) 
+    {
         return 1;
     } else {
         return 0;
@@ -553,9 +613,12 @@ static void ICdvdAdpcmLoad()
     u_char pos;
 
     pos = 0xff;
-    if (cdvd_stat.adpcm[0].req_type >= cdvd_stat.adpcm[1].req_type) {
+
+    if (cdvd_stat.adpcm[0].req_type >= cdvd_stat.adpcm[1].req_type) 
+    {
         pos = 0;
-    } else {
+    } else 
+    {
         pos = 1;
     }
 
@@ -564,6 +627,7 @@ static void ICdvdAdpcmLoad()
         (cdvd_stat.adpcm[pos].size_now + 2047) / 2048,
         cdvd_stat.adpcm[pos].taddr,
         &cdvd_stat.rmode);
+
     cdvd_stat.adpcm[pos].now_load = 1;
     cdvd_stat.adpcm_req = 1;
 }
@@ -589,8 +653,7 @@ static int ICdvdCheckLoadError()
 void ICdvdBreak()
 {
     ICdvdLock();
-    while (!MikuPan_IopHostShouldShutdown() && !sceCdBreak())
-        ;
+    while (!MikuPan_IopHostShouldShutdown() && !sceCdBreak());
     cdvd_stat.stat = 0;
     cdvd_stat.adpcm_req = 0;
     ICdvdUnlock();
@@ -599,16 +662,21 @@ void ICdvdBreak()
 static int ICdvdSectorLoad(CDVD_REQ_BUF* req_bufp)
 {
     if (!ICdvdCheckBufStatus())
+    {
         return 0;
-
+    }
+        
     cdvd_stat.start = req_bufp->start_sector + cdvd_stat.cdlf.lsn;
     cdvd_stat.size = req_bufp->size_sector;
     cdvd_stat.file_no = req_bufp->file_no;
     cdvd_stat.end_size = 0;
     cdvd_stat.id = req_bufp->id;
-    if (req_bufp->tmem == TRANS_MEM_SPU)
-        SeSetStartPoint(req_bufp->se_buf_no, req_bufp->file_no);
 
+    if (req_bufp->tmem == TRANS_MEM_SPU)
+    {
+        SeSetStartPoint(req_bufp->se_buf_no, req_bufp->file_no);
+    }
+        
     ICdvdDataReadOnceSector();
     cdvd_stat.cmd_on = 1;
     ICdvdSetRetStat(cdvd_stat.id, CDVD_LS_LOADING);
@@ -619,12 +687,18 @@ static int ICdvdCheckBufStatus()
 {
     int i;
 
-    for (i = 0; i < 2; i++) {
-        if (cdvd_trans[cdvd_stat.now_lbuf].stat == 0) {
+    for (i = 0; i < 2; i++) 
+    {
+        if (cdvd_trans[cdvd_stat.now_lbuf].stat == 0) 
+        {
             return 1;
-        } else if (cdvd_trans[cdvd_stat.now_lbuf].stat == 4) {
+        } 
+        else if (cdvd_trans[cdvd_stat.now_lbuf].stat == 4) 
+        {
             continue;
-        } else if (cdvd_trans[cdvd_stat.now_lbuf].stat == 3) {
+        } 
+        else if (cdvd_trans[cdvd_stat.now_lbuf].stat == 3) 
+        {
             return 1;
         }
 
@@ -681,24 +755,28 @@ static void ICdvdTransSe(IOP_COMMAND* icp)
     size = icp->data1;
     addr = snd_buf_top[icp->data2];
     src = (u_char*)(intptr_t)icp->data4;
-    if (src == NULL) {
+
+    if (src == NULL) 
+    {
         src = (u_char*)load_buf_table[0];
     }
 
-    while (!MikuPan_IopHostShouldShutdown()
-        && sceSdVoiceTrans(1, 0, src, addr, size) < 0)
-        ;
+    while (!MikuPan_IopHostShouldShutdown() && sceSdVoiceTrans(1, 0, src, addr, size) < 0);
     iop_stat.cdvd.se_trans = 1;
     SeSetStartPoint(icp->data2, icp->data3);
 }
 
 int ICdvdTransSeEnd()
 {
-    if (iop_stat.cdvd.se_trans == 1) {
-        if (sceSdVoiceTransStatus(1, 0) == 1) {
+    if (iop_stat.cdvd.se_trans == 1) 
+    {
+        if (sceSdVoiceTransStatus(1, 0) == 1) 
+        {
             iop_stat.cdvd.se_trans = 2;
         }
-    } else if (iop_stat.cdvd.se_trans == 2) {
+    } 
+    else if (iop_stat.cdvd.se_trans == 2) 
+    {
     }
 
     return 0;
@@ -711,12 +789,18 @@ static void ICdvdTransSeInit()
 
 static void ICdvdExecCmd()
 {
-    if (cdvd_stat.buf_use_num) {
-        if (ICdvdExecCmdSub(&cdvd_req[cdvd_stat.start_pos])) {
+    if (cdvd_stat.buf_use_num) 
+    {
+        if (ICdvdExecCmdSub(&cdvd_req[cdvd_stat.start_pos])) 
+        {
             cdvd_stat.error_cnt = 0;
-        } else {
+        } 
+        else 
+        {
         }
-    } else {
+    } 
+    else 
+    {
     }
 }
 
@@ -745,18 +829,23 @@ static int ICdvdExecCmdSub(CDVD_REQ_BUF* req_bufp)
 static void ICdvdSetRetStat(int id, u_char stat)
 {
 
-    if (id >= 0 && id < 32) {
+    if (id >= 0 && id < 32) 
+    {
         iop_stat.cdvd.fstat[id].stat = stat;
-    } else {
+    } 
+    else {
     }
 }
 
 static void ICdvdSetRetStatFinish(int id)
 {
-    if (id >= 0 && id < 32) {
+    if (id >= 0 && id < 32) 
+    {
         iop_stat.cdvd.fstat[id].stat = 0;
         cdvd_stat.id = (cdvd_stat.id + 1) % 32;
-    } else {
+    } 
+    else 
+    {
     }
 }
 
@@ -765,7 +854,8 @@ void ICdvdSetRetStatClear()
     CDVD_LOAD_STAT* clsp;
     int i;
 
-    for (i = 0, clsp = iop_stat.cdvd.fstat; i < 32; i++, clsp++) {
+    for (i = 0, clsp = iop_stat.cdvd.fstat; i < 32; i++, clsp++) 
+    {
         clsp->stat = CDVD_LS_FINISHED;
     }
 }
@@ -776,12 +866,17 @@ void ICdvdLoadReqPcm(u_int lsn, u_int size_sec, void* buf, u_char pre)
     cdvd_stat.pcm.start = lsn;
     cdvd_stat.pcm.size_now = size_sec;
     cdvd_stat.pcm.taddr = (u_int*)buf;
-    if (pre) {
+
+    if (pre) 
+    {
         cdvd_stat.pcm_pre = 1;
         cdvd_stat.pcm_pre_end = 0;
-    } else {
+    }
+    else 
+    {
         cdvd_stat.pcm_pre = 0;
     }
+
     cdvd_stat.pcm_req = 1;
     ICdvdUnlock();
 }
@@ -801,14 +896,16 @@ void ICdvdLoadReqAdpcm(int lsn, u_int size_now, void* buf, u_char channel, u_cha
 
 static void ICdvdLock()
 {
-    if (cdvd_lock != NULL) {
+    if (cdvd_lock != NULL) 
+    {
         SDL_LockMutex(cdvd_lock);
     }
 }
 
 static void ICdvdUnlock()
 {
-    if (cdvd_lock != NULL) {
+    if (cdvd_lock != NULL) 
+    {
         SDL_UnlockMutex(cdvd_lock);
     }
 }

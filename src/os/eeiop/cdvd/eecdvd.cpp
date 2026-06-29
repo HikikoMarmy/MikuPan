@@ -2,7 +2,7 @@
 #include "common.h"
 #include "enums.h"
 #include "main/glob.h"
-#include "mikupan/mikupan_logging_c.h"
+#include "mikupan/debug/mikupan_logging_c.h"
 #include "mikupan/mikupan_memory.h"
 #include "os/eeiop/eeiop.h"
 #include "typedefs.h"
@@ -213,16 +213,20 @@ static int IsLoadEndIop(int id)
         pos = cdvd_rstat.start_pos;
         for (i = 0; i < cdvd_rstat.com_num; i++)
         {
-            if (pos >= 32) //
-            {              // maybe a compiler optimization
-                pos -= 32; // artifact for a % 32 increment?
-            }              //
+            if (pos >= 32) 
+            {              
+                pos -= 32; 
+            }              
+
             load_finish[pos].stat = 0;
             cdvd_rstat.start_pos = (cdvd_rstat.start_pos + 1) % 32;
-            if (pos == id) {
+
+            if (pos == id) 
+            {
                 cdvd_rstat.com_num -= (i + 1);
                 break;
             }
+
             pos++;
         }
         
