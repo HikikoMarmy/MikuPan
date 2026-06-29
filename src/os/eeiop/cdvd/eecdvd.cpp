@@ -10,6 +10,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include "fnameee.h"
 
 typedef struct {
     u_char start_pos;
@@ -73,7 +74,7 @@ int LoadReq(int file_no, uint64_t ps2_addr)
 {
     IMG_ARRANGEMENT *img_arng;
     
-    info_log("File No: %d", file_no);
+    info_log("File No: %d %s", file_no, file_name[file_no]);
    
     img_arng = GetImgArrangementP(file_no);
 
@@ -84,7 +85,7 @@ int LoadReqToHostPointer(int file_no, void *host_addr)
 {
     IMG_ARRANGEMENT *img_arng;
 
-    info_log("File No: %d", file_no);
+    info_log("File No: %d %s", file_no, file_name[file_no]);
 
     img_arng = GetImgArrangementP(file_no);
 

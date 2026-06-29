@@ -16,6 +16,10 @@
 
 #include <SDL3/SDL_mutex.h>
 #include <stdint.h>
+#include <spdlog/spdlog.h>
+//#include <os/eeiop/cdvd/fnameee.h>
+
+extern char* file_name[];
 
 CDVD_STAT cdvd_stat;
 CDVD_REQ_BUF cdvd_req[32];
@@ -37,6 +41,7 @@ static void ICdvdTransCheck();
 static void ICdvdAdpcmLoad();
 static void ICdvdExecCmd();
 static void ICdvdDataReadOnceSector();
+static void ICdvdStrLoad();
 static int ICdvdCheckLoadError();
 static void ICdvdTransFinishedData();
 static void ICdvdMainLocked();
@@ -288,7 +293,7 @@ static void ICdvdMainLocked()
         {
             if (cdvd_stat.cmd_on) 
             {
-                ICdvdDataReadOnceSector();
+                ICdvdStrLoad();
                 cdvd_stat.stat = 1;
             } 
             else 
@@ -351,7 +356,7 @@ static void ICdvdMainLocked()
                         return;
                     }
 
-                    ICdvdDataReadOnceSector();
+                    ICdvdStrLoad();
                 }
             }
         } 
@@ -446,7 +451,7 @@ static void ICdvdMainLocked()
             cdvd_stat.cmd_on = 0;
             cdvd_stat.stat = 0;
         } else {
-            ICdvdDataReadOnceSector();
+            ICdvdStrLoad();
             cdvd_stat.stat = 1;
         }
 
@@ -586,7 +591,8 @@ static void ICdvdDataReadOnceSector()
     {
         cdvd_stat.now_size = 204800;
         cdvd_trans[cdvd_stat.now_lbuf].ltrans = 0;
-    } else 
+    } 
+    else 
     {
         cdvd_trans[cdvd_stat.now_lbuf].ltrans = 1;
     }
@@ -614,25 +620,121 @@ static void ICdvdAdpcmLoad()
 
     pos = 0xff;
 
-    if (cdvd_stat.adpcm[0].req_type >= cdvd_stat.adpcm[1].req_type) 
+    if (cdvd_stat.adpcm[0].req_type >= cdvd_stat.adpcm[1].req_type)
     {
         pos = 0;
-    } else 
+    }
+    else
     {
         pos = 1;
     }
 
-    sceCdRead(
-        cdvd_stat.adpcm[pos].start,
-        (cdvd_stat.adpcm[pos].size_now + 2047) / 2048,
-        cdvd_stat.adpcm[pos].taddr,
-        &cdvd_stat.rmode);
+    CDVD_ADPCM* adpcm = &cdvd_stat.adpcm[pos];
+    const char* name = NULL;
 
-    cdvd_stat.adpcm[pos].now_load = 1;
+    if (adpcm->file_no >= 0)
+    {
+        name = file_name[adpcm->file_no];
+    }
+
+    sceCdlFILE file_info = {0};
+
+    if (name != NULL && sceCdSearchFile(&file_info, name))
+    {
+        int read_offset = adpcm->read_now;
+
+        if (read_offset < 0)
+        {
+            read_offset = 0;
+        }
+
+        int read_bytes = ((adpcm->size_now + 2047) / 2048) * 2048;
+
+        sceCdReadFile(
+            name,
+            read_offset,
+            adpcm->taddr,
+            read_bytes);
+
+        int file_bytes = (int)file_info.size - read_offset;
+
+        if (file_bytes < 0)
+        {
+            file_bytes = 0;
+        }
+
+        if (file_bytes < read_bytes)
+        {
+            memset(
+                (u_char*)adpcm->taddr + file_bytes,
+                0,
+                read_bytes - file_bytes);
+        }
+    }
+    else
+    {
+        sceCdRead(
+            adpcm->start,
+            (adpcm->size_now + 2047) / 2048,
+            adpcm->taddr,
+            &cdvd_stat.rmode);
+    }
+
+    adpcm->now_load = 1;
     cdvd_stat.adpcm_req = 1;
 }
 
-static void ICdvdStrLoad() {}
+static void ICdvdStrLoad()
+{
+    spdlog::info("Loading file {} by name", file_name[cdvd_stat.file_no]);
+
+    sceCdlFILE file_info = {0};
+
+    if (sceCdSearchFile(&file_info, file_name[cdvd_stat.file_no]))
+    {
+        spdlog::info("File {} found in CDVD", file_name[cdvd_stat.file_no]);
+    }
+    else
+    {
+        ICdvdDataReadOnceSector();
+        return;
+    }
+
+    cdvd_stat.now_size = cdvd_stat.size - cdvd_stat.end_size;
+
+    if (cdvd_stat.now_size > 204800)
+    {
+        cdvd_stat.now_size = 204800;
+        cdvd_trans[cdvd_stat.now_lbuf].ltrans = 0;
+    }
+    else
+    {
+        cdvd_trans[cdvd_stat.now_lbuf].ltrans = 1;
+    }
+
+    int read_bytes = ((cdvd_stat.now_size + 2047) / 2048) * 2048;
+
+    sceCdReadFile(
+        file_name[cdvd_stat.file_no],
+        cdvd_stat.end_size,
+        load_buf_table[cdvd_stat.now_lbuf],
+        read_bytes);
+
+    int file_bytes = (int)file_info.size - cdvd_stat.end_size;
+
+    if (file_bytes < 0)
+    {
+        file_bytes = 0;
+    }
+
+    if (file_bytes < read_bytes)
+    {
+        memset(
+            (u_char*)load_buf_table[cdvd_stat.now_lbuf] + file_bytes,
+            0,
+            read_bytes - file_bytes);
+    }
+}
 
 static int ICdvdCheckLoadError()
 {
@@ -677,7 +779,8 @@ static int ICdvdSectorLoad(CDVD_REQ_BUF* req_bufp)
         SeSetStartPoint(req_bufp->se_buf_no, req_bufp->file_no);
     }
         
-    ICdvdDataReadOnceSector();
+    ICdvdStrLoad();
+    //ICdvdDataReadOnceSector();
     cdvd_stat.cmd_on = 1;
     ICdvdSetRetStat(cdvd_stat.id, CDVD_LS_LOADING);
     return 1;
@@ -723,26 +826,38 @@ static void ICdvdAddCmd(IOP_COMMAND* icp)
     req_buf.size_sector = icp->data3;
 
     if (icp->data5 >= TRANS_MEM_NUM)
+    {
         req_buf.tmem = TRANS_MEM_EE;
+    }
     else
+    {
         req_buf.tmem = icp->data5;
+    }
 
-    if (req_buf.tmem == TRANS_MEM_SPU) {
+    if (req_buf.tmem == TRANS_MEM_SPU) 
+    {
         req_buf.taddr = (u_int*)(uintptr_t)SeGetSndBufTop(icp->data4);
         req_buf.se_buf_no = icp->data4;
-    } else {
+    } 
+    else 
+    {
         req_buf.taddr = (u_int*)icp->data4;
     }
 
     req_buf.id = icp->data6;
     ICdvdLock();
-    if (cdvd_stat.buf_use_num < 32) {
+
+    if (cdvd_stat.buf_use_num < 32) 
+    {
         cdvd_req[cdvd_stat.req_pos] = req_buf;
         cdvd_stat.req_pos = (cdvd_stat.req_pos + 1) % 32;
         ++cdvd_stat.buf_use_num;
         ICdvdSetRetStat(req_buf.id, CDVD_STAT_LOADING);
-    } else {
+    } 
+    else 
+    {
     }
+
     ICdvdUnlock();
 }
 
@@ -881,12 +996,13 @@ void ICdvdLoadReqPcm(u_int lsn, u_int size_sec, void* buf, u_char pre)
     ICdvdUnlock();
 }
 
-void ICdvdLoadReqAdpcm(int lsn, u_int size_now, void* buf, u_char channel, u_char req_type, u_char endld_flg)
+void ICdvdLoadReqAdpcm(int file_no, int lsn, int read_now, u_int size_now, void* buf, u_char channel, u_char req_type, u_char endld_flg)
 {
     ICdvdLock();
+    cdvd_stat.adpcm[channel].file_no = file_no;
     cdvd_stat.adpcm[channel].start = lsn + cdvd_stat.cdlf.lsn;
     cdvd_stat.adpcm[channel].size_now = size_now;
-    cdvd_stat.adpcm[channel].read_now = 0;
+    cdvd_stat.adpcm[channel].read_now = read_now;
     cdvd_stat.adpcm[channel].taddr = (u_int*)buf;
     cdvd_stat.adpcm[channel].req_type = req_type;
     cdvd_stat.adpcm[channel].endld_flg = endld_flg;

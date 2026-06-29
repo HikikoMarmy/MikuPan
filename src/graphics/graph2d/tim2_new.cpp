@@ -420,6 +420,10 @@ void MakeTim2Direct3(u_int *tim2_addr, int tbp, int offset)
         // Format ID is 1 => 128-byte alignment
         tph = (TIM2_PICTUREHEADER *)((char *)tim2_addr + 0x80);
     }
+    else
+    {
+        return;
+    }
 
     if (tph->ImageSize == 0)
     {
